@@ -50,6 +50,56 @@ class ExecutionInputs:
     active_repos: int = 0
 
 
+@dataclass
+class WellnessInputs:
+    """Subjective Pulse check-in fields, each on a 1-5 Likert scale."""
+
+    mood: int | None = None    # 1 (low) .. 5 (great)
+    energy: int | None = None  # 1 .. 5
+    focus: int | None = None   # 1 .. 5
+    stress: int | None = None  # 1 (calm) .. 5 (stressed) — inverted below
+
+
+def _likert_to_100(value: int | None, invert: bool = False) -> float | None:
+    """Map a 1-5 Likert value to 0-100. ``invert`` flips it (for stress)."""
+    if value is None:
+        return None
+    v = max(1, min(5, value))
+    if invert:
+        v = 6 - v
+    return (v - 1) / 4.0 * 100.0
+
+
+def wellness_score(inp: WellnessInputs) -> float | None:
+    """Mental-wellbeing score (0-100) from the four Pulse fields.
+
+    Mood, energy, and focus contribute positively; stress is inverted (calm is
+    good). Returns ``None`` when no Pulse data exists for the day so missing
+    check-ins never read as "zero wellbeing".
+    """
+    components: list[tuple[float, float]] = []  # (value, weight)
+    mood = _likert_to_100(inp.mood)
+    energy = _likert_to_100(inp.energy)
+    focus = _likert_to_100(inp.focus)
+    calm = _likert_to_100(inp.stress, invert=True)
+
+    if mood is not None:
+        components.append((mood, 0.40))    # mood weighted highest
+    if energy is not None:
+        components.append((energy, 0.25))
+    if calm is not None:
+        components.append((calm, 0.20))
+    if focus is not None:
+        components.append((focus, 0.15))
+
+    if not components:
+        return None
+
+    total_weight = sum(w for _, w in components)
+    score = sum(v * w for v, w in components) / total_weight
+    return round(_clamp(score), 1)
+
+
 def sleep_score(inp: SleepInputs) -> float | None:
     """Reward duration near ~8h plus healthy deep/REM proportion."""
     if inp.total_hours is None:

@@ -10,12 +10,15 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -27,24 +30,41 @@ import com.lifeos.app.presentation.dashboard.DashboardScreen
 import com.lifeos.app.presentation.insights.InsightsScreen
 import com.lifeos.app.presentation.mood.MoodScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
+import com.lifeos.app.presentation.theme.LifeOsColors
 
 enum class Destination(val route: String, val label: String, val icon: ImageVector) {
     DASHBOARD("dashboard", "Today", Icons.Filled.Dashboard),
-    MOOD("mood", "Check-in", Icons.Filled.Mood),
+    MOOD("mood", "Pulse", Icons.Filled.Mood),
     INSIGHTS("insights", "Insights", Icons.Filled.Insights),
     CHAT("chat", "Ask", Icons.AutoMirrored.Filled.Chat),
     SETTINGS("settings", "Settings", Icons.Filled.Settings),
 }
 
 @Composable
-fun LifeOsApp() {
+fun LifeOsApp(startTab: String? = null) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination
 
+    // Deep-link: if launched from a notification targeting a tab, navigate once.
+    LaunchedEffect(startTab) {
+        val dest = Destination.entries.firstOrNull { it.route == startTab }
+        if (dest != null) {
+            navController.navigate(dest.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     Scaffold(
+        containerColor = LifeOsColors.Background,
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = LifeOsColors.Surface,
+                tonalElevation = 8.dp,
+            ) {
                 Destination.entries.forEach { dest ->
                     val selected = current?.hierarchy?.any { it.route == dest.route } == true
                     NavigationBarItem(
@@ -58,6 +78,13 @@ fun LifeOsApp() {
                         },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
                         label = { Text(dest.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = LifeOsColors.Primary,
+                            selectedTextColor = LifeOsColors.Primary,
+                            indicatorColor = LifeOsColors.PrimarySoft,
+                            unselectedIconColor = LifeOsColors.OnSurfaceMuted,
+                            unselectedTextColor = LifeOsColors.OnSurfaceMuted,
+                        ),
                     )
                 }
             }

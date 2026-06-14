@@ -1,86 +1,76 @@
 package com.lifeos.app.presentation.mood
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeos.app.presentation.components.QuickCheckInCard
+import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.lifeOsFieldColors
+import com.lifeos.app.presentation.theme.LifeOsColors
 
 @Composable
 fun MoodScreen(viewModel: MoodViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val fieldColors = lifeOsFieldColors()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(LifeOsColors.Background)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Daily check-in", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Your subjective ground truth. LifeOS correlates this with your health and execution data.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        ScreenHeader("Daily pulse", "One tap is enough. Add a note only if something stands out.")
 
-        LikertSlider("Mood", state.mood) { v -> viewModel.update { copy(mood = v) } }
-        LikertSlider("Energy", state.energy) { v -> viewModel.update { copy(energy = v) } }
-        LikertSlider("Focus", state.focus) { v -> viewModel.update { copy(focus = v) } }
-        LikertSlider("Stress", state.stress) { v -> viewModel.update { copy(stress = v) } }
-
-        OutlinedTextField(
-            value = state.note,
-            onValueChange = { note -> viewModel.update { copy(note = note) } },
-            label = { Text("Note (optional)") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-        )
-
-        Button(
-            onClick = viewModel::submit,
+        QuickCheckInCard(
+            selected = state.selected,
+            savedLabel = state.savedMessage,
             enabled = !state.submitting,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (state.submitting) "Saving…" else "Save check-in")
-        }
+            onSelect = viewModel::select,
+        )
 
-        if (state.saved) {
+        TextButton(onClick = viewModel::toggleNote) {
             Text(
-                "Saved. Today's state was recomputed.",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
+                if (state.showNote) "Hide note" else "+ Add a note (optional)",
+                color = LifeOsColors.Primary,
             )
         }
-    }
-}
 
-@Composable
-private fun LikertSlider(label: String, value: Int, onChange: (Int) -> Unit) {
-    Column {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Text(label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text("$value / 5", style = MaterialTheme.typography.titleMedium)
+        if (state.showNote) {
+            OutlinedTextField(
+                value = state.note,
+                onValueChange = viewModel::onNoteChange,
+                label = { Text("What stood out?") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+            Text(
+                "Re-tap an emoji to save with your note.",
+                style = MaterialTheme.typography.bodySmall,
+                color = LifeOsColors.OnSurfaceMuted,
+            )
         }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onChange(it.toInt().coerceIn(1, 5)) },
-            valueRange = 1f..5f,
-            steps = 3,
-        )
+        Spacer(Modifier.height(24.dp))
     }
 }

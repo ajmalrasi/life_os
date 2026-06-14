@@ -25,6 +25,7 @@ class DailyScore(Base):
     sleep_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     recovery_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     execution_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wellness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     consistency_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     burnout_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
 

@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // Phase 1 #5: enable once app/google-services.json is in place.
+    // alias(libs.plugins.google.services)
 }
 
 android {
@@ -29,9 +31,11 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            buildConfigField("Boolean", "USE_DEMO_DATA", "false")
         }
         debug {
             isMinifyEnabled = false
+            buildConfigField("Boolean", "USE_DEMO_DATA", "true")
         }
     }
 
@@ -95,6 +99,12 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.work.runtime)
     implementation(libs.coroutines.android)
+
+    // Push notifications (Phase 1 #5). The FCM SDK compiles without Firebase
+    // configured; to actually receive pushes, add app/google-services.json and
+    // uncomment the google-services plugin above + in the root build file.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     // Tests
     testImplementation(libs.junit)

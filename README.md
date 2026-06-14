@@ -62,6 +62,7 @@ life_os/
 - Backend: see [`backend/README.md`](backend/README.md)
 - Android: see [`android/README.md`](android/README.md)
 - Full setup (incl. Jetson + OpenClaw): see [`docs/SETUP.md`](docs/SETUP.md)
+- **Status, architecture & roadmap:** see [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
 
 ## License
 

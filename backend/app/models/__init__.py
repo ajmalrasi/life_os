@@ -6,6 +6,7 @@ Importing this package ensures every model is registered on the shared
 
 from app.models.daily_score import DailyScore
 from app.models.daily_state import DailyState
+from app.models.device import DeviceToken
 from app.models.github import GithubActivity
 from app.models.health import HealthRecord, HealthRecordType
 from app.models.insight import Insight
@@ -18,5 +19,6 @@ __all__ = [
     "GithubActivity",
     "DailyScore",
     "DailyState",
+    "DeviceToken",
     "Insight",
 ]

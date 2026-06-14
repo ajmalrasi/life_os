@@ -2,25 +2,25 @@ package com.lifeos.app.presentation.mood
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lifeos.app.domain.model.MoodCheckin
+import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
 
 data class MoodUiState(
-    val mood: Int = 3,
-    val energy: Int = 3,
-    val focus: Int = 3,
-    val stress: Int = 3,
+    val selected: DayPulse? = null,
     val note: String = "",
+    val showNote: Boolean = false,
     val submitting: Boolean = false,
-    val saved: Boolean = false,
+    val savedMessage: String? = null,
 )
 
 @HiltViewModel
@@ -29,38 +29,59 @@ class MoodViewModel @Inject constructor(
     private val analyticsRepository: AnalyticsRepository,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(MoodUiState())
-    val state: StateFlow<MoodUiState> = _state.asStateFlow()
+    private val transient = MutableStateFlow(TransientState())
+
+    val state: StateFlow<MoodUiState> = combine(
+        moodRepository.observe(7),
+        transient,
+    ) { checkins, t ->
+        val todayPulse = checkins.firstOrNull { it.day == LocalDate.now() }?.let { DayPulse.fromCheckin(it) }
+        MoodUiState(
+            selected = t.selected ?: todayPulse,
+            note = t.note,
+            showNote = t.showNote,
+            submitting = t.submitting,
+            savedMessage = t.savedMessage,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MoodUiState())
 
     init {
-        viewModelScope.launch {
-            runCatching { moodRepository.refresh(7) }
-        }
+        viewModelScope.launch { runCatching { moodRepository.refresh(7) } }
     }
 
-    fun update(transform: MoodUiState.() -> MoodUiState) {
-        _state.value = _state.value.transform().copy(saved = false)
+    fun select(pulse: DayPulse) {
+        transient.value = transient.value.copy(selected = pulse, savedMessage = null)
+        submit(pulse)
     }
 
-    fun submit() {
-        val s = _state.value
+    fun toggleNote() {
+        transient.value = transient.value.copy(showNote = !transient.value.showNote)
+    }
+
+    fun onNoteChange(note: String) {
+        transient.value = transient.value.copy(note = note, savedMessage = null)
+    }
+
+    fun submit(pulse: DayPulse? = null) {
+        val selected = pulse ?: transient.value.selected ?: return
         viewModelScope.launch {
-            _state.value = s.copy(submitting = true)
+            transient.value = transient.value.copy(submitting = true)
             runCatching {
-                moodRepository.submit(
-                    MoodCheckin(
-                        day = LocalDate.now(),
-                        mood = s.mood,
-                        energy = s.energy,
-                        focus = s.focus,
-                        stress = s.stress,
-                        note = s.note.ifBlank { null },
-                    )
-                )
-                // Recompute so today's state reflects the new check-in.
+                moodRepository.submit(selected.toCheckin(transient.value.note.ifBlank { null }))
                 analyticsRepository.recompute(60)
             }
-            _state.value = _state.value.copy(submitting = false, saved = true)
+            transient.value = transient.value.copy(
+                submitting = false,
+                savedMessage = "${selected.emoji} ${selected.label} — logged for today",
+            )
         }
     }
+
+    private data class TransientState(
+        val selected: DayPulse? = null,
+        val note: String = "",
+        val showNote: Boolean = false,
+        val submitting: Boolean = false,
+        val savedMessage: String? = null,
+    )
 }

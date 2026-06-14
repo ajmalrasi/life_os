@@ -4,6 +4,9 @@ import com.lifeos.app.data.remote.dto.ChatRequestDto
 import com.lifeos.app.data.remote.dto.ChatResponseDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
 import com.lifeos.app.data.remote.dto.DailyStateDto
+import com.lifeos.app.data.remote.dto.DeviceTokenDto
+import com.lifeos.app.data.remote.dto.DeviceTokenResponseDto
+import com.lifeos.app.data.remote.dto.ExecutionSyncResultDto
 import com.lifeos.app.data.remote.dto.GithubDto
 import com.lifeos.app.data.remote.dto.HealthBatchDto
 import com.lifeos.app.data.remote.dto.IngestResultDto
@@ -31,6 +34,9 @@ interface LifeOsApi {
     @POST("github")
     suspend fun submitGithub(@Body activity: GithubDto): GithubDto
 
+    @POST("collectors/execution/sync")
+    suspend fun syncExecution(@Query("days") days: Int): ExecutionSyncResultDto
+
     @POST("analytics/recompute")
     suspend fun recompute(@Query("days") days: Int): RecomputeResultDto
 
@@ -48,4 +54,7 @@ interface LifeOsApi {
 
     @POST("chat")
     suspend fun chat(@Body request: ChatRequestDto): ChatResponseDto
+
+    @POST("device/token")
+    suspend fun registerDeviceToken(@Body body: DeviceTokenDto): DeviceTokenResponseDto
 }

@@ -102,6 +102,17 @@ class AnalyticsService:
             )
         )
 
+        # --- wellness (subjective Pulse check-in) ---
+        mood = self.mood.get(day)
+        wellness = scoring.wellness_score(
+            scoring.WellnessInputs(
+                mood=mood.mood if mood else None,
+                energy=mood.energy if mood else None,
+                focus=mood.focus if mood else None,
+                stress=mood.stress if mood else None,
+            )
+        )
+
         # --- consistency (trailing execution) ---
         exec_hist = self._trailing_execution(day, _CONSISTENCY_WINDOW)
         consistency = scoring.consistency_score(exec_hist)
@@ -114,12 +125,12 @@ class AnalyticsService:
             sleep_score=sleep,
             recovery_score=recovery,
             execution_score=execution,
+            wellness_score=wellness,
             consistency_score=consistency,
             burnout_risk=burnout,
         )
 
         # --- state ---
-        mood = self.mood.get(day)
         result = state_engine.classify(
             state_engine.StateInputs(
                 sleep_score=sleep,
@@ -178,6 +189,7 @@ class AnalyticsService:
         sleep = series(lambda d: getattr(score_rows.get(d), "sleep_score", None))
         recovery = series(lambda d: getattr(score_rows.get(d), "recovery_score", None))
         execution = series(lambda d: getattr(score_rows.get(d), "execution_score", None))
+        wellness = series(lambda d: getattr(score_rows.get(d), "wellness_score", None))
         mood_s = series(lambda d: getattr(mood_rows.get(d), "mood", None))
         focus_s = series(lambda d: getattr(mood_rows.get(d), "focus", None))
 
@@ -185,6 +197,7 @@ class AnalyticsService:
             "sleep_score": sleep,
             "recovery_score": recovery,
             "execution_score": execution,
+            "wellness_score": wellness,
             "mood": mood_s,
             "focus": focus_s,
         }
@@ -194,9 +207,12 @@ class AnalyticsService:
             ("sleep_score", "execution_score"),
             ("sleep_score", "focus"),
             ("sleep_score", "mood"),
+            ("sleep_score", "wellness_score"),
             ("recovery_score", "execution_score"),
             ("recovery_score", "mood"),
+            ("recovery_score", "wellness_score"),
             ("execution_score", "mood"),
+            ("wellness_score", "execution_score"),
         ]
 
         found = 0

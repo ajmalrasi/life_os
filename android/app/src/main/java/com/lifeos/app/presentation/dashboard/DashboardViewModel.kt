@@ -5,17 +5,21 @@ import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
-import com.lifeos.app.domain.model.GithubActivity
+import com.lifeos.app.data.demo.DemoData
+import com.lifeos.app.data.demo.DemoMode
+import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.data.health.HealthConnectManager
 import com.lifeos.app.domain.repository.AnalyticsRepository
-import com.lifeos.app.domain.repository.GithubRepository
 import com.lifeos.app.domain.repository.HealthRepository
+import com.lifeos.app.domain.repository.MoodRepository
+import com.lifeos.app.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
@@ -23,16 +27,21 @@ import javax.inject.Inject
 data class DashboardUiState(
     val latestScore: DailyScore? = null,
     val latestState: DailyState? = null,
+    val todayPulse: DayPulse? = null,
+    val pulseSavedMessage: String? = null,
+    val pulseSubmitting: Boolean = false,
     val notifications: List<AppNotification> = emptyList(),
     val syncing: Boolean = false,
     val message: String? = null,
+    val usingDemoData: Boolean = false,
 )
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val healthRepository: HealthRepository,
     private val analyticsRepository: AnalyticsRepository,
-    private val githubRepository: GithubRepository,
+    private val moodRepository: MoodRepository,
+    private val settingsRepository: SettingsRepository,
     healthConnectManager: HealthConnectManager,
 ) : ViewModel() {
 
@@ -44,19 +53,31 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = combine(
         analyticsRepository.observeScores(30),
         analyticsRepository.observeStates(30),
+        moodRepository.observe(7),
         transient,
-    ) { scores, states, t ->
+    ) { scores, states, moods, t ->
+        val useDemo = DemoMode.active && scores.isEmpty()
+        val displayScores = if (useDemo) DemoData.scores else scores
+        val displayState = if (useDemo) DemoData.state else states.firstOrNull()
+        val displayNotifications = if (useDemo && t.notifications.isEmpty()) DemoData.notifications else t.notifications
+        val todayPulse = moods.firstOrNull { it.day == LocalDate.now() }?.let { DayPulse.fromCheckin(it) }
+            ?: if (useDemo) DemoData.todayPulse else null
         DashboardUiState(
-            latestScore = scores.firstOrNull(),
-            latestState = states.firstOrNull(),
-            notifications = t.notifications,
+            latestScore = displayScores.firstOrNull(),
+            latestState = displayState,
+            todayPulse = t.pulseSelected ?: todayPulse,
+            pulseSavedMessage = t.pulseSavedMessage,
+            pulseSubmitting = t.pulseSubmitting,
+            notifications = displayNotifications,
             syncing = t.syncing,
             message = t.message,
+            usingDemoData = useDemo,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     init {
         refresh()
+        viewModelScope.launch { runCatching { moodRepository.refresh(7) } }
     }
 
     fun refresh() {
@@ -64,7 +85,10 @@ class DashboardViewModel @Inject constructor(
             runCatching {
                 analyticsRepository.refresh(30)
                 transient.value = transient.value.copy(notifications = analyticsRepository.notifications())
-            }.onFailure { setMessage("Backend unreachable. Showing cached data.") }
+            }.onFailure { e ->
+                val url = runCatching { settingsRepository.apiBaseUrl.first() }.getOrDefault("unknown")
+                setMessage("Backend unreachable ($url). Showing cached data.")
+            }
         }
     }
 
@@ -75,30 +99,39 @@ class DashboardViewModel @Inject constructor(
             runCatching {
                 val samples = healthRepository.readRecentSamples(60)
                 val inserted = healthRepository.sync(samples)
-                analyticsRepository.recompute(60)
+                val execution = analyticsRepository.recompute(60)
+                settingsRepository.setLastSyncDay(LocalDate.now())
+                settingsRepository.setLastSyncAt(System.currentTimeMillis())
                 transient.value = transient.value.copy(
                     notifications = analyticsRepository.notifications(),
                 )
-                setMessage("Synced $inserted new health records and recomputed insights.")
-            }.onFailure { setMessage("Sync failed: ${it.message ?: "unknown error"}") }
+                val execNote = execution.todayCommits?.let { commits ->
+                    val mins = execution.todayCodingMinutes ?: 0
+                    " Auto-detected $commits commit(s), ${mins}m coding."
+                } ?: ""
+                setMessage("Synced $inserted health record(s) and recomputed insights.$execNote")
+            }.onFailure { e ->
+                val url = runCatching { settingsRepository.apiBaseUrl.first() }.getOrDefault("unknown")
+                val hint = if (url.contains("10.0.2.2")) {
+                    " On a real phone, open Settings and set your Mac/Jetson LAN IP (e.g. http://192.168.x.x:8000/)."
+                } else ""
+                setMessage("Sync failed (${e.message ?: "connection error"}). Backend: $url.$hint")
+            }
             transient.value = transient.value.copy(syncing = false)
         }
     }
 
-    fun logExecution(commits: Int, codingMinutes: Int) {
+    fun submitPulse(pulse: DayPulse) {
         viewModelScope.launch {
+            transient.value = transient.value.copy(pulseSelected = pulse, pulseSubmitting = true, pulseSavedMessage = null)
             runCatching {
-                githubRepository.submit(
-                    GithubActivity(
-                        day = LocalDate.now(),
-                        commits = commits,
-                        codingMinutes = codingMinutes,
-                        activeRepos = if (commits > 0) 1 else 0,
-                    )
-                )
+                moodRepository.submit(pulse.toCheckin())
                 analyticsRepository.recompute(60)
-                setMessage("Logged today's execution.")
-            }.onFailure { setMessage("Could not log execution: ${it.message}") }
+            }
+            transient.value = transient.value.copy(
+                pulseSubmitting = false,
+                pulseSavedMessage = "${pulse.emoji} Logged — ${pulse.label}",
+            )
         }
     }
 
@@ -107,6 +140,9 @@ class DashboardViewModel @Inject constructor(
     }
 
     private data class TransientState(
+        val pulseSelected: DayPulse? = null,
+        val pulseSavedMessage: String? = null,
+        val pulseSubmitting: Boolean = false,
         val notifications: List<AppNotification> = emptyList(),
         val syncing: Boolean = false,
         val message: String? = null,

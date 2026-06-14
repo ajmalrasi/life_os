@@ -11,6 +11,8 @@ from app import __version__
 from app.api.routes import (
     analytics,
     chat,
+    collectors,
+    device,
     github_data,
     health_data,
     mood,
@@ -47,10 +49,12 @@ app.add_middleware(
 
 app.include_router(health_data.router)
 app.include_router(mood.router)
+app.include_router(collectors.router)
 app.include_router(github_data.router)
 app.include_router(analytics.router)
 app.include_router(chat.router)
 app.include_router(notifications.router)
+app.include_router(device.router)
 
 
 @app.get("/", tags=["meta"])

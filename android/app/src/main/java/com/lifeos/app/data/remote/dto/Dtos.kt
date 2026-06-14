@@ -58,6 +58,19 @@ data class DailyScoreDto(
     @SerialName("execution_score") val executionScore: Double? = null,
     @SerialName("consistency_score") val consistencyScore: Double? = null,
     @SerialName("burnout_risk") val burnoutRisk: Double? = null,
+    @SerialName("wellness_score") val wellnessScore: Double? = null,
+)
+
+@Serializable
+data class DeviceTokenDto(
+    val token: String,
+    val platform: String = "android",
+)
+
+@Serializable
+data class DeviceTokenResponseDto(
+    val registered: Boolean,
+    @SerialName("push_enabled") val pushEnabled: Boolean = false,
 )
 
 @Serializable
@@ -83,6 +96,21 @@ data class RecomputeResultDto(
     @SerialName("days_scored") val daysScored: Int,
     @SerialName("states_classified") val statesClassified: Int,
     @SerialName("insights_found") val insightsFound: Int,
+    @SerialName("execution_days_updated") val executionDaysUpdated: Int = 0,
+    @SerialName("execution_repos_scanned") val executionReposScanned: Int = 0,
+    @SerialName("execution_today_commits") val executionTodayCommits: Int? = null,
+    @SerialName("execution_today_coding_minutes") val executionTodayCodingMinutes: Int? = null,
+    @SerialName("execution_message") val executionMessage: String? = null,
+)
+
+@Serializable
+data class ExecutionSyncResultDto(
+    @SerialName("days_updated") val daysUpdated: Int,
+    @SerialName("repos_scanned") val reposScanned: Int,
+    val source: String,
+    @SerialName("today_commits") val todayCommits: Int? = null,
+    @SerialName("today_coding_minutes") val todayCodingMinutes: Int? = null,
+    val message: String,
 )
 
 @Serializable

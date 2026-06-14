@@ -46,7 +46,23 @@ class NotificationService:
         out.extend(self._peak(states))
         out.extend(self._declining_execution(scores))
         out.extend(self._idle_projects(gh))
+        out.extend(self._low_wellness(scores))
         return out
+
+    def _low_wellness(self, scores) -> list[Notification]:
+        recent = [s.wellness_score for s in scores[-5:] if s.wellness_score is not None]
+        if len(recent) >= 3:
+            avg = sum(recent) / len(recent)
+            if avg < 45.0:
+                return [
+                    Notification(
+                        "warning",
+                        "Your wellbeing has been running low",
+                        f"Wellness score has averaged {avg:.0f} over the last "
+                        f"{len(recent)} check-ins. Mood, energy, and stress are worth attention.",
+                    )
+                ]
+        return []
 
     def _sleep_debt(self, scores) -> list[Notification]:
         recent = scores[-7:]

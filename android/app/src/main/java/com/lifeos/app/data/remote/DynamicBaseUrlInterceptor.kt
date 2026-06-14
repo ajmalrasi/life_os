@@ -1,5 +1,6 @@
 package com.lifeos.app.data.remote
 
+import com.lifeos.app.BuildConfig
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -16,12 +17,14 @@ import javax.inject.Singleton
 @Singleton
 class DynamicBaseUrlInterceptor @Inject constructor() : Interceptor {
 
-    private val baseUrl = AtomicReference<String>("http://10.0.2.2:8000/")
+    private val baseUrl = AtomicReference<String>(normalize(BuildConfig.DEFAULT_API_BASE_URL))
 
     fun setBaseUrl(url: String) {
-        val normalized = if (url.endsWith("/")) url else "$url/"
-        baseUrl.set(normalized)
+        baseUrl.set(normalize(url))
     }
+
+    private fun normalize(url: String): String =
+        if (url.endsWith("/")) url else "$url/"
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()

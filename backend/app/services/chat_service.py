@@ -21,20 +21,29 @@ from app.repositories.analytics_repo import (
 from app.repositories.github_repo import GithubRepository
 from app.repositories.mood_repo import MoodRepository
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
+from app.services import agent_tools
+from app.services.agent_tools import AgentTools
 from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+
+# Max tool-call round trips before we force a final answer. Keeps the agent loop
+# bounded so a misbehaving model can't spin forever.
+MAX_AGENT_STEPS = 4
 
 SYSTEM_PROMPT = (
     "You are LifeOS, a personal intelligence companion. You analyze the user's own "
     "health, mood, and project-execution data to explain why they perform, "
     "procrastinate, or burn out.\n\n"
+    "You start with a DATA CONTEXT snapshot. When you need more detail than it "
+    "contains, call the provided tools (git_log, github_events, health_summary) to "
+    "pull additional days or metrics before answering.\n\n"
     "STRICT RULES:\n"
-    "1. Answer ONLY using the DATA CONTEXT provided in the next message. Treat it as "
-    "the single source of truth.\n"
+    "1. Ground every answer ONLY in the DATA CONTEXT and the tool results. Treat them "
+    "as the single source of truth.\n"
     "2. Never invent numbers. If the data does not support a conclusion, say so plainly.\n"
-    "3. Every claim must cite a specific metric or insight from the context, e.g. "
+    "3. Every claim must cite a specific metric or insight, e.g. "
     "'(avg sleep score 78 over 30d)'.\n"
     "4. Be concise, direct, and practical. Prefer 'what to do' over generic advice.\n"
-    "5. If the context is empty or insufficient, tell the user you need more data "
+    "5. If the data is empty or insufficient, tell the user you need more data "
     "(e.g. more days of sync or a mood check-in)."
 )
 
@@ -71,6 +80,7 @@ class ChatService:
                 "sleep_score": avg("sleep_score", score_rows),
                 "recovery_score": avg("recovery_score", score_rows),
                 "execution_score": avg("execution_score", score_rows),
+                "wellness_score": avg("wellness_score", score_rows),
                 "consistency_score": avg("consistency_score", score_rows),
                 "burnout_risk": avg("burnout_risk", score_rows),
                 "mood": avg("mood", mood_rows),
@@ -150,13 +160,51 @@ class ChatService:
         )
 
         try:
-            answer = self.client.chat(messages)
+            answer = self._run_agent(messages)
             grounded = True
         except OpenClawUnavailable:
             answer = self._fallback(context, req.message)
             grounded = True
 
         return ChatResponse(answer=answer, citations=self._citations(context), grounded=grounded)
+
+    def _run_agent(self, messages: list[dict]) -> str:
+        """Agentic loop: let OpenClaw call data tools, then answer.
+
+        Each turn we offer the tool schemas. If the model asks to call tools we
+        execute them, append the results, and loop (bounded by MAX_AGENT_STEPS).
+        When it stops requesting tools — or a server ignores tools entirely — its
+        ``content`` is the final answer. Raises ``OpenClawUnavailable`` so the
+        caller can fall back to a deterministic summary.
+        """
+        tools = AgentTools(self.db)
+        for _ in range(MAX_AGENT_STEPS):
+            message = self.client.chat_with_tools(messages, agent_tools.TOOL_SCHEMAS)
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                return message.get("content") or ""
+
+            # Record the assistant's tool-call turn, then answer each call.
+            messages.append(message)
+            for call in tool_calls:
+                fn = (call.get("function") or {})
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except (ValueError, TypeError):
+                    args = {}
+                result = tools.run(name, args)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id", ""),
+                        "name": name,
+                        "content": json.dumps(result),
+                    }
+                )
+
+        # Hit the step cap — ask once more, without tools, for a closing answer.
+        return self.client.chat(messages)
 
     def _fallback(self, context: dict, question: str) -> str:
         """Deterministic, data-only answer when the LLM server is unreachable.

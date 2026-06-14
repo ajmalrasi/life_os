@@ -21,6 +21,7 @@ data class ScoreEntity(
     val executionScore: Double?,
     val consistencyScore: Double?,
     val burnoutRisk: Double?,
+    val wellnessScore: Double? = null,
 )
 
 @Entity(tableName = "daily_states")

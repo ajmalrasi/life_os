@@ -34,3 +34,6 @@ captures/
 .idea/
 .vscode/
 *.log
+
+# Python virtualenv
+backend/.venv/

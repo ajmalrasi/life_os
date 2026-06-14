@@ -7,6 +7,7 @@ import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.GithubActivity
 import com.lifeos.app.domain.model.HealthSample
+import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
 import kotlinx.coroutines.flow.Flow
@@ -44,7 +45,7 @@ interface AnalyticsRepository {
     fun observeInsights(): Flow<List<Insight>>
     suspend fun refresh(days: Int)
     /** Trigger a backend recompute (nightly analysis on demand). */
-    suspend fun recompute(days: Int)
+    suspend fun recompute(days: Int): ExecutionSyncReport
     suspend fun notifications(): List<AppNotification>
 }
 
@@ -57,4 +58,14 @@ interface SettingsRepository {
     suspend fun setApiBaseUrl(url: String)
     val lastSyncDay: Flow<LocalDate?>
     suspend fun setLastSyncDay(day: LocalDate)
+
+    /** Wall-clock time (epoch millis) of the last successful sync, for display. */
+    val lastSyncAt: Flow<Long?>
+    suspend fun setLastSyncAt(epochMillis: Long)
+
+    /** Evening Pulse reminder configuration. */
+    val pulseReminderEnabled: Flow<Boolean>
+    suspend fun setPulseReminderEnabled(enabled: Boolean)
+    val pulseReminderHour: Flow<Int>
+    suspend fun setPulseReminderHour(hour: Int)
 }

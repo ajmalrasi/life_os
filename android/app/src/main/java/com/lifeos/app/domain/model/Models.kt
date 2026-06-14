@@ -56,6 +56,7 @@ data class DailyScore(
     val executionScore: Double?,
     val consistencyScore: Double?,
     val burnoutRisk: Double?,
+    val wellnessScore: Double? = null,
 )
 
 data class DailyState(
@@ -92,3 +93,12 @@ data class ChatAnswer(
 )
 
 data class Citation(val metric: String, val value: String)
+
+data class ExecutionSyncReport(
+    val daysUpdated: Int,
+    val reposScanned: Int,
+    val source: String,
+    val todayCommits: Int?,
+    val todayCodingMinutes: Int?,
+    val message: String,
+)

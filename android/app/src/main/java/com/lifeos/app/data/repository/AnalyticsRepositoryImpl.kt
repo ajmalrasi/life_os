@@ -9,6 +9,7 @@ import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
+import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import kotlinx.coroutines.flow.Flow
@@ -41,9 +42,17 @@ class AnalyticsRepositoryImpl @Inject constructor(
         insightDao.upsertAll(api.insights().map { it.toEntity() })
     }
 
-    override suspend fun recompute(days: Int) {
-        api.recompute(days)
+    override suspend fun recompute(days: Int): ExecutionSyncReport {
+        val result = api.recompute(days)
         refresh(days)
+        return ExecutionSyncReport(
+            daysUpdated = result.executionDaysUpdated,
+            reposScanned = result.executionReposScanned,
+            source = "git",
+            todayCommits = result.executionTodayCommits,
+            todayCodingMinutes = result.executionTodayCodingMinutes,
+            message = result.executionMessage.orEmpty(),
+        )
     }
 
     override suspend fun notifications(): List<AppNotification> =

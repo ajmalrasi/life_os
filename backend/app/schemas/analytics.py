@@ -14,6 +14,7 @@ class DailyScoreOut(BaseModel):
     sleep_score: float | None
     recovery_score: float | None
     execution_score: float | None
+    wellness_score: float | None
     consistency_score: float | None
     burnout_risk: float | None
 
@@ -42,3 +43,8 @@ class RecomputeResult(BaseModel):
     days_scored: int
     states_classified: int
     insights_found: int
+    execution_days_updated: int = 0
+    execution_repos_scanned: int = 0
+    execution_today_commits: int | None = None
+    execution_today_coding_minutes: int | None = None
+    execution_message: str | None = None
