@@ -1,22 +1,16 @@
-"""GitHub REST API execution collector.
+"""GitHub execution collector via the official github-mcp-server MCP sidecar.
 
-Supplements (or replaces) the local ``git`` scan in ``execution_collector.py``.
-The local scan only sees repos on the machine running the backend, which fails
-when the backend is containerised without bind-mounts and misses commits pushed
-from other machines. This collector pulls the same signal — commits, code churn,
-coding sessions — straight from GitHub, so execution is observed regardless of
-where the work physically happened.
-
-Both collectors emit :class:`CommitEvent`s keyed by SHA, so running them side by
-side and merging never double-counts a commit (see ``execution_sync.py``).
+Replaces the direct REST API implementation with MCP tool calls so authentication,
+pagination, and rate-limit handling are delegated to the official server. The
+public interface (``GitHubApiCollector``, ``CommitEvent``) is unchanged, so
+``execution_sync.py`` and ``collectors.py`` need no edits.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 
-import httpx
-from dateutil import parser as date_parser
 from sqlalchemy.orm import Session
 
 from app.repositories.github_repo import GithubRepository
@@ -26,38 +20,39 @@ from app.services.execution_collector import (
     persist_rollups,
     rollup_commit_events,
 )
+from app.services.github_mcp_client import GitHubMcpClient
 
-GITHUB_API_BASE = "https://api.github.com"
-_PER_PAGE = 100
+logger = logging.getLogger(__name__)
+
+_MAX_PER_PAGE = 100
 _MAX_PAGES = 10  # safety cap: up to 1000 commits per repo per window
-_REQUEST_TIMEOUT = 30.0
 
 
 class GitHubApiCollector:
     def __init__(
         self,
         db: Session,
-        token: str | None,
+        token: str | None = None,  # kept for config compat; auth is on the MCP server
         repos: list[str] | None = None,
         author: str | None = None,
-        fetch_stats: bool = True,
+        mcp_url: str = "http://github-mcp:3000",
+        **_kwargs,
     ) -> None:
         self.db = db
-        self.token = (token or "").strip()
         self.repos = [r.strip() for r in (repos or []) if r.strip()]
         self.author = (author or "").strip() or None
-        self.fetch_stats = fetch_stats
+        self.client = GitHubMcpClient(mcp_url)
         self.github = GithubRepository(db)
 
     def sync(self, days: int = 14) -> ExecutionSyncReport:
-        if not self.token or not self.repos:
+        if not self.repos:
             return ExecutionSyncReport(
                 days_updated=0,
                 repos_scanned=0,
-                source="github",
+                source="github-mcp",
                 message=(
-                    "GitHub API collector not configured. Set GITHUB_TOKEN and "
-                    "GITHUB_REPOS (comma-separated owner/repo) in backend/.env."
+                    "GitHub MCP collector not configured. Set GITHUB_REPOS "
+                    "(comma-separated owner/repo) and GITHUB_TOKEN in backend/.env."
                 ),
             )
 
@@ -65,11 +60,10 @@ class GitHubApiCollector:
         start = end - timedelta(days=max(days - 1, 0))
         events = collect_github_commit_events(
             self.repos,
-            self.token,
             self.author,
             start,
             end,
-            fetch_stats=self.fetch_stats,
+            client=self.client,
         )
         rollups = rollup_commit_events(events)
         persist_rollups(self.github, rollups)
@@ -78,11 +72,11 @@ class GitHubApiCollector:
         return ExecutionSyncReport(
             days_updated=len(rollups),
             repos_scanned=len(self.repos),
-            source="github",
+            source="github-mcp",
             today_commits=today.commits if today else 0,
             today_coding_minutes=today.coding_minutes if today else 0,
             message=(
-                f"GitHub API: detected execution across {len(self.repos)} repo(s) "
+                f"GitHub MCP: detected execution across {len(self.repos)} repo(s) "
                 f"over {days}d ({len(rollups)} day(s) updated)."
             ),
         )
@@ -90,85 +84,81 @@ class GitHubApiCollector:
 
 def collect_github_commit_events(
     repos: list[str],
-    token: str,
     author: str | None,
     start: date,
     end: date,
-    fetch_stats: bool = True,
-    client: httpx.Client | None = None,
+    client: GitHubMcpClient | None = None,
+    mcp_url: str = "http://github-mcp:3000",
 ) -> list[CommitEvent]:
-    """Fetch commits for each ``owner/repo`` in the window and return events.
+    """Fetch commits for each ``owner/repo`` via MCP and return CommitEvents.
 
-    Network/HTTP failures for a given repo are swallowed (that repo simply
-    contributes no events) so a single bad repo or transient error never breaks
-    the nightly recompute.
+    Network / MCP failures for a single repo are logged and skipped so a bad
+    repo or transient error never breaks the nightly recompute.
     """
-    owned_client = client is None
     if client is None:
-        client = httpx.Client(timeout=_REQUEST_TIMEOUT, headers=_auth_headers(token))
+        client = GitHubMcpClient(mcp_url)
 
     since = datetime.combine(start, time.min, tzinfo=timezone.utc).isoformat()
     until = datetime.combine(end + timedelta(days=1), time.min, tzinfo=timezone.utc).isoformat()
 
     events: list[CommitEvent] = []
     seen: set[str] = set()
-    try:
-        for repo in repos:
-            for event in _collect_repo_events(
-                client, repo, author, since, until, fetch_stats
-            ):
-                if event.sha in seen:
-                    continue
-                seen.add(event.sha)
-                events.append(event)
-    finally:
-        if owned_client:
-            client.close()
+
+    for repo in repos:
+        try:
+            repo_events = _collect_repo_events(client, repo, author, since, until)
+            for event in repo_events:
+                if event.sha not in seen:
+                    seen.add(event.sha)
+                    events.append(event)
+        except Exception as exc:
+            logger.warning("github-mcp: skipping repo %s — %s", repo, exc)
+
     return events
 
 
 def _collect_repo_events(
-    client: httpx.Client,
+    client: GitHubMcpClient,
     repo: str,
     author: str | None,
     since: str,
     until: str,
-    fetch_stats: bool,
 ) -> list[CommitEvent]:
-    params: dict[str, str | int] = {"since": since, "until": until, "per_page": _PER_PAGE}
-    if author:
-        params["author"] = author
-
+    owner, name = _split_repo(repo)
     events: list[CommitEvent] = []
-    url: str | None = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    next_params: dict[str, str | int] | None = params
-    pages = 0
 
-    while url and pages < _MAX_PAGES:
-        try:
-            resp = client.get(url, params=next_params)
-        except httpx.HTTPError:
-            break
-        if resp.status_code != 200:
+    for page in range(1, _MAX_PAGES + 1):
+        args: dict = {
+            "owner": owner,
+            "repo": name,
+            "since": since,
+            "until": until,
+            "per_page": _MAX_PER_PAGE,
+            "page": page,
+        }
+        if author:
+            args["author"] = author
+
+        commits = client.call_tool("list_commits", args)
+        if not commits or not isinstance(commits, list):
             break
 
-        for entry in resp.json():
-            event = _parse_commit(client, repo, entry, fetch_stats)
+        for entry in commits:
+            event = _parse_commit(client, owner, name, entry)
             if event is not None:
                 events.append(event)
 
-        pages += 1
-        url = _next_link(resp)
-        next_params = None  # the Link header already carries query params
+        if len(commits) < _MAX_PER_PAGE:
+            break  # last page
 
     return events
 
 
 def _parse_commit(
-    client: httpx.Client,
+    client: GitHubMcpClient,
+    owner: str,
     repo: str,
     entry: dict,
-    fetch_stats: bool,
 ) -> CommitEvent | None:
     sha = entry.get("sha")
     if not sha:
@@ -179,55 +169,39 @@ def _parse_commit(
     raw_date = author_info.get("date")
     if not raw_date:
         return None
+
     try:
-        ts = int(date_parser.isoparse(raw_date).timestamp())
+        ts = int(datetime.fromisoformat(raw_date.rstrip("Z")).replace(tzinfo=timezone.utc).timestamp())
     except (ValueError, TypeError):
         return None
 
-    additions = 0
-    deletions = 0
-    if fetch_stats:
-        additions, deletions = _fetch_commit_stats(client, repo, sha)
+    additions, deletions = _fetch_stats(client, owner, repo, sha)
 
     return CommitEvent(
         sha=sha,
-        repo=f"github:{repo}",
+        repo=f"github:{owner}/{repo}",
         ts=ts,
         additions=additions,
         deletions=deletions,
     )
 
 
-def _fetch_commit_stats(client: httpx.Client, repo: str, sha: str) -> tuple[int, int]:
-    try:
-        resp = client.get(f"{GITHUB_API_BASE}/repos/{repo}/commits/{sha}")
-    except httpx.HTTPError:
+def _fetch_stats(
+    client: GitHubMcpClient,
+    owner: str,
+    repo: str,
+    sha: str,
+) -> tuple[int, int]:
+    detail = client.call_tool("get_commit", {"owner": owner, "repo": repo, "sha": sha})
+    if not detail or not isinstance(detail, dict):
         return 0, 0
-    if resp.status_code != 200:
-        return 0, 0
-    stats = resp.json().get("stats") or {}
+    stats = detail.get("stats") or {}
     return int(stats.get("additions", 0) or 0), int(stats.get("deletions", 0) or 0)
 
 
-def _next_link(resp: httpx.Response) -> str | None:
-    """Extract the ``rel="next"`` URL from a GitHub Link header, if present."""
-    link = resp.headers.get("Link") or resp.headers.get("link")
-    if not link:
-        return None
-    for part in link.split(","):
-        segments = part.split(";")
-        if len(segments) < 2:
-            continue
-        url = segments[0].strip().strip("<>")
-        for seg in segments[1:]:
-            if seg.strip() == 'rel="next"':
-                return url
-    return None
-
-
-def _auth_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+def _split_repo(repo: str) -> tuple[str, str]:
+    """Split ``owner/repo`` into ``(owner, repo)``."""
+    parts = repo.split("/", 1)
+    if len(parts) != 2:
+        raise ValueError(f"GITHUB_REPOS entries must be 'owner/repo', got: {repo!r}")
+    return parts[0], parts[1]

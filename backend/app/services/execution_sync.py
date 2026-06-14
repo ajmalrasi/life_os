@@ -46,12 +46,12 @@ def run_execution_sync(db: Session, settings: Settings, days: int = 14) -> Execu
     if settings.github_enabled:
         github_events = collect_github_commit_events(
             settings.github_repos_list,
-            settings.github_token,
             settings.github_user or None,
             start,
             end,
+            mcp_url=settings.github_mcp_url,
         )
-        sources.append(f"github({len(settings.github_repos_list)})")
+        sources.append(f"github-mcp({len(settings.github_repos_list)})")
 
     # GitHub events first so their churn stats win when the same SHA appears in
     # both sources.

@@ -181,23 +181,23 @@ LifeOS is **not** a fitness app or a budgeting app. It is a private, local-first
 
 ## Optional: Enable Execution Tracking (GitHub)
 
-The backend can auto-detect commits via the GitHub API (complements the local git scan).
+The backend uses the official [github-mcp-server](https://github.com/github/github-mcp-server) as a Docker sidecar. This replaces any manual REST calls with the maintained MCP tool layer, and also gives the LLM (qwen3.5:4b) direct access to GitHub tools during chat (`list_commits`, `get_commit`, `search_commits`, `get_file_contents`).
 
 1. **Create a GitHub Personal Access Token** (fine-grained, read access to your repos)
 
 2. **On Jetson, edit `~/life_os/backend/.env`:**
    ```env
    GITHUB_TOKEN=ghp_xxxxx...
-   GITHUB_REPOS=ajmalrasi/life_os,your/other_repo
+   GITHUB_REPOS=ajmalrasi/life_os,ajmalrasi/other_repo
    GITHUB_USER=ajmalrasi
    ```
 
-3. **Restart the backend:**
+3. **Restart the stack** (`github-mcp` sidecar starts automatically):
    ```bash
-   docker compose restart api
+   docker compose up -d
    ```
 
-4. **Next sync will fetch commits** and compute your Execution score.
+4. **Next sync fetches commits** via the MCP server and computes your Execution score. The LLM can also search GitHub live during chat.
 
 ---
 
@@ -255,10 +255,11 @@ OPENCLAW_API_KEY=
 EXECUTION_REPO_PATHS=/Users/you/life_os
 EXECUTION_GIT_AUTHOR=
 
-# GitHub API execution (optional)
+# GitHub execution via github-mcp-server sidecar (optional)
 GITHUB_TOKEN=ghp_xxxxx
-GITHUB_REPOS=user/repo1,user/repo2
-GITHUB_USER=your_github_handle
+GITHUB_REPOS=ajmalrasi/life_os,ajmalrasi/other_repo
+GITHUB_USER=ajmalrasi
+GITHUB_MCP_URL=http://github-mcp:3000  # internal docker-compose URL, don't change
 
 # Firebase Cloud Messaging (optional, for push notifications)
 FIREBASE_CREDENTIALS_PATH=

@@ -31,13 +31,12 @@ class Settings(BaseSettings):
     execution_repo_paths: str = ""
     execution_git_author: str = ""  # optional git --author filter (email or name)
 
-    # GitHub API execution collection — supplements/replaces the local git scan
-    # so work done on other machines (or inside Docker without bind-mounts) is
-    # still observed. Runs alongside the local scan during recompute and is
-    # deduplicated against it by commit SHA.
+    # GitHub execution collection via the official github-mcp-server sidecar.
+    # The sidecar runs inside docker-compose; GITHUB_TOKEN is its auth credential.
     github_token: str = ""  # personal access token (repo / contents:read)
-    github_repos: str = ""  # comma-separated owner/repo, e.g. kpajmalrasi/life_os
-    github_user: str = ""  # optional commit author login/email filter
+    github_repos: str = ""  # comma-separated owner/repo, e.g. ajmalrasi/life_os
+    github_user: str = ""   # optional commit author login/email filter
+    github_mcp_url: str = "http://github-mcp:3000"  # internal docker-compose URL
 
     # Push notifications (Firebase Cloud Messaging, HTTP v1).
     # Path to a Firebase service-account JSON. Leave blank to disable push;

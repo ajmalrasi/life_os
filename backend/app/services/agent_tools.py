@@ -17,9 +17,11 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.repositories.analytics_repo import ScoreRepository, StateRepository
 from app.repositories.github_repo import GithubRepository
 from app.repositories.mood_repo import MoodRepository
+from app.services.github_mcp_client import GitHubMcpClient
 
 _MAX_DAYS = 90
 
@@ -69,6 +71,40 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "github_search",
+            "description": (
+                "Query GitHub live via the official github-mcp-server for recent commits, "
+                "file contents, or code search. Use when you need information beyond what "
+                "is cached in the local database — e.g. a specific commit message, diff, "
+                "or activity on a repo not yet synced."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool": {
+                        "type": "string",
+                        "description": (
+                            "The github-mcp-server tool to call. Common values: "
+                            "'list_commits', 'get_commit', 'search_commits', "
+                            "'get_file_contents', 'list_branches'."
+                        ),
+                    },
+                    "arguments": {
+                        "type": "object",
+                        "description": (
+                            "Arguments for the chosen tool. For list_commits: "
+                            "{'owner':'user','repo':'name','since':'ISO8601','until':'ISO8601'}. "
+                            "For get_commit: {'owner':'user','repo':'name','sha':'<sha>'}."
+                        ),
+                    },
+                },
+                "required": ["tool", "arguments"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "health_summary",
             "description": (
                 "Averaged sleep/recovery/wellness/execution scores plus mood/energy/focus/"
@@ -98,19 +134,26 @@ class AgentTools:
         self.states = StateRepository(db)
         self.mood = MoodRepository(db)
         self.github = GithubRepository(db)
+        settings = get_settings()
+        self._mcp = GitHubMcpClient(settings.github_mcp_url)
 
     def run(self, name: str, arguments: dict | None = None) -> dict:
         """Dispatch a tool call. Never raises — returns an ``error`` payload instead."""
         args = arguments or {}
         if name not in _TOOL_NAMES:
             return {"error": f"unknown tool '{name}'", "available": sorted(_TOOL_NAMES)}
-        days = _clamp_days(args.get("days", 14))
-        handler = {
-            "git_log": self.git_log,
-            "github_events": self.github_events,
-            "health_summary": self.health_summary,
-        }[name]
         try:
+            if name == "github_search":
+                return self.github_search(
+                    tool=args.get("tool", ""),
+                    arguments=args.get("arguments"),
+                )
+            days = _clamp_days(args.get("days", 14))
+            handler = {
+                "git_log": self.git_log,
+                "github_events": self.github_events,
+                "health_summary": self.health_summary,
+            }[name]
             return handler(days)
         except Exception as exc:  # tools must degrade, never crash the chat
             return {"error": f"{name} failed: {exc}"}
@@ -158,6 +201,15 @@ class AgentTools:
                 "deletions": sum(r.deletions for r in rows),
             },
         }
+
+    def github_search(self, tool: str = "", arguments: dict | None = None) -> dict:
+        """Proxy a tool call to the github-mcp-server and return its result."""
+        if not tool:
+            return {"error": "github_search requires a 'tool' argument"}
+        result = self._mcp.call_tool(tool, arguments or {})
+        if result is None:
+            return {"error": f"github-mcp-server unreachable or tool '{tool}' failed"}
+        return {"tool": tool, "result": result}
 
     def health_summary(self, days: int) -> dict:
         start, end = _window(days)

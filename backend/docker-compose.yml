@@ -16,6 +16,15 @@ services:
       timeout: 5s
       retries: 5
 
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    restart: unless-stopped
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+    command: ["--transport=sse", "--host=0.0.0.0", "--port=3000"]
+    ports:
+      - "3000:3000"
+
   api:
     build: .
     restart: unless-stopped
@@ -24,10 +33,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-lifeos}:${POSTGRES_PASSWORD:-lifeos}@db:5432/${POSTGRES_DB:-lifeos}
-      # OpenClaw runs on the Jetson host network. host.docker.internal resolves
-      # to the host on Docker Desktop; on Linux/Jetson use the host LAN IP.
-      OPENCLAW_BASE_URL: ${OPENCLAW_BASE_URL:-http://host.docker.internal:8080}
-      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-openclaw}
+      OPENCLAW_BASE_URL: ${OPENCLAW_BASE_URL:-http://host.docker.internal:11434}
+      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-qwen3.5:4b}
+      GITHUB_REPOS: ${GITHUB_REPOS:-}
+      GITHUB_USER: ${GITHUB_USER:-}
+      GITHUB_MCP_URL: http://github-mcp:3000
     ports:
       - "8000:8000"
     extra_hosts:
