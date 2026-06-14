@@ -64,17 +64,17 @@ class GitHubMcpClient:
 
     async def _ping(self) -> None:
         from mcp import ClientSession
-        from mcp.client.sse import sse_client
+        from mcp.client.streamable_http import streamablehttp_client
 
-        async with sse_client(f"{self.server_url}/sse") as (read, write):
+        async with streamablehttp_client(self.server_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
     async def _call_tool(self, tool_name: str, arguments: dict) -> Any:
         from mcp import ClientSession
-        from mcp.client.sse import sse_client
+        from mcp.client.streamable_http import streamablehttp_client
 
-        async with sse_client(f"{self.server_url}/sse") as (read, write):
+        async with streamablehttp_client(self.server_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)
