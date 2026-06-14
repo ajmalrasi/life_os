@@ -49,7 +49,7 @@ def run_execution_sync(db: Session, settings: Settings, days: int = 14) -> Execu
             settings.github_user or None,
             start,
             end,
-            mcp_url=settings.github_mcp_url,
+            token=settings.github_token,
         )
         sources.append(f"github-mcp({len(settings.github_repos_list)})")
 

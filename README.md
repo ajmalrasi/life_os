@@ -259,7 +259,6 @@ EXECUTION_GIT_AUTHOR=
 GITHUB_TOKEN=ghp_xxxxx
 GITHUB_REPOS=ajmalrasi/life_os,ajmalrasi/other_repo
 GITHUB_USER=ajmalrasi
-GITHUB_MCP_URL=http://github-mcp:3000  # internal docker-compose URL, don't change
 
 # Firebase Cloud Messaging (optional, for push notifications)
 FIREBASE_CREDENTIALS_PATH=

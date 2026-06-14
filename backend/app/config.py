@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     github_token: str = ""  # personal access token (repo / contents:read)
     github_repos: str = ""  # comma-separated owner/repo, e.g. ajmalrasi/life_os
     github_user: str = ""   # optional commit author login/email filter
-    github_mcp_url: str = "http://github-mcp:3000/mcp"  # internal docker-compose URL
 
     # Push notifications (Firebase Cloud Messaging, HTTP v1).
     # Path to a Firebase service-account JSON. Leave blank to disable push;

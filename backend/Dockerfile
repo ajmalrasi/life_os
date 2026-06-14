@@ -1,4 +1,7 @@
-# LifeOS backend. Multi-arch friendly (works on Jetson Orin Nano arm64 + x86).
+# Stage 1: grab the github-mcp-server binary (multi-arch: arm64 on Jetson, amd64 elsewhere)
+FROM ghcr.io/github/github-mcp-server AS mcp-binary
+
+# Stage 2: LifeOS backend
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -7,7 +10,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System deps for psycopg2 + numpy wheels.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
@@ -16,6 +18,9 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
+
+# github-mcp-server binary for stdio-based GitHub tool calls (no OAuth needed)
+COPY --from=mcp-binary /server/github-mcp-server /usr/local/bin/github-mcp-server
 
 EXPOSE 8000
 

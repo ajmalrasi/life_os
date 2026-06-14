@@ -32,16 +32,15 @@ class GitHubApiCollector:
     def __init__(
         self,
         db: Session,
-        token: str | None = None,  # kept for config compat; auth is on the MCP server
+        token: str | None = None,
         repos: list[str] | None = None,
         author: str | None = None,
-        mcp_url: str = "http://github-mcp:3000",
         **_kwargs,
     ) -> None:
         self.db = db
         self.repos = [r.strip() for r in (repos or []) if r.strip()]
         self.author = (author or "").strip() or None
-        self.client = GitHubMcpClient(mcp_url)
+        self.client = GitHubMcpClient(token=(token or "").strip())
         self.github = GithubRepository(db)
 
     def sync(self, days: int = 14) -> ExecutionSyncReport:
@@ -88,7 +87,7 @@ def collect_github_commit_events(
     start: date,
     end: date,
     client: GitHubMcpClient | None = None,
-    mcp_url: str = "http://github-mcp:3000",
+    token: str = "",
 ) -> list[CommitEvent]:
     """Fetch commits for each ``owner/repo`` via MCP and return CommitEvents.
 
@@ -96,7 +95,7 @@ def collect_github_commit_events(
     repo or transient error never breaks the nightly recompute.
     """
     if client is None:
-        client = GitHubMcpClient(mcp_url)
+        client = GitHubMcpClient(token=token)
 
     since = datetime.combine(start, time.min, tzinfo=timezone.utc).isoformat()
     until = datetime.combine(end + timedelta(days=1), time.min, tzinfo=timezone.utc).isoformat()

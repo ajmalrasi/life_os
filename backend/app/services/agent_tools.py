@@ -135,7 +135,7 @@ class AgentTools:
         self.mood = MoodRepository(db)
         self.github = GithubRepository(db)
         settings = get_settings()
-        self._mcp = GitHubMcpClient(settings.github_mcp_url)
+        self._mcp = GitHubMcpClient(token=settings.github_token)
 
     def run(self, name: str, arguments: dict | None = None) -> dict:
         """Dispatch a tool call. Never raises — returns an ``error`` payload instead."""
