@@ -1,0 +1,55 @@
+package com.lifeos.app.di
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
+import androidx.room.Room
+import com.lifeos.app.data.local.InsightDao
+import com.lifeos.app.data.local.LifeOsDatabase
+import com.lifeos.app.data.local.MoodDao
+import com.lifeos.app.data.local.ScoreDao
+import com.lifeos.app.data.local.StateDao
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import javax.inject.Singleton
+
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "lifeos_settings")
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun appScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @Provides
+    @Singleton
+    fun dataStore(@ApplicationContext context: Context): DataStore<Preferences> = context.dataStore
+
+    @Provides
+    @Singleton
+    fun database(@ApplicationContext context: Context): LifeOsDatabase =
+        Room.databaseBuilder(context, LifeOsDatabase::class.java, "lifeos.db")
+            .fallbackToDestructiveMigration()
+            .build()
+
+    @Provides
+    fun moodDao(db: LifeOsDatabase): MoodDao = db.moodDao()
+
+    @Provides
+    fun scoreDao(db: LifeOsDatabase): ScoreDao = db.scoreDao()
+
+    @Provides
+    fun stateDao(db: LifeOsDatabase): StateDao = db.stateDao()
+
+    @Provides
+    fun insightDao(db: LifeOsDatabase): InsightDao = db.insightDao()
+}

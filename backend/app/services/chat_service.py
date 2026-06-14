@@ -1,0 +1,180 @@
+"""Grounded chat service.
+
+Builds a compact, factual snapshot of the user's recent data and forces the
+LLM to answer *only* from it, citing metrics. The system prompt and the
+machine-readable context together implement the "no hallucinations, every
+conclusion cites supporting metrics" requirement.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date, timedelta
+
+from sqlalchemy.orm import Session
+
+from app.repositories.analytics_repo import (
+    InsightRepository,
+    ScoreRepository,
+    StateRepository,
+)
+from app.repositories.github_repo import GithubRepository
+from app.repositories.mood_repo import MoodRepository
+from app.schemas.chat import ChatRequest, ChatResponse, Citation
+from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+
+SYSTEM_PROMPT = (
+    "You are LifeOS, a personal intelligence companion. You analyze the user's own "
+    "health, mood, and project-execution data to explain why they perform, "
+    "procrastinate, or burn out.\n\n"
+    "STRICT RULES:\n"
+    "1. Answer ONLY using the DATA CONTEXT provided in the next message. Treat it as "
+    "the single source of truth.\n"
+    "2. Never invent numbers. If the data does not support a conclusion, say so plainly.\n"
+    "3. Every claim must cite a specific metric or insight from the context, e.g. "
+    "'(avg sleep score 78 over 30d)'.\n"
+    "4. Be concise, direct, and practical. Prefer 'what to do' over generic advice.\n"
+    "5. If the context is empty or insufficient, tell the user you need more data "
+    "(e.g. more days of sync or a mood check-in)."
+)
+
+
+class ChatService:
+    def __init__(self, db: Session, client: OpenClawClient | None = None) -> None:
+        self.db = db
+        self.client = client or OpenClawClient()
+        self.scores = ScoreRepository(db)
+        self.states = StateRepository(db)
+        self.mood = MoodRepository(db)
+        self.github = GithubRepository(db)
+        self.insights = InsightRepository(db)
+
+    def build_context(self, days: int) -> dict:
+        end = date.today()
+        start = end - timedelta(days=days - 1)
+
+        score_rows = self.scores.range(start, end)
+        state_rows = self.states.range(start, end)
+        mood_rows = self.mood.range(start, end)
+        gh_rows = self.github.range(start, end)
+        insight_rows = self.insights.all()
+
+        def avg(attr: str, rows) -> float | None:
+            vals = [getattr(r, attr) for r in rows if getattr(r, attr) is not None]
+            return round(sum(vals) / len(vals), 1) if vals else None
+
+        latest_state = state_rows[-1] if state_rows else None
+
+        return {
+            "window": {"start": start.isoformat(), "end": end.isoformat(), "days": days},
+            "averages": {
+                "sleep_score": avg("sleep_score", score_rows),
+                "recovery_score": avg("recovery_score", score_rows),
+                "execution_score": avg("execution_score", score_rows),
+                "consistency_score": avg("consistency_score", score_rows),
+                "burnout_risk": avg("burnout_risk", score_rows),
+                "mood": avg("mood", mood_rows),
+                "focus": avg("focus", mood_rows),
+                "stress": avg("stress", mood_rows),
+            },
+            "current_state": (
+                {
+                    "day": latest_state.day.isoformat(),
+                    "state": latest_state.state.value,
+                    "confidence": latest_state.confidence,
+                    "rationale": latest_state.rationale,
+                }
+                if latest_state
+                else None
+            ),
+            "totals": {
+                "commits": sum(g.commits for g in gh_rows),
+                "coding_minutes": sum(g.coding_minutes for g in gh_rows),
+                "days_with_mood_checkin": len(mood_rows),
+                "days_with_scores": len(score_rows),
+            },
+            "discovered_patterns": [
+                {"summary": i.summary, "r": i.correlation, "n": i.sample_size}
+                for i in insight_rows
+            ],
+            "recent_daily": [
+                {
+                    "day": s.day.isoformat(),
+                    "sleep": s.sleep_score,
+                    "recovery": s.recovery_score,
+                    "execution": s.execution_score,
+                }
+                for s in score_rows[-14:]
+            ],
+        }
+
+    def _citations(self, context: dict) -> list[Citation]:
+        cites: list[Citation] = []
+        for key, value in context["averages"].items():
+            if value is not None:
+                cites.append(Citation(metric=f"avg_{key}_{context['window']['days']}d", value=str(value)))
+        if context["current_state"]:
+            cites.append(
+                Citation(metric="current_state", value=context["current_state"]["state"])
+            )
+        return cites
+
+    def ask(self, req: ChatRequest) -> ChatResponse:
+        context = self.build_context(req.context_days)
+
+        has_data = context["totals"]["days_with_scores"] > 0 or context["totals"][
+            "days_with_mood_checkin"
+        ] > 0
+        if not has_data:
+            return ChatResponse(
+                answer=(
+                    "I don't have any data yet. Sync Health Connect, log a mood "
+                    "check-in, or push GitHub activity, then ask me again."
+                ),
+                citations=[],
+                grounded=True,
+            )
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        for m in req.history[-10:]:
+            messages.append({"role": m.role, "content": m.content})
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "DATA CONTEXT (JSON, your only source of truth):\n"
+                    + json.dumps(context, indent=2)
+                    + f"\n\nQUESTION: {req.message}"
+                ),
+            }
+        )
+
+        try:
+            answer = self.client.chat(messages)
+            grounded = True
+        except OpenClawUnavailable:
+            answer = self._fallback(context, req.message)
+            grounded = True
+
+        return ChatResponse(answer=answer, citations=self._citations(context), grounded=grounded)
+
+    def _fallback(self, context: dict, question: str) -> str:
+        """Deterministic, data-only answer when the LLM server is unreachable.
+
+        Still grounded — it only restates numbers we actually have.
+        """
+        avgs = context["averages"]
+        parts = ["OpenClaw is unreachable, so here is a data-only summary:"]
+        for key, value in avgs.items():
+            if value is not None:
+                parts.append(f"- {key.replace('_', ' ')}: {value} (avg over {context['window']['days']}d)")
+        if context["current_state"]:
+            parts.append(
+                f"- current state: {context['current_state']['state']} "
+                f"({context['current_state']['rationale']})"
+            )
+        if context["discovered_patterns"]:
+            parts.append("Discovered patterns:")
+            for p in context["discovered_patterns"][:5]:
+                parts.append(f"- {p['summary']}")
+        return "\n".join(parts)

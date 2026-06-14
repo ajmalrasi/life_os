@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+*.sqlite3
+
+# Env
+.env
+*.env
+!*.env.example
+
+# Docker
+postgres_data/
+
+# Android / Gradle
+.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/local.properties
+*.iml
+.cxx/
+captures/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log
