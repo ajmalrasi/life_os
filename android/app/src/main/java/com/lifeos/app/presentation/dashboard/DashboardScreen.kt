@@ -78,6 +78,13 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         }
 
         item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ScoreCard("Fitness", state.latestScore?.fitnessScore, modifier = Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
+            }
+        }
+
+        item {
             StateHeroCard(
                 stateLabel = state.latestState?.state?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Unknown",
                 confidence = state.latestState?.confidence?.let { (it * 100).toInt() },

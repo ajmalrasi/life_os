@@ -19,6 +19,7 @@ class StateInputs:
     execution_score: float | None = None
     consistency_score: float | None = None
     burnout_risk: float | None = None
+    fitness_score: float | None = None
     mood: int | None = None      # 1-5
     focus: int | None = None     # 1-5
     stress: int | None = None    # 1-5
@@ -52,7 +53,7 @@ def classify(inp: StateInputs) -> StateResult:
             f"Strong execution ({exe:.0f}) without standout recovery.",
         )
         scores[LifeState.AVOIDANCE_MODE] = (
-            _and(_low(exe), _ok_capacity(rec, inp.sleep_score)),
+            _and(_low(exe), _ok_capacity(rec, inp.sleep_score, inp.fitness_score)),
             f"Low execution ({exe:.0f}) despite adequate capacity — likely avoidance.",
         )
 
@@ -117,8 +118,13 @@ def _low_or_none(v: float | None) -> float:
     return _low(v)
 
 
-def _ok_capacity(recovery: float | None, sleep: float | None) -> float:
-    caps = [c for c in (recovery, sleep) if c is not None]
+def _ok_capacity(recovery: float | None, sleep: float | None, fitness: float | None = None) -> float:
+    """Did the body have capacity to act? Recovery, sleep, and movement together.
+
+    A day where you were recovered, rested, *and* physically active but produced
+    nothing reads more clearly as avoidance than low output on a depleted day.
+    """
+    caps = [c for c in (recovery, sleep, fitness) if c is not None]
     if not caps:
         return 0.5
     return _ramp(sum(caps) / len(caps), 45, 70)

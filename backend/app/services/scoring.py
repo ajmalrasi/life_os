@@ -51,6 +51,15 @@ class ExecutionInputs:
 
 
 @dataclass
+class FitnessInputs:
+    """Physical-activity signals for a single day, from Health Connect."""
+
+    workout_minutes: float | None = None   # intentional exercise (ExerciseSession)
+    active_calories: float | None = None   # kcal burned that day
+    steps: float | None = None             # step count (baseline NEAT movement)
+
+
+@dataclass
 class WellnessInputs:
     """Subjective Pulse check-in fields, each on a 1-5 Likert scale."""
 
@@ -97,6 +106,35 @@ def wellness_score(inp: WellnessInputs) -> float | None:
 
     total_weight = sum(w for _, w in components)
     score = sum(v * w for v, w in components) / total_weight
+    return round(_clamp(score), 1)
+
+
+def fitness_score(inp: FitnessInputs) -> float | None:
+    """Physical-activity score (0-100) — a life *driver*, not a vanity metric.
+
+    LifeOS uses this to learn how movement affects execution, mood, and recovery
+    (e.g. "you ship more the day after you train"). Intentional training dominates;
+    daily steps provide a baseline; calories corroborate effort.
+
+    Returns ``None`` only when no activity data was synced for the day, so a
+    missing sync never reads as sedentary. A *synced-but-sedentary* day legitimately
+    scores low — that is a real signal the correlation engine can use.
+    """
+    if inp.workout_minutes is None and inp.steps is None and inp.active_calories is None:
+        return None
+
+    workout = inp.workout_minutes or 0.0
+    steps = inp.steps or 0.0
+    calories = inp.active_calories or 0.0
+
+    # 45 min of intentional training saturates the workout component.
+    workout_c = _clamp(workout / 45.0 * 100.0)
+    # 10k steps is the classic "active day" target.
+    steps_c = _clamp(steps / 10000.0 * 100.0)
+    # ~700 kcal of activity energy saturates (rough; personal baselines come later).
+    calories_c = _clamp(calories / 700.0 * 100.0)
+
+    score = 0.55 * workout_c + 0.30 * steps_c + 0.15 * calories_c
     return round(_clamp(score), 1)
 
 

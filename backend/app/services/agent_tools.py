@@ -229,6 +229,7 @@ class AgentTools:
                 "recovery_score": avg("recovery_score", score_rows),
                 "execution_score": avg("execution_score", score_rows),
                 "wellness_score": avg("wellness_score", score_rows),
+                "fitness_score": avg("fitness_score", score_rows),
                 "burnout_risk": avg("burnout_risk", score_rows),
                 "mood": avg("mood", mood_rows),
                 "energy": avg("energy", mood_rows),

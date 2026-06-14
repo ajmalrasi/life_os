@@ -18,10 +18,10 @@ object DemoData {
     val todayPulse: DayPulse = DayPulse.FLOW
 
     val scores: List<DailyScore> = listOf(
-        DailyScore(today, sleepScore = 82.0, recoveryScore = 78.0, executionScore = 71.0, consistencyScore = 68.0, burnoutRisk = 22.0, wellnessScore = 80.0),
-        DailyScore(today.minusDays(1), sleepScore = 74.0, recoveryScore = 70.0, executionScore = 85.0, consistencyScore = 72.0, burnoutRisk = 28.0, wellnessScore = 72.0),
-        DailyScore(today.minusDays(2), sleepScore = 58.0, recoveryScore = 52.0, executionScore = 34.0, consistencyScore = 45.0, burnoutRisk = 61.0, wellnessScore = 40.0),
-        DailyScore(today.minusDays(3), sleepScore = 65.0, recoveryScore = 60.0, executionScore = 55.0, consistencyScore = 58.0, burnoutRisk = 40.0, wellnessScore = 58.0),
+        DailyScore(today, sleepScore = 82.0, recoveryScore = 78.0, executionScore = 71.0, consistencyScore = 68.0, burnoutRisk = 22.0, wellnessScore = 80.0, fitnessScore = 76.0),
+        DailyScore(today.minusDays(1), sleepScore = 74.0, recoveryScore = 70.0, executionScore = 85.0, consistencyScore = 72.0, burnoutRisk = 28.0, wellnessScore = 72.0, fitnessScore = 88.0),
+        DailyScore(today.minusDays(2), sleepScore = 58.0, recoveryScore = 52.0, executionScore = 34.0, consistencyScore = 45.0, burnoutRisk = 61.0, wellnessScore = 40.0, fitnessScore = 18.0),
+        DailyScore(today.minusDays(3), sleepScore = 65.0, recoveryScore = 60.0, executionScore = 55.0, consistencyScore = 58.0, burnoutRisk = 40.0, wellnessScore = 58.0, fitnessScore = 45.0),
     )
 
     val state: DailyState = DailyState(

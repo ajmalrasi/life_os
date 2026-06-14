@@ -113,6 +113,15 @@ class AnalyticsService:
             )
         )
 
+        # --- fitness (physical activity from Health Connect) ---
+        fitness = scoring.fitness_score(
+            scoring.FitnessInputs(
+                workout_minutes=self._sum(day, HealthRecordType.WORKOUT),
+                active_calories=self._sum(day, HealthRecordType.CALORIES),
+                steps=self._sum(day, HealthRecordType.STEPS),
+            )
+        )
+
         # --- consistency (trailing execution) ---
         exec_hist = self._trailing_execution(day, _CONSISTENCY_WINDOW)
         consistency = scoring.consistency_score(exec_hist)
@@ -126,6 +135,7 @@ class AnalyticsService:
             recovery_score=recovery,
             execution_score=execution,
             wellness_score=wellness,
+            fitness_score=fitness,
             consistency_score=consistency,
             burnout_risk=burnout,
         )
@@ -138,6 +148,7 @@ class AnalyticsService:
                 execution_score=execution,
                 consistency_score=consistency,
                 burnout_risk=burnout,
+                fitness_score=fitness,
                 mood=mood.mood if mood else None,
                 focus=mood.focus if mood else None,
                 stress=mood.stress if mood else None,
@@ -190,6 +201,7 @@ class AnalyticsService:
         recovery = series(lambda d: getattr(score_rows.get(d), "recovery_score", None))
         execution = series(lambda d: getattr(score_rows.get(d), "execution_score", None))
         wellness = series(lambda d: getattr(score_rows.get(d), "wellness_score", None))
+        fitness = series(lambda d: getattr(score_rows.get(d), "fitness_score", None))
         mood_s = series(lambda d: getattr(mood_rows.get(d), "mood", None))
         focus_s = series(lambda d: getattr(mood_rows.get(d), "focus", None))
 
@@ -198,6 +210,7 @@ class AnalyticsService:
             "recovery_score": recovery,
             "execution_score": execution,
             "wellness_score": wellness,
+            "fitness_score": fitness,
             "mood": mood_s,
             "focus": focus_s,
         }
@@ -213,6 +226,13 @@ class AnalyticsService:
             ("recovery_score", "wellness_score"),
             ("execution_score", "mood"),
             ("wellness_score", "execution_score"),
+            # Fitness as a driver of productivity, mood, and sleep — the "move to
+            # perform" hypothesis this app exists to test.
+            ("fitness_score", "execution_score"),
+            ("fitness_score", "mood"),
+            ("fitness_score", "wellness_score"),
+            ("fitness_score", "focus"),
+            ("fitness_score", "sleep_score"),
         ]
 
         found = 0

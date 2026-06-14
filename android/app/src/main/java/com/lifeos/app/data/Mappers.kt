@@ -49,10 +49,10 @@ fun GithubActivity.toDto() = GithubDto(
 
 // --- Scores ---
 fun DailyScoreDto.toEntity() = ScoreEntity(
-    day, sleepScore, recoveryScore, executionScore, consistencyScore, burnoutRisk, wellnessScore,
+    day, sleepScore, recoveryScore, executionScore, consistencyScore, burnoutRisk, wellnessScore, fitnessScore,
 )
 fun ScoreEntity.toDomain() = DailyScore(
-    LocalDate.parse(day), sleepScore, recoveryScore, executionScore, consistencyScore, burnoutRisk, wellnessScore,
+    LocalDate.parse(day), sleepScore, recoveryScore, executionScore, consistencyScore, burnoutRisk, wellnessScore, fitnessScore,
 )
 
 // --- States ---

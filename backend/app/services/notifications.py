@@ -47,7 +47,25 @@ class NotificationService:
         out.extend(self._declining_execution(scores))
         out.extend(self._idle_projects(gh))
         out.extend(self._low_wellness(scores))
+        out.extend(self._sedentary(scores))
         return out
+
+    def _sedentary(self, scores) -> list[Notification]:
+        """Sustained low movement — nudge action, since fitness tends to lift mood
+        and execution. Only fires when we actually have fitness data to judge."""
+        recent = [s.fitness_score for s in scores[-5:] if s.fitness_score is not None]
+        if len(recent) >= 3:
+            avg = sum(recent) / len(recent)
+            if avg < 30.0:
+                return [
+                    Notification(
+                        "info",
+                        "Movement has been low this week",
+                        f"Fitness score has averaged {avg:.0f} over the last {len(recent)} days. "
+                        "A short workout or walk often lifts mood and focus the same day.",
+                    )
+                ]
+        return []
 
     def _low_wellness(self, scores) -> list[Notification]:
         recent = [s.wellness_score for s in scores[-5:] if s.wellness_score is not None]

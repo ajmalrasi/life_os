@@ -59,6 +59,7 @@ data class DailyScoreDto(
     @SerialName("consistency_score") val consistencyScore: Double? = null,
     @SerialName("burnout_risk") val burnoutRisk: Double? = null,
     @SerialName("wellness_score") val wellnessScore: Double? = null,
+    @SerialName("fitness_score") val fitnessScore: Double? = null,
 )
 
 @Serializable

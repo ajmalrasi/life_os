@@ -57,6 +57,7 @@ data class DailyScore(
     val consistencyScore: Double?,
     val burnoutRisk: Double?,
     val wellnessScore: Double? = null,
+    val fitnessScore: Double? = null,
 )
 
 data class DailyState(

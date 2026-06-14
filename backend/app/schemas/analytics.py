@@ -15,6 +15,7 @@ class DailyScoreOut(BaseModel):
     recovery_score: float | None
     execution_score: float | None
     wellness_score: float | None
+    fitness_score: float | None
     consistency_score: float | None
     burnout_risk: float | None
 

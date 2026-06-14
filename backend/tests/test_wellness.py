@@ -27,7 +27,10 @@ def test_wellness_partial_data():
 
 def test_wellness_clamps_out_of_range():
     assert wellness_score(WellnessInputs(mood=9)) == 100.0
-    assert wellness_score(WellnessInputs(stress=0, mood=1, energy=1, focus=1)) == 0.0
+    # Out-of-range Likert values clamp into 1-5. stress=0 clamps to 1 (calmest),
+    # which inverts to calm=100 at 0.20 weight; mood/energy/focus=1 contribute 0.
+    # So the floor here is 20.0, not 0.0 — the clamp is what's under test.
+    assert wellness_score(WellnessInputs(stress=0, mood=1, energy=1, focus=1)) == 20.0
 
 
 def test_wellness_in_recompute_output(client):
