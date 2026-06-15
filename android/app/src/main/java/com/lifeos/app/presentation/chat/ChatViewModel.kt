@@ -3,8 +3,6 @@ package com.lifeos.app.presentation.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.ChatTurn
-import com.lifeos.app.data.demo.DemoData
-import com.lifeos.app.data.demo.DemoMode
 import com.lifeos.app.domain.model.Citation
 import com.lifeos.app.domain.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,8 +22,6 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val input: String = "",
     val sending: Boolean = false,
-    val demoWelcome: String = "",
-    val showDemoWelcome: Boolean = false,
 )
 
 @HiltViewModel
@@ -33,19 +29,14 @@ class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(
-        ChatUiState(
-            demoWelcome = if (DemoMode.active) DemoData.chatWelcome else "",
-            showDemoWelcome = DemoMode.active,
-        )
-    )
+    private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     val suggestions = listOf(
-        "Why am I feeling unproductive?",
+        "How am I doing this week?",
+        "Do I get more done on days I work out?",
         "Am I moving toward burnout?",
-        "What habits improve my focus?",
-        "What should I do today?",
+        "What should I focus on today?",
     )
 
     fun onInputChange(text: String) {

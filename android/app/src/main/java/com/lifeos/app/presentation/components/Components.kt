@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.presentation.theme.LifeOsColors
@@ -141,6 +145,134 @@ fun ScoreCard(title: String, score: Double?, modifier: Modifier = Modifier) {
                 color = color,
                 trackColor = LifeOsColors.SurfaceBorder,
             )
+        }
+    }
+}
+
+/** One metric's identity color — kept consistent everywhere it appears. */
+fun metricColor(name: String): Color = when (name.lowercase()) {
+    "sleep" -> LifeOsColors.MetricSleep
+    "recovery" -> LifeOsColors.MetricRecovery
+    "execution" -> LifeOsColors.MetricExecution
+    "wellness" -> LifeOsColors.MetricWellness
+    "fitness" -> LifeOsColors.MetricFitness
+    else -> LifeOsColors.Primary
+}
+
+/** All of today's scores grouped into one organized card — no scattered tiles. */
+@Composable
+fun VitalsCard(score: DailyScore?, modifier: Modifier = Modifier) {
+    LifeOsCard(modifier = modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            VitalRow("Sleep", score?.sleepScore)
+            VitalDivider()
+            VitalRow("Recovery", score?.recoveryScore)
+            VitalDivider()
+            VitalRow("Execution", score?.executionScore)
+            VitalDivider()
+            VitalRow("Wellness", score?.wellnessScore)
+            VitalDivider()
+            VitalRow("Fitness", score?.fitnessScore)
+        }
+    }
+}
+
+@Composable
+private fun VitalDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .padding(vertical = 0.dp)
+            .background(LifeOsColors.SurfaceBorder.copy(alpha = 0.6f)),
+    )
+}
+
+@Composable
+private fun VitalRow(name: String, value: Double?) {
+    val color = metricColor(name)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(if (value == null) LifeOsColors.SurfaceBorder else color),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = LifeOsColors.OnBackground,
+            modifier = Modifier.weight(1f),
+        )
+        // Thin progress track on the right.
+        Box(
+            Modifier
+                .width(84.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(LifeOsColors.SurfaceMuted),
+        ) {
+            val frac = ((value ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .fillMaxWidth(frac)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(color),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = value?.toInt()?.toString() ?: "—",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (value == null) LifeOsColors.OnSurfaceMuted else color,
+            modifier = Modifier.width(28.dp),
+        )
+    }
+}
+
+/** Compact 7-ish-day bar strip for a single metric — adds rhythm at a glance. */
+@Composable
+fun WeeklyTrendCard(
+    label: String,
+    values: List<Double?>,
+    modifier: Modifier = Modifier,
+) {
+    val color = metricColor(label)
+    val recent = values.takeLast(7)
+    LifeOsCard(modifier = modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+                Spacer(Modifier.width(8.dp))
+                Text("$label · last 7 days", style = MaterialTheme.typography.titleSmall, color = LifeOsColors.OnBackground)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                if (recent.isEmpty()) {
+                    Text("Not enough data yet.", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+                } else {
+                    recent.forEach { v ->
+                        val frac = ((v ?: 0.0) / 100.0).toFloat().coerceIn(0.04f, 1f)
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight(frac)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (v == null) LifeOsColors.SurfaceMuted else color.copy(alpha = 0.85f)),
+                        )
+                    }
+                }
+            }
         }
     }
 }

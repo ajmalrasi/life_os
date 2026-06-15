@@ -29,10 +29,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.DemoBanner
 import com.lifeos.app.presentation.components.NotificationCard
 import com.lifeos.app.presentation.components.QuickCheckInCard
-import com.lifeos.app.presentation.components.ScoreCard
 import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.StateHeroCard
+import com.lifeos.app.presentation.components.VitalsCard
+import com.lifeos.app.presentation.components.WeeklyTrendCard
 import com.lifeos.app.presentation.theme.LifeOsColors
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -63,24 +64,37 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             }
         }
 
+        // All five vitals in one organized card — no scattered tiles.
+        item { VitalsCard(score = state.latestScore) }
+
+        // Weekly trend bar strips — side by side for compact rhythm view.
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ScoreCard("Sleep", state.latestScore?.sleepScore, modifier = Modifier.weight(1f))
-                ScoreCard("Recovery", state.latestScore?.recoveryScore, modifier = Modifier.weight(1f))
+                WeeklyTrendCard(
+                    label = "Sleep",
+                    values = state.scoreHistory.reversed().map { it.sleepScore },
+                    modifier = Modifier.weight(1f),
+                )
+                WeeklyTrendCard(
+                    label = "Execution",
+                    values = state.scoreHistory.reversed().map { it.executionScore },
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
 
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ScoreCard("Execution", state.latestScore?.executionScore, modifier = Modifier.weight(1f))
-                ScoreCard("Wellness", state.latestScore?.wellnessScore, modifier = Modifier.weight(1f))
-            }
-        }
-
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ScoreCard("Fitness", state.latestScore?.fitnessScore, modifier = Modifier.weight(1f))
-                Spacer(Modifier.weight(1f))
+                WeeklyTrendCard(
+                    label = "Fitness",
+                    values = state.scoreHistory.reversed().map { it.fitnessScore },
+                    modifier = Modifier.weight(1f),
+                )
+                WeeklyTrendCard(
+                    label = "Wellness",
+                    values = state.scoreHistory.reversed().map { it.wellnessScore },
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
 

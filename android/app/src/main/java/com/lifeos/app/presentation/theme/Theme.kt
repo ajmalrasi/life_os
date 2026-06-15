@@ -11,33 +11,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Soft light palette — airy backgrounds, friendly blue/violet accents.
+// Modern light palette — calm slate canvas, indigo→violet identity, vivid but
+// restrained metric accents (Tailwind-derived). One cohesive design language.
 object LifeOsColors {
-    val Background = Color(0xFFF5F7FC)
+    val Background = Color(0xFFF7F8FC)
     val Surface = Color(0xFFFFFFFF)
     val SurfaceElevated = Color(0xFFFFFFFF)
-    val SurfaceMuted = Color(0xFFEEF2FF)
-    val SurfaceBorder = Color(0xFFE2E8F0)
+    val SurfaceMuted = Color(0xFFEEF1FB)
+    val SurfaceBorder = Color(0xFFE7EBF3)
 
-    val Primary = Color(0xFF4F6BF6)
-    val PrimarySoft = Color(0xFFDBE4FF)
+    val Primary = Color(0xFF5B5BF0)        // indigo
+    val PrimarySoft = Color(0xFFE0E2FE)
     val OnPrimary = Color(0xFFFFFFFF)
 
-    val Secondary = Color(0xFF8B5CF6)
-    val SecondarySoft = Color(0xFFEDE9FE)
+    val Secondary = Color(0xFF8B5CF6)      // violet
+    val SecondarySoft = Color(0xFFEDE7FE)
 
     val AccentTeal = Color(0xFF14B8A6)
     val AccentCoral = Color(0xFFFB7185)
     val AccentAmber = Color(0xFFF59E0B)
 
-    val OnBackground = Color(0xFF1E293B)
-    val OnSurfaceMuted = Color(0xFF64748B)
+    val OnBackground = Color(0xFF161B2E)   // near-ink, slightly bluer than slate
+    val OnSurfaceMuted = Color(0xFF6B7488)
 
-    val ScoreHigh = Color(0xFF059669)
-    val ScoreMid = Color(0xFFD97706)
-    val ScoreLow = Color(0xFFDC2626)
-    val Warning = Color(0xFFEA580C)
+    val ScoreHigh = Color(0xFF10B981)      // emerald
+    val ScoreMid = Color(0xFFF59E0B)       // amber
+    val ScoreLow = Color(0xFFEF4444)       // red
+    val Warning = Color(0xFFF97316)        // orange
     val Positive = Color(0xFF0D9488)
+
+    // Per-metric identity colors — each vital keeps the same hue everywhere.
+    val MetricSleep = Color(0xFF6366F1)     // indigo
+    val MetricRecovery = Color(0xFF14B8A6)  // teal
+    val MetricExecution = Color(0xFF8B5CF6) // violet
+    val MetricWellness = Color(0xFFF43F5E)  // rose
+    val MetricFitness = Color(0xFF10B981)   // emerald
 }
 
 val LifeOsShapes = androidx.compose.material3.Shapes(

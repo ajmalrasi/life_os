@@ -26,6 +26,7 @@ import javax.inject.Inject
 
 data class DashboardUiState(
     val latestScore: DailyScore? = null,
+    val scoreHistory: List<DailyScore> = emptyList(),
     val latestState: DailyState? = null,
     val todayPulse: DayPulse? = null,
     val pulseSavedMessage: String? = null,
@@ -64,6 +65,7 @@ class DashboardViewModel @Inject constructor(
             ?: if (useDemo) DemoData.todayPulse else null
         DashboardUiState(
             latestScore = displayScores.firstOrNull(),
+            scoreHistory = displayScores,
             latestState = displayState,
             todayPulse = t.pulseSelected ?: todayPulse,
             pulseSavedMessage = t.pulseSavedMessage,
