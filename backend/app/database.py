@@ -46,3 +46,34 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+
+def purge_seed_data() -> None:
+    """Remove any synthetic 'seed-*' health records left by the old debug seeding
+    button, then recompute the trailing window so derived scores no longer reflect
+    sample data. Idempotent: a cheap no-op once the database is clean.
+    """
+    import logging
+    from datetime import date, timedelta
+
+    from sqlalchemy import delete
+
+    from app.models.health import HealthRecord
+
+    log = logging.getLogger("lifeos.purge_seed")
+    with SessionLocal() as db:
+        removed = db.execute(
+            delete(HealthRecord).where(HealthRecord.source_id.like("seed-%"))
+        ).rowcount
+        db.commit()
+        if not removed:
+            return
+        log.warning("Purged %d seeded health record(s); recomputing scores.", removed)
+        # Seed window spanned ~30 days; recompute a generous trailing window so the
+        # stored scores/states drop the sample sleep & recovery they were built on.
+        from app.services.analytics import AnalyticsService
+
+        end = date.today()
+        start = end - timedelta(days=89)
+        AnalyticsService(db).run_nightly(start, end)
+        db.commit()

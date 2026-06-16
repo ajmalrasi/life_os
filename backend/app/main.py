@@ -19,7 +19,7 @@ from app.api.routes import (
     notifications,
 )
 from app.config import get_settings
-from app.database import init_db
+from app.database import init_db, purge_seed_data
 
 settings = get_settings()
 
@@ -28,6 +28,8 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # For the MVP we create tables on startup. Later phases swap in Alembic.
     init_db()
+    # One-time cleanup: drop any synthetic seed data from the old debug button.
+    purge_seed_data()
     yield
 
 
