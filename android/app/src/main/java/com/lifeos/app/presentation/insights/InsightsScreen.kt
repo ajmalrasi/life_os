@@ -14,9 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import com.lifeos.app.presentation.components.DemoBanner
 import com.lifeos.app.presentation.components.InsightCard
+import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.theme.LifeOsColors
 
 @Composable
@@ -40,7 +46,27 @@ fun InsightsScreen(viewModel: InsightsViewModel = hiltViewModel()) {
                 DemoBanner()
             }
         }
-        items(state.insights) { InsightCard(it) }
+        if (state.insights.isEmpty()) {
+            item {
+                LifeOsCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "No patterns yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = LifeOsColors.OnBackground,
+                        )
+                        Text(
+                            "Keep logging your Pulse and syncing health data. Patterns appear once there are enough days to correlate.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
+                }
+            }
+        } else {
+            item { SectionHeader("${state.insights.size} patterns found") }
+            items(state.insights) { InsightCard(it) }
+        }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }

@@ -1,6 +1,6 @@
 <resources>
     <style name="Theme.LifeOS" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#F5F7FC</item>
+        <item name="android:statusBarColor">#F4F8F6</item>
         <item name="android:navigationBarColor">#FFFFFF</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>

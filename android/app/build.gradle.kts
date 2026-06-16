@@ -32,10 +32,12 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("Boolean", "USE_DEMO_DATA", "false")
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isMinifyEnabled = false
-            buildConfigField("Boolean", "USE_DEMO_DATA", "true")
+            // Sample/demo data disabled — show only the user's real data (empty states when sparse).
+            buildConfigField("Boolean", "USE_DEMO_DATA", "false")
         }
     }
 

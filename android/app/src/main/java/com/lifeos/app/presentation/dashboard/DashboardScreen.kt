@@ -30,7 +30,6 @@ import com.lifeos.app.presentation.components.DemoBanner
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.LifeScoreHero
 import com.lifeos.app.presentation.components.NotificationCard
-import com.lifeos.app.presentation.components.QuickCheckInCard
 import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.TrendChart
@@ -110,19 +109,9 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             }
         }
 
-        // All five vitals, grouped.
+        // All five vitals, grouped. Tap a row for its detail + trend.
         item { SectionHeader("Today's vitals") }
-        item { VitalsCard(score = state.latestScore) }
-
-        item { SectionHeader("Daily pulse") }
-        item {
-            QuickCheckInCard(
-                selected = state.todayPulse,
-                savedLabel = state.pulseSavedMessage,
-                enabled = !state.pulseSubmitting,
-                onSelect = viewModel::submitPulse,
-            )
-        }
+        item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
 
         item {
             Button(

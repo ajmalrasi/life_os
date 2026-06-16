@@ -52,7 +52,9 @@ class DashboardViewModel @Inject constructor(
     private val transient = MutableStateFlow(TransientState())
 
     val uiState: StateFlow<DashboardUiState> = combine(
-        analyticsRepository.observeScores(30),
+        // Keep up to a year of scores cached so the trend chart can slice any
+        // range (1D…1Y) client-side without re-querying.
+        analyticsRepository.observeScores(HISTORY_DAYS),
         analyticsRepository.observeStates(30),
         moodRepository.observe(7),
         transient,
@@ -85,7 +87,7 @@ class DashboardViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             runCatching {
-                analyticsRepository.refresh(30)
+                analyticsRepository.refresh(HISTORY_DAYS)
                 transient.value = transient.value.copy(notifications = analyticsRepository.notifications())
             }.onFailure { e ->
                 val url = runCatching { settingsRepository.apiBaseUrl.first() }.getOrDefault("unknown")
@@ -123,6 +125,7 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+
     fun submitPulse(pulse: DayPulse) {
         viewModelScope.launch {
             transient.value = transient.value.copy(pulseSelected = pulse, pulseSubmitting = true, pulseSavedMessage = null)
@@ -139,6 +142,11 @@ class DashboardViewModel @Inject constructor(
 
     private fun setMessage(msg: String) {
         transient.value = transient.value.copy(message = msg)
+    }
+
+    private companion object {
+        /** Widest trend window the chart can show (1 year). */
+        const val HISTORY_DAYS = 365
     }
 
     private data class TransientState(

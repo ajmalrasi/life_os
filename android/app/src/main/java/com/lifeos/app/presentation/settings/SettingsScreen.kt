@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -27,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.theme.LifeOsColors
 
@@ -39,11 +42,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         modifier = Modifier
             .fillMaxSize()
             .background(LifeOsColors.Background)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         ScreenHeader("Settings", "Connect LifeOS to your backend on the local network.")
 
+        SectionHeader("Connection")
         LifeOsCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Backend URL", style = MaterialTheme.typography.titleMedium)
@@ -81,6 +86,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
         }
 
+        SectionHeader("Sync")
         LifeOsCard {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Background sync", style = MaterialTheme.typography.titleMedium)
@@ -96,6 +102,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
         }
 
+        SectionHeader("Reminders")
         LifeOsCard {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -135,6 +142,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
         }
 
+        SectionHeader("Help")
         LifeOsCard {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Tips", style = MaterialTheme.typography.titleMedium)

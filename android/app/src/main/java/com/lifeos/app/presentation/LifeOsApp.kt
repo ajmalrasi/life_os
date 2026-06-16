@@ -1,12 +1,13 @@
 package com.lifeos.app.presentation
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Insights
-import androidx.compose.material.icons.filled.Mood
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,11 +34,11 @@ import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
 
 enum class Destination(val route: String, val label: String, val icon: ImageVector) {
-    DASHBOARD("dashboard", "Today", Icons.Filled.Dashboard),
-    MOOD("mood", "Pulse", Icons.Filled.Mood),
-    INSIGHTS("insights", "Insights", Icons.Filled.Insights),
-    CHAT("chat", "Ask", Icons.AutoMirrored.Filled.Chat),
-    SETTINGS("settings", "Settings", Icons.Filled.Settings),
+    DASHBOARD("dashboard", "Today", Icons.Rounded.WbSunny),
+    MOOD("mood", "Pulse", Icons.Rounded.Favorite),
+    INSIGHTS("insights", "Insights", Icons.Rounded.Insights),
+    CHAT("chat", "Ask", Icons.Rounded.AutoAwesome),
+    SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
 @Composable
@@ -76,7 +77,7 @@ fun LifeOsApp(startTab: String? = null) {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(dest.icon, contentDescription = dest.label) },
+                        icon = { Icon(dest.icon, contentDescription = dest.label, modifier = Modifier.size(24.dp)) },
                         label = { Text(dest.label) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = LifeOsColors.Primary,
