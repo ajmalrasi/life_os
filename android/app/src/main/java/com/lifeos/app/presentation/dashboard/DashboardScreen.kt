@@ -3,7 +3,7 @@ package com.lifeos.app.presentation.dashboard
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,13 +27,15 @@ import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.DemoBanner
+import com.lifeos.app.presentation.components.LifeOsCard
+import com.lifeos.app.presentation.components.LifeScoreHero
 import com.lifeos.app.presentation.components.NotificationCard
 import com.lifeos.app.presentation.components.QuickCheckInCard
 import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.components.SectionHeader
-import com.lifeos.app.presentation.components.StateHeroCard
+import com.lifeos.app.presentation.components.TrendChart
 import com.lifeos.app.presentation.components.VitalsCard
-import com.lifeos.app.presentation.components.WeeklyTrendCard
+import com.lifeos.app.presentation.components.compositeScore
 import com.lifeos.app.presentation.theme.LifeOsColors
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -41,13 +43,23 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMM d")) }
+    val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract(),
     ) { granted ->
-        if (granted.containsAll(viewModel.healthPermissions)) viewModel.syncAndAnalyze()
+        // Sync whatever the user allowed — a partial grant is still useful.
+        if (granted.any { it in viewModel.healthPermissions }) viewModel.syncAndAnalyze()
     }
+
+    val composite = compositeScore(state.latestScore)
+    val prevComposite = state.scoreHistory.getOrNull(1)?.let { compositeScore(it) }
+    val delta = if (composite != null && prevComposite != null) composite - prevComposite else null
+    val stateLabel = state.latestState?.state
+        ?.replace('_', ' ')
+        ?.replaceFirstChar { it.uppercase() }
+        ?: "Awaiting data"
+    val confidence = state.latestState?.confidence?.let { (it * 100).toInt() }
 
     LazyColumn(
         modifier = Modifier
@@ -64,48 +76,45 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             }
         }
 
-        // All five vitals in one organized card — no scattered tiles.
-        item { VitalsCard(score = state.latestScore) }
-
-        // Weekly trend bar strips — side by side for compact rhythm view.
+        // Hero focal point — composite Life Score, delta, and current state.
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                WeeklyTrendCard(
-                    label = "Sleep",
-                    values = state.scoreHistory.reversed().map { it.sleepScore },
-                    modifier = Modifier.weight(1f),
-                )
-                WeeklyTrendCard(
-                    label = "Execution",
-                    values = state.scoreHistory.reversed().map { it.executionScore },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                WeeklyTrendCard(
-                    label = "Fitness",
-                    values = state.scoreHistory.reversed().map { it.fitnessScore },
-                    modifier = Modifier.weight(1f),
-                )
-                WeeklyTrendCard(
-                    label = "Wellness",
-                    values = state.scoreHistory.reversed().map { it.wellnessScore },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        item {
-            StateHeroCard(
-                stateLabel = state.latestState?.state?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Unknown",
-                confidence = state.latestState?.confidence?.let { (it * 100).toInt() },
-                rationale = state.latestState?.rationale,
+            LifeScoreHero(
+                score = composite,
+                delta = delta,
+                stateLabel = stateLabel,
+                confidence = confidence,
             )
         }
 
+        // Historical trend graph with metric toggle — the heart of the redesign.
+        item { TrendChart(history = state.scoreHistory) }
+
+        // Why-this-state explanation, only when the model gives a rationale.
+        val rationale = state.latestState?.rationale
+        if (!rationale.isNullOrBlank()) {
+            item {
+                LifeOsCard(accent = LifeOsColors.Primary) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "WHY THIS STATE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                        Text(
+                            rationale,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LifeOsColors.OnBackground,
+                        )
+                    }
+                }
+            }
+        }
+
+        // All five vitals, grouped.
+        item { SectionHeader("Today's vitals") }
+        item { VitalsCard(score = state.latestScore) }
+
+        item { SectionHeader("Daily pulse") }
         item {
             QuickCheckInCard(
                 selected = state.todayPulse,

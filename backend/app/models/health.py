@@ -31,9 +31,25 @@ class HealthRecordType(str, enum.Enum):
     WEIGHT = "weight"                          # kg
     STEPS = "steps"                            # count
     WORKOUT = "workout"                        # minutes
-    CALORIES = "calories"                      # kcal
+    CALORIES = "calories"                      # kcal (total)
+    ACTIVE_CALORIES = "active_calories"        # kcal (active)
+    BASAL_METABOLIC_RATE = "basal_metabolic_rate"  # kcal/day
     WALKING_DISTANCE = "walking_distance"      # meters
+    ELEVATION_GAINED = "elevation_gained"      # meters
+    FLOORS_CLIMBED = "floors_climbed"          # count
     VO2_MAX = "vo2_max"                        # ml/kg/min
+    RESPIRATORY_RATE = "respiratory_rate"      # breaths/min
+    BLOOD_PRESSURE_SYSTOLIC = "blood_pressure_systolic"    # mmHg
+    BLOOD_PRESSURE_DIASTOLIC = "blood_pressure_diastolic"  # mmHg
+    BLOOD_GLUCOSE = "blood_glucose"            # mg/dL
+    BODY_TEMPERATURE = "body_temperature"      # celsius
+    BASAL_BODY_TEMPERATURE = "basal_body_temperature"  # celsius
+    HEIGHT = "height"                          # meters
+    BODY_FAT = "body_fat"                      # %
+    LEAN_BODY_MASS = "lean_body_mass"          # kg
+    BONE_MASS = "bone_mass"                    # kg
+    BODY_WATER_MASS = "body_water_mass"        # kg
+    HYDRATION = "hydration"                    # liters
 
 
 class HealthRecord(Base):

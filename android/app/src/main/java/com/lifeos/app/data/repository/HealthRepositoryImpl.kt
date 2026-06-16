@@ -14,7 +14,7 @@ class HealthRepositoryImpl @Inject constructor(
 ) : HealthRepository {
 
     override suspend fun readRecentSamples(days: Int): List<HealthSample> {
-        if (!healthConnect.isAvailable() || !healthConnect.hasAllPermissions()) return emptyList()
+        if (!healthConnect.isAvailable() || !healthConnect.hasAnyPermissions()) return emptyList()
         return healthConnect.readRecentSamples(days)
     }
 
