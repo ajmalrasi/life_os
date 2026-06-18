@@ -13,7 +13,7 @@ call to the matching method and returns a JSON-serializable result.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -22,8 +22,21 @@ from app.repositories.analytics_repo import ScoreRepository, StateRepository
 from app.repositories.github_repo import GithubRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.github_mcp_client import GitHubMcpClient
+from app.services.phone_health_client import (
+    PhoneHealthClient,
+    PhoneHealthUnavailable,
+    extract_metrics,
+    format_hae_date,
+)
 
 _MAX_DAYS = 90
+
+# A small, useful default set for the live phone pull — keeping the request small
+# matters because the phone server reads ~8 KB per message.
+_DEFAULT_LIVE_METRICS = (
+    "heart_rate,resting_heart_rate,sleep_analysis,blood_oxygen_saturation,"
+    "respiratory_rate,step_count,active_energy"
+)
 
 
 # OpenAI-style function schemas advertised to the model.
@@ -122,6 +135,38 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "live_health",
+            "description": (
+                "Pull LIVE Apple Health data straight from the user's iPhone right now "
+                "(real-time heart rate, today's steps, last night's sleep stages, SpO2). "
+                "Use for 'right now' / 'today' / 'last night' questions, or when the stored "
+                "data is too stale to answer. Requires the phone's Health Auto Export "
+                "server to be running and on the same Wi-Fi; if it isn't reachable the tool "
+                "returns an error explaining how to start it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "metrics": {
+                        "type": "string",
+                        "description": (
+                            "Comma-separated Health Auto Export metric names, e.g. "
+                            "'heart_rate,sleep_analysis,step_count'. Omit for a sensible "
+                            "default set. Keep the list short."
+                        ),
+                    },
+                    "hours": {
+                        "type": "integer",
+                        "description": "Look-back window in hours (1-168). Default 24.",
+                        "default": 24,
+                    },
+                },
+            },
+        },
+    },
 ]
 
 _TOOL_NAMES = {t["function"]["name"] for t in TOOL_SCHEMAS}
@@ -147,6 +192,11 @@ class AgentTools:
                 return self.github_search(
                     tool=args.get("tool", ""),
                     arguments=args.get("arguments"),
+                )
+            if name == "live_health":
+                return self.live_health(
+                    metrics=args.get("metrics", ""),
+                    hours=args.get("hours", 24),
                 )
             days = _clamp_days(args.get("days", 14))
             handler = {
@@ -211,6 +261,50 @@ class AgentTools:
             return {"error": f"github-mcp-server unreachable or tool '{tool}' failed"}
         return {"tool": tool, "result": result}
 
+    def live_health(self, metrics: str = "", hours: int = 24) -> dict:
+        """Pull live Apple Health metrics from the iPhone's TCP server, summarized."""
+        settings = get_settings()
+        client = PhoneHealthClient(
+            settings.hae_host, settings.hae_port, settings.hae_timeout_seconds
+        )
+        if not client.configured:
+            return {"error": "live phone health is not configured (HAE_HOST is unset)."}
+
+        try:
+            window_hours = max(1, min(168, int(hours)))
+        except (TypeError, ValueError):
+            window_hours = 24
+        end = datetime.now().astimezone()
+        start = end - timedelta(hours=window_hours)
+
+        try:
+            response = client.call_tool(
+                "health_metrics",
+                {
+                    "start": format_hae_date(start),
+                    "end": format_hae_date(end),
+                    "interval": "days",
+                    "aggregate": True,
+                },
+                metrics=(metrics or _DEFAULT_LIVE_METRICS),
+            )
+        except PhoneHealthUnavailable as exc:
+            return {
+                "error": (
+                    f"iPhone live health server unreachable ({exc}). Ask the user to open "
+                    "Health Auto Export and start the server (Automations -> Server -> "
+                    "Start Server), with the phone on the same Wi-Fi."
+                )
+            }
+
+        summarized = [_summarize_live_metric(m) for m in extract_metrics(response)]
+        return {
+            "source": "iphone_live",
+            "window": {"start": start.isoformat(), "end": end.isoformat(),
+                       "hours": window_hours},
+            "metrics": [m for m in summarized if m],
+        }
+
     def health_summary(self, days: int) -> dict:
         start, end = _window(days)
         score_rows = self.scores.range(start, end)
@@ -251,6 +345,30 @@ class AgentTools:
                 "days_with_pulse": len(mood_rows),
             },
         }
+
+
+def _summarize_live_metric(metric: dict) -> dict | None:
+    """Compact a live-metric block to its most recent reading (keeps payload tiny)."""
+    if not isinstance(metric, dict):
+        return None
+    name = metric.get("name") or ""
+    points = metric.get("data") or []
+    if not name or not isinstance(points, list) or not points:
+        return None
+    last = points[-1]
+    if not isinstance(last, dict):
+        return None
+    units = metric.get("units") or ""
+
+    if name == "sleep_analysis":
+        keep = ("date", "sleepStart", "sleepEnd", "totalSleep", "asleep",
+                "deep", "rem", "core", "awake", "inBed")
+    elif any(k in last for k in ("Min", "Avg", "Max")):
+        keep = ("date", "Min", "Avg", "Max")
+    else:
+        keep = ("date", "qty")
+    latest = {k: last[k] for k in keep if k in last}
+    return {"name": name, "units": units, "samples": len(points), "latest": latest}
 
 
 def _clamp_days(value) -> int:
