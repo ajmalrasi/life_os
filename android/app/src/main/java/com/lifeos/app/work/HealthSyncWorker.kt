@@ -32,9 +32,12 @@ class HealthSyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            val samples = healthRepository.readRecentSamples(SYNC_WINDOW_DAYS)
+            val samples = healthRepository.readRecentSamples(READ_WINDOW_DAYS)
             healthRepository.sync(samples)
-            analyticsRepository.recompute(SYNC_WINDOW_DAYS)
+            // Recompute only the recent window: a sync only changes recent days,
+            // and the backend reads 30-day baselines from stored data regardless.
+            // Keeps the post-sync recompute fast (the full history was scored once).
+            analyticsRepository.recompute(RECOMPUTE_WINDOW_DAYS)
             settingsRepository.setLastSyncDay(LocalDate.now())
             settingsRepository.setLastSyncAt(System.currentTimeMillis())
             Result.success()
@@ -45,7 +48,8 @@ class HealthSyncWorker @AssistedInject constructor(
 
     companion object {
         const val UNIQUE_NAME = "health_sync_nightly"
-        private const val SYNC_WINDOW_DAYS = 60
+        private const val READ_WINDOW_DAYS = 60      // Health Connect look-back (cheap)
+        private const val RECOMPUTE_WINDOW_DAYS = 30 // backend recompute (kept small for speed)
         private const val MAX_ATTEMPTS = 3
     }
 }

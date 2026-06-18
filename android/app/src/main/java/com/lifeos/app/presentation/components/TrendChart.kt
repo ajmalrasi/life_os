@@ -180,18 +180,36 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                 }
             }
 
-            if (present.size < 2) {
+            if (present.isEmpty()) {
                 Box(
                     Modifier.fillMaxWidth().height(176.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        // One data point can't form a line — nudge toward a wider window.
-                        if (present.size == 1) "A single day is just one point — pick 7D or longer to see a trend."
-                        else "Not enough history yet — keep syncing to see your trend.",
+                        "No ${metric.label.lowercase()} data in this range yet — keep syncing.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = LifeOsColors.OnSurfaceMuted,
                     )
+                }
+            } else if (present.size == 1) {
+                // One day in range. The score itself is per-day (shown in the
+                // header); only the trend *line* needs 2+ days. Show the day as a
+                // single point so it's clear the score exists.
+                Box(
+                    Modifier.fillMaxWidth().height(176.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(Modifier.size(14.dp).clip(CircleShape).background(color))
+                        Text(
+                            "Just one day in this range — a trend line appears once there are 2+ days.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
                 }
             } else {
                 // Y-axis labels + plot area.
