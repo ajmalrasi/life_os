@@ -22,20 +22,30 @@ class HealthRepository:
         return set(rows)
 
     def bulk_insert(self, records: list[HealthRecordIn]) -> int:
-        """Insert records, skipping any whose source_id already exists. Returns inserted count."""
+        """Insert records, skipping any whose source_id already exists. Returns inserted count.
+
+        Dedupes both against the DB and *within* the incoming batch — a single
+        Apple Health reading is often recorded by several source devices, so the
+        same source_id can appear twice in one payload; adding both would violate
+        the unique constraint and fail the whole batch.
+        """
         existing = self.existing_source_ids([r.source_id for r in records])
-        to_add = [
-            HealthRecord(
-                source_id=r.source_id,
-                type=r.type,
-                value=r.value,
-                unit=r.unit,
-                start_time=r.start_time,
-                end_time=r.end_time,
+        seen: set[str] = set()
+        to_add: list[HealthRecord] = []
+        for r in records:
+            if r.source_id in existing or r.source_id in seen:
+                continue
+            seen.add(r.source_id)
+            to_add.append(
+                HealthRecord(
+                    source_id=r.source_id,
+                    type=r.type,
+                    value=r.value,
+                    unit=r.unit,
+                    start_time=r.start_time,
+                    end_time=r.end_time,
+                )
             )
-            for r in records
-            if r.source_id not in existing
-        ]
         self.db.add_all(to_add)
         self.db.commit()
         return len(to_add)

@@ -10,14 +10,23 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, Index, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
 
 class HealthRecordType(str, enum.Enum):
-    """Supported Health Connect metric types (Phase 1 + forward-compatible)."""
+    """Metric types the scoring/analytics engine knows how to interpret.
+
+    This enum is **not** an exhaustive whitelist of what may be stored. The
+    ``type`` column is a free-form string so any health signal — including
+    metrics no part of LifeOS scores yet (e.g. physical effort, daylight time,
+    walking speed, AFib burden) — can be captured now and used later, in
+    keeping with the "keep raw history, recompute scores when logic changes"
+    design. These members are simply the well-known types used by name in
+    scoring/analytics/queries; ingestion accepts arbitrary type strings.
+    """
 
     SLEEP_DURATION = "sleep_duration"          # hours
     SLEEP_DEEP = "sleep_deep"                  # hours
@@ -63,7 +72,9 @@ class HealthRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source_id: Mapped[str] = mapped_column(String(128))
-    type: Mapped[HealthRecordType] = mapped_column(Enum(HealthRecordType, native_enum=False))
+    # Free-form metric type. Values typically come from HealthRecordType, but the
+    # column intentionally accepts any string so new signals are never dropped.
+    type: Mapped[str] = mapped_column(String(64))
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32))
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
