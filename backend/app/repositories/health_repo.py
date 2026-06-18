@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.health import HealthRecord, HealthRecordType
@@ -69,6 +69,28 @@ class HealthRepository:
         self, day: date, type_: HealthRecordType
     ) -> list[float]:
         return [r.value for r in self.for_day(day, type_)]
+
+    def baseline_mean(
+        self, start: date, end: date, type_: HealthRecordType
+    ) -> float | None:
+        """Mean of per-day means for ``type_`` over ``[start, end)`` in one query.
+
+        Equivalent to averaging each day's ``daily_values`` mean across the
+        window, but collapses what used to be one query per day (the recovery
+        baselines dominated recompute time once the table grew to ~1M+ rows).
+        """
+        day = func.date(HealthRecord.start_time)
+        per_day = (
+            select(func.avg(HealthRecord.value).label("day_mean"))
+            .where(
+                HealthRecord.type == type_,
+                HealthRecord.start_time >= datetime.combine(start, time.min),
+                HealthRecord.start_time < datetime.combine(end, time.min),
+            )
+            .group_by(day)
+            .subquery()
+        )
+        return self.db.execute(select(func.avg(per_day.c.day_mean))).scalar_one_or_none()
 
     def latest_value(self, type_: HealthRecordType, on_or_before: date) -> float | None:
         end = datetime.combine(on_or_before, time.max)

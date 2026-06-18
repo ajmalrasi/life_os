@@ -100,6 +100,9 @@ def _sleep_records(p: dict[str, Any], units: str) -> list[HealthRecordIn]:
     total = _to_float(p.get("totalSleep"))
     if total is None:
         total = _to_float(p.get("asleep"))
+    # Skip fragments (<30min) and implausible spans (>16h in-bed artifacts).
+    if total is None or not (0.5 <= total * scale <= 16.0):
+        return []
 
     awake = _to_float(p.get("awake"))
     if awake is None:

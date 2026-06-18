@@ -58,17 +58,9 @@ class AnalyticsService:
         return sum(vals) / len(vals) if vals else None
 
     def _baseline(self, day: date, t: HealthRecordType, agg: str = "mean") -> float | None:
+        # Mean of per-day means over the trailing baseline window, in one query.
         start = day - timedelta(days=_BASELINE_WINDOW)
-        collected: list[float] = []
-        d = start
-        while d < day:
-            vals = self.health.daily_values(d, t)
-            if vals:
-                collected.append(sum(vals) / len(vals))
-            d += timedelta(days=1)
-        if not collected:
-            return None
-        return sum(collected) / len(collected)
+        return self.health.baseline_mean(start, day, t)
 
     def recompute_day(self, day: date) -> None:
         # --- sleep ---

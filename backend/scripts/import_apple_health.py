@@ -140,6 +140,8 @@ SLEEP_STAGE: dict[str, str | None] = {
 }
 
 SLEEP_GAP_MINUTES = 60  # segments farther apart than this start a new session
+MIN_SLEEP_HOURS = 0.5   # ignore naps/fragments under 30 min as a "night"
+MAX_SLEEP_HOURS = 16.0  # drop implausible single sessions (in-bed artifacts)
 
 
 def _camel_to_snake(name: str) -> str:
@@ -339,7 +341,9 @@ class Importer:
 
         # Prefer measured asleep time; fall back to in-bed span for old iPhone data.
         total = asleep_hours if asleep_hours > 0 else inbed_hours
-        if total <= 0:
+        # Drop fragments (sub-30min naps recorded as separate nights) and
+        # implausible spans (old iPhone "in-bed" artifacts up to ~21h).
+        if total < MIN_SLEEP_HOURS or total > MAX_SLEEP_HOURS:
             return
 
         sid = start.isoformat()
