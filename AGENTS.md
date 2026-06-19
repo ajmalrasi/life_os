@@ -126,6 +126,14 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 - **The chat (Ask tab) works but Ollama on the Jetson is slow** — a single grounded
   answer took ~8 min in testing (qwen3.5:4b on ~8GB unified RAM). It does return a
   real, cited answer; just don't assume a stuck "Thinking…" means it's broken.
+- **Git from the Cowork sandbox can't delete `.git/*.lock` (EPERM).** A commit
+  succeeds the first time but its lock-cleanup `unlink` is denied by the mount, so
+  `.git/index.lock` + `.git/HEAD.lock` are left behind and **block every later
+  commit** ("Unable to create '.git/HEAD.lock': File exists"). The sandbox cannot
+  `rm` them. Fix on the **Mac**: `cd ~/life_os && rm -f .git/index.lock
+  .git/HEAD.lock .git/refs/heads/main.lock`, then commit normally. (2026-06-19: the
+  Ask-keyboard/state-chip changes are in the working tree, built & verified live,
+  but uncommitted for this reason; a dangling commit object also exists.)
 - **Build/verify tooling note:** the emulator mirrored inside Android Studio (incl.
   the detached "Running Devices" window) is part of the IDE, so automated *typing*
   into it is blocked — only taps work. Suggestion chips and the Sync button are
@@ -167,6 +175,23 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   `KeyboardOptions(imeAction = ImeAction.Send)` + `KeyboardActions(onSend = { vm.send() })`
   (`send()` already guards empty/sending). Built clean. Could NOT inject the Enter
   keystroke to film it (see tooling note below) — fix verified by compile + code.
+- ✅ **Ask tab keyboard + message placement (2026-06-19, `ChatScreen.kt`).** Two
+  more complaints: after send the soft keyboard lingered (needed a back-press),
+  and the new message + "Thinking…" appeared stranded at the very top near the
+  header. Fixes: a shared `submit()` calls `vm.send()` then
+  `focusManager.clearFocus()` (dismisses the IME) and is wired to BOTH the send
+  button and `onSend`; a `rememberLazyListState` + `LaunchedEffect(itemCount)`
+  auto-scrolls to the newest item; and the thread is bottom-anchored
+  (`Arrangement.spacedBy(12.dp, Alignment.Bottom)`) once a conversation starts so
+  messages rise from the input (the empty/suggestions state stays top-aligned).
+  Message placement verified on the emulator via a suggestion tap. GOTCHA caught
+  by the build: `LocalFocusManager` lives in `androidx.compose.ui.platform`, NOT
+  `androidx.compose.ui.focus` — the wrong import failed `compileDebugKotlin`.
+- ✅ **"Unknown · 0%" state chip fixed (2026-06-19, `DashboardScreen.kt`).** When
+  the day's state classifier returns `unknown`/confidence 0, the Life Score hero
+  chip showed a confusing "◆ Unknown · 0%". Now an absent state → "Awaiting data",
+  an `unknown`/blank state → "No clear state yet", and the `· N%` confidence is
+  only shown for a real state with non-zero confidence. Verified on the emulator.
 
 ## 7. Open items / next steps
 

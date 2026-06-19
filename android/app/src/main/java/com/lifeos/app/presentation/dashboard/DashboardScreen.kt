@@ -54,11 +54,18 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     val composite = compositeScore(state.latestScore)
     val prevComposite = state.scoreHistory.getOrNull(1)?.let { compositeScore(it) }
     val delta = if (composite != null && prevComposite != null) composite - prevComposite else null
-    val stateLabel = state.latestState?.state
+    // Treat an absent or "unknown" classification as a friendly placeholder rather
+    // than surfacing a confusing "Unknown · 0%" chip, and only show a confidence
+    // when there's a real state with non-zero confidence.
+    val rawState = state.latestState?.state
+        ?.takeIf { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }
+    val stateLabel = rawState
         ?.replace('_', ' ')
         ?.replaceFirstChar { it.uppercase() }
-        ?: "Awaiting data"
-    val confidence = state.latestState?.confidence?.let { (it * 100).toInt() }
+        ?: if (state.latestState == null) "Awaiting data" else "No clear state yet"
+    val confidence = rawState?.let {
+        state.latestState?.confidence?.let { c -> (c * 100).toInt() }?.takeIf { it > 0 }
+    }
 
     LazyColumn(
         modifier = Modifier

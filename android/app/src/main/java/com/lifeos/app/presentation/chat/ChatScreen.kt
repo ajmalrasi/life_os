@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -32,10 +33,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +54,22 @@ import com.lifeos.app.presentation.theme.LifeOsColors
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val fieldColors = lifeOsFieldColors()
+    val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+
+    // Submit + drop focus so the soft keyboard dismisses (it used to linger,
+    // forcing a back-press).
+    fun submit() {
+        viewModel.send()
+        focusManager.clearFocus()
+    }
+
+    // Keep the newest message / "Thinking…" in view near the input instead of
+    // stranded at the top.
+    val itemCount = state.messages.size + if (state.sending) 1 else 0
+    LaunchedEffect(itemCount) {
+        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    }
 
     Column(
         modifier = Modifier
@@ -62,8 +81,15 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            // Empty: lay the prompts out from the top. In a conversation: anchor
+            // the thread to the bottom so new messages rise from the input.
+            verticalArrangement = if (state.messages.isEmpty()) {
+                Arrangement.spacedBy(12.dp)
+            } else {
+                Arrangement.spacedBy(12.dp, Alignment.Bottom)
+            },
         ) {
             if (state.messages.isEmpty()) {
                 item { EmptyState() }
@@ -98,7 +124,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                 // inserting a newline and growing the field (which shoved the layout).
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { viewModel.send() }),
+                keyboardActions = KeyboardActions(onSend = { submit() }),
             )
             Spacer(Modifier.width(8.dp))
             Box(
@@ -106,7 +132,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                     .size(52.dp)
                     .clip(CircleShape)
                     .background(LifeOsColors.Primary)
-                    .clickable(enabled = !state.sending && state.input.isNotBlank()) { viewModel.send() },
+                    .clickable(enabled = !state.sending && state.input.isNotBlank()) { submit() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
