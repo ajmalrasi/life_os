@@ -114,6 +114,14 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
     val avg = if (present.isNotEmpty()) present.average() else null
     val delta = if (present.size >= 2) present.last() - present[present.size - 2] else null
 
+    // The headline value is the most recent reading in the window. When that
+    // reading is NOT the window's latest day (e.g. today has no sleep yet, but an
+    // earlier night does), the number is stale — flag it so it doesn't read as
+    // "today's score". `lastDataIdx` is the slot of that reading in `chrono`.
+    val lastDataIdx = values.indexOfLast { it != null }
+    val latestDay = chrono.getOrNull(lastDataIdx)?.day
+    val isStale = lastDataIdx in 0 until values.lastIndex
+
     LifeOsCard(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             // Header: title + current value + delta vs previous reading.
@@ -136,9 +144,18 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                         Text(
                             current.roundToInt().toString(),
                             style = MaterialTheme.typography.displaySmall,
-                            color = color,
+                            // Mute the number when it's an older reading so it no
+                            // longer reads as the current/today score.
+                            color = if (isStale) LifeOsColors.OnSurfaceMuted else color,
                         )
-                        if (delta != null) DeltaPill(delta)
+                        when {
+                            delta != null -> DeltaPill(delta)
+                            isStale && latestDay != null -> Text(
+                                "latest · ${formatShort(latestDay)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
                     }
                 }
             }
@@ -192,20 +209,43 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                     )
                 }
             } else if (present.size == 1) {
-                // One day in range. The score itself is per-day (shown in the
-                // header); only the trend *line* needs 2+ days. Show the day as a
-                // single point so it's clear the score exists.
+                // Exactly one day has data in this window. The score is per-day; a
+                // trend *line* needs 2+ days. Render an intentional single-point
+                // card — the value + which day, plus a message that fits the
+                // selected range (1D vs a sparse multi-day window).
+                val onlyValue = present.first().roundToInt()
+                val dayLabel = latestDay?.let { formatShort(it) }
+                // The single point may be an earlier day, not literally today, so
+                // keep the 1D copy range-neutral (the date is shown by the dot).
+                val message = if (range.days == 1) {
+                    "Just one day in this range — a trend line appears once there are 2+ days."
+                } else {
+                    "Only one day with ${metric.label.lowercase()} data in the last " +
+                        "${range.days} days — a trend line needs 2+."
+                }
                 Box(
                     Modifier.fillMaxWidth().height(176.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Box(Modifier.size(14.dp).clip(CircleShape).background(color))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                buildString {
+                                    append(onlyValue)
+                                    if (dayLabel != null) append(" · ").append(dayLabel)
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                color = LifeOsColors.OnBackground,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                         Text(
-                            "Just one day in this range — a trend line appears once there are 2+ days.",
+                            message,
                             style = MaterialTheme.typography.bodySmall,
                             color = LifeOsColors.OnSurfaceMuted,
                         )

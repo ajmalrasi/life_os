@@ -119,10 +119,23 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   after a reboot. Re-`scp` it from the Mac when re-importing.
 - **The Android sync worker swallows exceptions** (`HealthSyncWorker`) — failures
   are invisible. Consider surfacing sync status/errors in the UI.
+- **Trend headline = most-recent *non-null* reading, not necessarily today.** With
+  sparse recent data the big number can be an older day's score; the card now
+  mutes it + tags `latest · <date>` when stale (`isStale` in `TrendChart`). Don't
+  re-introduce copy that calls the single point "today".
+- **The chat (Ask tab) works but Ollama on the Jetson is slow** — a single grounded
+  answer took ~8 min in testing (qwen3.5:4b on ~8GB unified RAM). It does return a
+  real, cited answer; just don't assume a stuck "Thinking…" means it's broken.
+- **Build/verify tooling note:** the emulator mirrored inside Android Studio (incl.
+  the detached "Running Devices" window) is part of the IDE, so automated *typing*
+  into it is blocked — only taps work. Suggestion chips and the Sync button are
+  tappable; reproducing keyboard-specific bugs (e.g. IME Enter) needs a real
+  device or the standalone emulator. Rebuild+reinstall via the green Rerun button
+  (~120-490 ms install); watch for the "Install successfully finished" toast.
 
 ---
 
-## 6. Current state (2026-06-18)
+## 6. Current state (2026-06-19)
 
 - ✅ Sleep history backfilled (~1,480 clean nights, 2018→2026) and scored.
 - ✅ Free-form schema deployed; column is `varchar(64)`.
@@ -132,13 +145,35 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   baselines batched). Android sync recompute window reduced to 30 days.
 - ✅ Trend chart: single-day ranges show a dot + caption instead of a confusing
   "pick 7D" nudge (the score is per-day; only the *line* needs 2+ days).
-- ⚠️ **Android changes for the last two items are committed but NOT yet built** —
-  `HealthSyncWorker.kt` and `presentation/components/TrendChart.kt`. Build & verify.
+- ✅ **`HealthSyncWorker.kt` and `TrendChart.kt` built & verified (2026-06-19)** on
+  the Samsung SM-S921B emulator (API 36.1). Both compiled clean with no fixes
+  needed. Verified in-app: (a) 1D range renders the dot + caption, not the old
+  nudge; (b) "Sync & analyze" completes the full read→upload→recompute→exec-scan
+  round-trip and reports success ("Synced N health record(s) … Auto-detected …
+  commit(s)"). On the emulator Health Connect is empty, so N=0 — that's expected.
+- ✅ **Trend chart sparse/stale fixes (2026-06-19, `TrendChart.kt`).** Two issues
+  the headline number was *stale* on multi-day ranges (e.g. Sleep 7D showed a big
+  "77" from an older night while 1D showed "no data"), and the single-point state
+  looked unfinished. Fix: when the latest reading isn't the window's most-recent
+  day (`isStale`), the headline is muted + tagged `latest · <date>`; the
+  single-point body now shows `<value> · <date>` next to the dot with range-aware
+  copy ("Only one day with X data in the last N days …" for 7D/30D, the neutral
+  "Just one day in this range …" for 1D). NOTE: the 1D window's one point is the
+  most-recent day in *history*, which may be yesterday — today can be empty — so
+  1D copy must stay date-neutral (don't say "today").
+- ✅ **Ask tab Enter fix (2026-06-19, `ChatScreen.kt`).** The input `OutlinedTextField`
+  had no `singleLine`/`imeAction`/`keyboardActions`, so pressing Enter inserted a
+  newline and grew the field, shoving the layout. Now `singleLine = true` +
+  `KeyboardOptions(imeAction = ImeAction.Send)` + `KeyboardActions(onSend = { vm.send() })`
+  (`send()` already guards empty/sending). Built clean. Could NOT inject the Enter
+  keystroke to film it (see tooling note below) — fix verified by compile + code.
 
 ## 7. Open items / next steps
 
-- **UI pass in Android Studio** (the user has a list of visual issues). Start with
-  the two unbuilt Kotlin files above, then the broader UI.
+- **UI pass in Android Studio** (the user has a list of visual issues). Done so
+  far: the two unbuilt files (built/verified), the Sleep trend stale-headline +
+  sparse-state fix, and the Ask-tab Enter fix. More UI issues likely to come from
+  the user — keep going through the list.
 - **Finish Health Auto Export setup on the iPhone** (Premium): a REST automation →
   `http://192.168.3.30:8000/health/auto-export` (JSON, aggregated sleep, *short*
   rolling window to avoid double-counting the XML import), and *Server → Start
