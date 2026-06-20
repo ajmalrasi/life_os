@@ -65,9 +65,23 @@ on the iPhone**. That never reaches Android Health Connect (confirmed from the
 device: Health Connect only contains steps/calories/workout/weight — no sleep, no
 HR). So the app was correct; the pipe was empty.
 
-**Four data paths now exist** (all land in the one `health_records` table):
-1. **Health Connect sync** (Android `HealthSyncWorker`) → `POST /health/batch`. In
-   practice only activity data flows here.
+**Data paths** (all land in the one `health_records` table). **As of 2026-06-21 the
+sole source is Apple Health via Health Auto Export** — Health Connect is no longer
+read (see §6):
+1. ~~**Health Connect sync** (Android `HealthSyncWorker`) → `POST /health/batch`~~ —
+   **REMOVED 2026-06-21.** It only carried activity (steps/calories), which
+   *double-counted* the same activity Apple now pushes via HAE. `HealthSyncWorker`
+   and `DashboardViewModel.syncAndAnalyze()` no longer read/upload Health Connect —
+   they just trigger a recompute. Existing HC rows were deleted; `/health/batch`
+   still exists but nothing feeds it. **The Health Connect permission request was
+   also removed (2026-06-21):** the manifest `uses-permission android.permission.health.*`
+   block, the rationale intent-filter + `ViewPermissionUsageActivity`, the
+   `<queries>` healthdata entry, the `DashboardScreen` `PermissionController`
+   launcher, and the `DashboardViewModel` permission exposure are all gone — the
+   app no longer asks for or declares any Health Connect access. `HealthConnectManager`
+   / `HealthRepositoryImpl` / `HealthRepository` / `HealthSample` are now fully dead
+   code (inert; the `androidx.health.connect` dep is still in `libs.versions.toml`).
+   Safe to delete the cluster later. Rebuilt `:app:assembleDebug` clean.
 2. **One-time XML import** from an Apple Health `export.zip`:
    `backend/scripts/import_apple_health.py` (stdlib, streams the 800MB XML) →
    `POST /health/batch`. ~1.3M rows backfilled incl. ~1,480 sleep nights.
@@ -106,15 +120,58 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   (44 repos) in a background task** — it used to be synchronous and made syncs take
   ~81s. Recovery baselines use one grouped query (`HealthRepository.baseline_mean`),
   not a per-day loop. Keep both.
-- **Sleep is attributed to the night's *start* day** (matches `analytics._sum`,
-  which sums sleep by `start_time` calendar day). Day aggregation uses naive bounds
-  interpreted in the DB session tz (UTC).
+- **Day aggregation is in IST (Asia/Kolkata), NOT UTC — changed 2026-06-19.**
+  `analytics._sum`/`health_repo.for_day` bin sleep/metrics by naive `start_time`
+  bounds interpreted in the **DB session tz**, and that tz was switched from UTC to
+  Asia/Kolkata: `ALTER DATABASE lifeos SET timezone TO 'Asia/Kolkata';` (then an API
+  **restart** so pooled connections rebind — not a rebuild). WHY: the user is in IST
+  (+0530) and falls asleep after local midnight, so a 02:52 IST `sleepStart` is
+  21:22 the *previous* UTC day — under UTC binning every night was filed one day
+  early and the today-centric dashboard showed **no sleep for "today."** Sleep is
+  attributed to the night's *start* day **in IST**, matching Apple Health's wake-day
+  view for this user. CAVEAT: naive date literals in SQL are now interpreted in IST (intended). The
+  `created_at`/`computed_at` audit-timestamp skew this *used* to cause was **fixed
+  2026-06-21 (commit `fdffe72`, deployed)**: audit columns now default to the
+  tz-aware `app.database.utcnow()` instead of naive `datetime.utcnow`, so they store
+  the correct instant and read true IST. (Rows written *before* the fix — including
+  today's full-recompute `computed_at` — stay ~5.5 h early; historical only.)
+  The **full history was recomputed under IST (2026-06-21)** — all 2,791 days
+  (2018-10-31→2026-06-21) in ~200 s via a `recompute_day` loop in the api container —
+  so every night sits on its correct local day, not just the recent window.
 - **Sleep import filters fragments**: drop sessions < 30 min and > 16 h (in-bed
   artifacts) in both `import_apple_health.py` and `apple_ingest.py`.
 - **Health Auto Export specifics:** REST + TCP server need **Premium**; the TCP
   server is **foreground-only** (app must be open) and the phone IP is **DHCP** (set
   a router reservation; it's `HAE_HOST` in `.env`). For the `health_metrics` TCP
   call, the `metrics` filter must go **inside `arguments`**, not beside `name`.
+  HAE automations **only run while the iPhone is unlocked** (Apple HealthKit rule),
+  and the endpoint is a **LAN IP** so the phone must be on home Wi-Fi (not cellular)
+  for a push to land — use a frequent cadence + "Since Last Sync" so a missed run
+  is caught next time. For sleep to ingest you MUST enable **Summarize Data** (ON):
+  the parser needs the *aggregated* point (`totalSleep`+`deep`/`rem`/`core`); the
+  disaggregated form is raw stage segments with no `totalSleep` and is dropped.
+- **Provenance lives in the `source_id` prefix, not a column.** There is **no
+  `source` column** on `health_records` (queries that group by `source` fail). The
+  one-time XML import writes `apple-<md5>` ids (`make_source_id`); the live HAE push
+  writes `hae-<md5>` ids (`apple_ingest._sid`); Health Connect uses its own ids.
+  Group by `split_part(source_id,'-',1)` to see provenance.
+- **Two double-counting traps, because differing `source_id`s never dedup against
+  each other:** (a) **XML import vs HAE** — the same night from both paths has a
+  different prefix *and* a different date-string format, so both land and
+  `analytics._sum` doubles that night's sleep. The import covers **through
+  2026-06-13 (UTC)**, so live data must be **UTC date ≥ 2026-06-14**. ⚠️ Apply the
+  cutoff in **UTC, not local time**: HAE logs `sleepStart` *after* local midnight
+  (e.g. `2026-06-14 04:34 +0530`), which is the *previous* UTC day
+  (`2026-06-13 23:04Z`), and the DB/analytics bin by UTC — so a *local-date* filter
+  under-excludes by one day and re-imports the last imported night. This exact bug
+  hit the 2026-06-19 TCP backfill (a 7.32 h night landed on both `apple` and `hae`
+  for 06-13, halving its `sleep_score` to 19.9); fixed by
+  `delete from health_records where source_id like 'hae-%'
+  and start_time < '2026-06-14 00:00:00+00';` then recomputing the touched days.
+  (b) **Health Connect vs HAE** — Health Connect
+  already carries steps/calories/workout/weight on this device, so HAE must export
+  **sleep + vitals only** (HR, HRV, resting HR, SpO2, respiratory rate, wrist temp,
+  VO2 max) and **exclude** activity/weight, or those metrics double too.
 - **`/tmp` on the Jetson is cleared on reboot** — the copied `export.zip` vanished
   after a reboot. Re-`scp` it from the Mac when re-importing.
 - **The Android sync worker swallows exceptions** (`HealthSyncWorker`) — failures
@@ -192,6 +249,67 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   chip showed a confusing "◆ Unknown · 0%". Now an absent state → "Awaiting data",
   an `unknown`/blank state → "No clear state yet", and the `· N%` confidence is
   only shown for a real state with non-zero confidence. Verified on the emulator.
+- ✅ **Sleep-gap root-caused & live-push endpoint re-verified on the Jetson
+  (2026-06-19).** Confirmed why no recent sleep reaches LifeOS: **100 % of sleep
+  rows are `apple-` (the one-time XML import), latest night 2026-06-13, ZERO `hae-`
+  rows — the Health Auto Export live push has never fired.** (3704 sleep rows /
+  1482 nights, earliest 2019-09-22.) So the last ~6 days are blank because that's
+  when the `export.zip` was taken, and the unattended path was never turned on.
+  Separately re-tested `/health/auto-export` end-to-end against the live container
+  with a synthetic 2017-01-01 night: ingest `inserted=5`, re-POST `inserted=0
+  skipped=5` (source_id dedup), `recompute_day` wrote `sleep_score=83.8` for the
+  day (+ the day-before). Test rows + their score/state rows were deleted; DB left
+  pristine. **Endpoint/parser are healthy — the only missing piece is the iPhone
+  setup (§7).**
+- ✅ **Live push GOING (2026-06-19, later same day).** The user created the REST
+  automation and it is **firing**: a push landed carrying just the most-recent day
+  (06-18 UTC, last night's 4.33 h session + that day's vitals), earliest data
+  06-18 18:30Z — i.e. a short window that does **not** reach the import. Automation
+  is configured correctly; going forward only it runs (the TCP pull below was a
+  one-off). Sleep now flows: `hae` rows span 06-14→06-18, `apple` import ends 06-13.
+- ✅ **Gap (06-14→06-18) backfilled via a one-off TCP live-pull (2026-06-19).** The
+  automation's short window can't fill days already missed, so pulled them from the
+  phone's HAE **TCP server** (`192.168.3.212:9000`) instead of a manual export: a
+  stdlib script (run on the Jetson *host*, which reaches both the phone and
+  `localhost:8000`) sends one `callTool`/`health_metrics` request
+  (`aggregate:true, interval:days`, metrics = sleep + vitals only), and the
+  response — **the same `{"data":{"metrics":[…]}}` shape as the REST export** — is
+  POSTed straight to `/health/auto-export`. Recipe lives in this session's history;
+  the TCP protocol is in `phone_health_client.py`. **Two gotchas burned here:**
+  (1) the **UTC-cutoff bug** in §5(a) — filtering the pull by *local* sleepStart
+  date re-imported the 06-13 night; fixed. (2) A point-in-time pull can catch only
+  a **fragment** of a night still in progress (the 06-19 pull saw a 4-min sliver of
+  the 06-18 night, correctly dropped by the <30 min filter) — the automation's
+  later push had the real 4.33 h value. Pull is best-effort; the automation is the
+  source of truth. Net: nights 06-14/15/17/18 present, 06-16 genuinely empty (watch
+  not worn), `sleep_score` for the affected days recomputed and correct.
+- ✅ **"No sleep for today" root-caused & fixed: day-binning moved UTC → IST
+  (2026-06-19).** The dashboard is today-centric but `daily_scores[today]` was
+  always empty: the user's `sleepStart` is after local midnight (e.g. 02:52 IST =
+  21:22 UTC *yesterday*), so UTC binning filed last night's sleep under *yesterday*.
+  Fix: `ALTER DATABASE lifeos SET timezone TO 'Asia/Kolkata'` + API restart +
+  `/analytics/recompute?days=120`. Verified: 06-19 went from null → `sleep_score`
+  20.3 (last night's 4.33 h) and the whole recent series re-aligned to the user's
+  IST day. Full history (2,791 days) later recomputed into IST. Audit-timestamp
+  skew from the tz switch was fixed in commit `fdffe72` (see §5).
+- ✅ **Single-source migration: Apple/HAE only, Health Connect removed (2026-06-21).**
+  Per the user — read all health data through one pipe (the HAE REST push) to end
+  the Samsung-vs-Apple activity double-count. Done: (a) **DB** — deleted all 715
+  non-`apple`/non-`hae` rows; only `apple` (import) + `hae` (live) remain. (b)
+  **Android** — `HealthSyncWorker` and `DashboardViewModel.syncAndAnalyze()` no
+  longer `readRecentSamples`/`sync` Health Connect; both just `recompute`. Removed
+  the now-unused `HealthRepository` injection from each. **Built & verified**:
+  `:app:assembleDebug` SUCCESS (incl. KSP + Hilt codegen) via the cached Gradle
+  dist (the repo's `gradle-wrapper.jar` is missing and the `gradlew` script mangles
+  its JVM opts — invoke `org.gradle.launcher.GradleMain` from
+  `~/.gradle/wrapper/dists/.../gradle-8.11.1/lib/gradle-launcher-*.jar` with the
+  Android Studio JBR instead). APK at `android/app/build/outputs/apk/debug/`. **User
+  must install this build** so the old one stops re-uploading HC (until then a
+  manual "Sync & analyze" on the old build re-adds HC rows — just re-run the delete).
+  The HAE automation already pushes everything (sleep+vitals+activity), so it's the
+  complete source; enable **Workouts** in the automation if workout data is wanted
+  (HC's old workouts were deleted). Activity is additive so multiple intra-day HAE
+  points sum correctly.
 
 ## 7. Open items / next steps
 
@@ -199,13 +317,32 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   far: the two unbuilt files (built/verified), the Sleep trend stale-headline +
   sparse-state fix, and the Ask-tab Enter fix. More UI issues likely to come from
   the user — keep going through the list.
-- **Finish Health Auto Export setup on the iPhone** (Premium): a REST automation →
-  `http://192.168.3.30:8000/health/auto-export` (JSON, aggregated sleep, *short*
-  rolling window to avoid double-counting the XML import), and *Server → Start
-  Server* for the live `live_health` chat tool.
-- **Set a DHCP reservation** for the iPhone so `HAE_HOST` stays valid.
-- Data is only current up to the last export/sync until live push is running; the
-  trend chart's recent windows stay sparse until then.
+- ✅ **Health Auto Export automation is LIVE on the iPhone** (Premium, 2026-06-19) —
+  confirmed pushing recent sleep+vitals with a short, non-overlapping window. The
+  settings below are the working config (keep as reference if it ever needs
+  rebuilding). *Automated Exports → New Automation → REST API*:
+  - **URL** `http://192.168.3.30:8000/health/auto-export` · **POST** (only option)
+    · **no headers** (endpoint is unauthenticated).
+  - **Data Type** = Health Metrics → **Select Health Metrics**: Sleep Analysis +
+    vitals only (Heart Rate, Heart Rate Variability, Resting Heart Rate, Blood
+    Oxygen, Respiratory Rate, optionally Wrist Temperature / VO2 Max). **Do NOT**
+    add Steps/Active Energy/Distance/Flights/Weight — Health Connect already syncs
+    those and they'd double-count (see §5).
+  - **Export Format** = JSON · **Summarize Data** = ON · **Time Grouping** = Daily
+    (Summarize ON is required or sleep is dropped — see §5).
+  - **Date Range** = **Since Last Sync** (never reaches back into the import).
+    **Sync cadence** every 1–2 h (idempotent, so frequency is free; catches the
+    morning unlock when the watch's sleep lands).
+  - Health check that a push landed: `select split_part(source_id,'-',1) src,
+    max(start_time)::date, count(*) from health_records where type like 'sleep%'
+    group by 1;` — the `hae` row should keep advancing with each new night.
+  - Separately, *Server → Start Server* (foreground-only) powers the `live_health`
+    chat tool **and** the one-off TCP backfill (§6); not needed for the push.
+- **Set a DHCP reservation** for the iPhone (`192.168.3.212`) so `HAE_HOST` and the
+  TCP server address stay valid. Still outstanding.
+- **Watch the next few automation runs.** Dedup keys sleep on the `sleepStart`
+  string; if Apple revises a night's `sleepStart` between syncs the new id won't
+  match and the night could land twice — check `hae` sleep has one row per night.
 
 ## 8. Key files
 
