@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -10,6 +11,17 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from app.config import get_settings
 
 settings = get_settings()
+
+
+def utcnow() -> datetime:
+    """Timezone-aware current UTC instant, for audit-column defaults.
+
+    Naive ``datetime.utcnow()`` is mislabeled once the DB session tz is not UTC
+    (production runs Asia/Kolkata for local-day binning), so it stores the wrong
+    instant; a tz-aware value always stores the correct one.
+    """
+    return datetime.now(timezone.utc)
+
 
 # SQLite (used by the test suite) needs check_same_thread disabled so the
 # TestClient's worker threads can share connections. Postgres ignores this.

@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, utcnow
 
 
 class DeviceToken(Base):
@@ -18,7 +18,7 @@ class DeviceToken(Base):
     token: Mapped[str] = mapped_column(String(512), index=True)
     platform: Mapped[str] = mapped_column(String(32), default="android")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=utcnow
     )

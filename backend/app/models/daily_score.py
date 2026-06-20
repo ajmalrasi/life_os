@@ -11,7 +11,7 @@ from datetime import date, datetime
 from sqlalchemy import Date, DateTime, Float, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, utcnow
 
 
 class DailyScore(Base):
@@ -30,4 +30,4 @@ class DailyScore(Base):
     consistency_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     burnout_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

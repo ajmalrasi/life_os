@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.database import utcnow
 from app.models.device import DeviceToken
 
 
@@ -19,7 +18,7 @@ class DeviceRepository:
         ).scalar_one_or_none()
         if existing:
             existing.platform = platform
-            existing.last_seen_at = datetime.utcnow()
+            existing.last_seen_at = utcnow()
             obj = existing
         else:
             obj = DeviceToken(token=token, platform=platform)

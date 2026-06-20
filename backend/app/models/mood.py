@@ -7,7 +7,7 @@ from datetime import date, datetime
 from sqlalchemy import Date, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, utcnow
 
 
 class MoodCheckin(Base):
@@ -24,4 +24,4 @@ class MoodCheckin(Base):
     stress: Mapped[int] = mapped_column(Integer)     # 1 (calm) .. 5 (stressed)
 
     note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

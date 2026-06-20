@@ -8,7 +8,7 @@ from datetime import date, datetime
 from sqlalchemy import Date, DateTime, Enum, Float, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, utcnow
 
 
 class LifeState(str, enum.Enum):
@@ -33,4 +33,4 @@ class DailyState(Base):
     confidence: Mapped[float] = mapped_column(Float)  # 0..1
     rationale: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

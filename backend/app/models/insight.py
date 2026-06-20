@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Float, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, utcnow
 
 
 class Insight(Base):
@@ -29,7 +29,7 @@ class Insight(Base):
     # Human-readable summary, e.g. "Productivity increases 31% when sleep exceeds 7.2 hours."
     summary: Mapped[str] = mapped_column(String(500))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

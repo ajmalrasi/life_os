@@ -7,7 +7,7 @@ from datetime import date, datetime
 from sqlalchemy import Date, DateTime, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, utcnow
 
 
 class GithubActivity(Base):
@@ -23,4 +23,4 @@ class GithubActivity(Base):
     active_repos: Mapped[int] = mapped_column(Integer, default=0)
     coding_minutes: Mapped[int] = mapped_column(Integer, default=0)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
