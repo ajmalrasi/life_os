@@ -8,9 +8,7 @@ import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.data.demo.DemoData
 import com.lifeos.app.data.demo.DemoMode
 import com.lifeos.app.domain.model.DayPulse
-import com.lifeos.app.data.health.HealthConnectManager
 import com.lifeos.app.domain.repository.AnalyticsRepository
-import com.lifeos.app.domain.repository.HealthRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,15 +37,10 @@ data class DashboardUiState(
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
-    private val healthRepository: HealthRepository,
     private val analyticsRepository: AnalyticsRepository,
     private val moodRepository: MoodRepository,
     private val settingsRepository: SettingsRepository,
-    healthConnectManager: HealthConnectManager,
 ) : ViewModel() {
-
-    val healthPermissions: Set<String> = healthConnectManager.permissions
-    val healthConnectAvailable: Boolean = healthConnectManager.isAvailable()
 
     private val transient = MutableStateFlow(TransientState())
 
@@ -96,13 +89,15 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    /** Full pipeline: read Health Connect -> upload -> recompute -> refresh cache. */
+    /**
+     * Recompute + refresh. Health data now arrives from the iPhone via Health
+     * Auto Export (POST /health/auto-export), so this no longer reads/uploads
+     * Health Connect — it recomputes the recent window and refreshes the cache.
+     */
     fun syncAndAnalyze() {
         viewModelScope.launch {
             transient.value = transient.value.copy(syncing = true, message = null)
             runCatching {
-                val samples = healthRepository.readRecentSamples(60)
-                val inserted = healthRepository.sync(samples)
                 val execution = analyticsRepository.recompute(60)
                 settingsRepository.setLastSyncDay(LocalDate.now())
                 settingsRepository.setLastSyncAt(System.currentTimeMillis())
@@ -113,7 +108,7 @@ class DashboardViewModel @Inject constructor(
                     val mins = execution.todayCodingMinutes ?: 0
                     " Auto-detected $commits commit(s), ${mins}m coding."
                 } ?: ""
-                setMessage("Synced $inserted health record(s) and recomputed insights.$execNote")
+                setMessage("Recomputed insights from your latest synced data.$execNote")
             }.onFailure { e ->
                 val url = runCatching { settingsRepository.apiBaseUrl.first() }.getOrDefault("unknown")
                 val hint = if (url.contains("10.0.2.2")) {

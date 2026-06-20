@@ -1,6 +1,5 @@
 package com.lifeos.app.presentation.dashboard
 
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.DemoBanner
@@ -43,13 +41,6 @@ import java.time.format.DateTimeFormatter
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = PermissionController.createRequestPermissionResultContract(),
-    ) { granted ->
-        // Sync whatever the user allowed — a partial grant is still useful.
-        if (granted.any { it in viewModel.healthPermissions }) viewModel.syncAndAnalyze()
-    }
 
     val composite = compositeScore(state.latestScore)
     val prevComposite = state.scoreHistory.getOrNull(1)?.let { compositeScore(it) }
@@ -122,10 +113,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
 
         item {
             Button(
-                onClick = {
-                    if (viewModel.healthConnectAvailable) permissionLauncher.launch(viewModel.healthPermissions)
-                    else viewModel.syncAndAnalyze()
-                },
+                onClick = { viewModel.syncAndAnalyze() },
                 enabled = !state.syncing,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(16.dp),
