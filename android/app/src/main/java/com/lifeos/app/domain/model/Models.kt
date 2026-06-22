@@ -90,6 +90,8 @@ data class Insight(
     val sampleSize: Int,
     val lagDays: Int,
     val summary: String,
+    /** LLM-written retelling of the same facts; falls back to [summary] when null. */
+    val narrative: String? = null,
 )
 
 data class AppNotification(

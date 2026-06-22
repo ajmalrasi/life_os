@@ -22,6 +22,15 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val input: String = "",
     val sending: Boolean = false,
+    val suggestions: List<String> = DEFAULT_SUGGESTIONS,
+)
+
+// Shown immediately while the data-grounded set loads, and if that load fails.
+private val DEFAULT_SUGGESTIONS = listOf(
+    "How am I doing this week?",
+    "Do I get more done on days I work out?",
+    "Am I moving toward burnout?",
+    "What should I focus on today?",
 )
 
 @HiltViewModel
@@ -32,12 +41,18 @@ class ChatViewModel @Inject constructor(
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
-    val suggestions = listOf(
-        "How am I doing this week?",
-        "Do I get more done on days I work out?",
-        "Am I moving toward burnout?",
-        "What should I focus on today?",
-    )
+    init {
+        // Tailor the starter questions to the user's actual recent data. Best-effort:
+        // the repository falls back to defaults, so the empty state is never blank.
+        viewModelScope.launch {
+            val tailored = runCatching {
+                chatRepository.suggestions(contextDays = 30)
+            }.getOrDefault(DEFAULT_SUGGESTIONS)
+            if (tailored.isNotEmpty()) {
+                _state.value = _state.value.copy(suggestions = tailored)
+            }
+        }
+    }
 
     fun onInputChange(text: String) {
         _state.value = _state.value.copy(input = text)

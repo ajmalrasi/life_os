@@ -29,6 +29,8 @@ from app.repositories.mood_repo import MoodRepository
 from app.services import correlation as corr
 from app.services import scoring
 from app.services import state_engine
+from app.services import insight_narrator
+from app.services.insight_narrator import InsightFact
 
 settings = get_settings()
 
@@ -38,7 +40,7 @@ _CONSISTENCY_WINDOW = 7
 
 
 class AnalyticsService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, client: "OpenClawClient | None" = None) -> None:
         self.db = db
         self.health = HealthRepository(db)
         self.mood = MoodRepository(db)
@@ -46,6 +48,8 @@ class AnalyticsService:
         self.scores = ScoreRepository(db)
         self.states = StateRepository(db)
         self.insights = InsightRepository(db)
+        # Lazily constructed inside the narrator if left as None; injectable for tests.
+        self.client = client
 
     # -- per-day -------------------------------------------------------------------------
 
@@ -227,7 +231,9 @@ class AnalyticsService:
             ("fitness_score", "sleep_score"),
         ]
 
-        found = 0
+        # First pass: the deterministic correlation engine decides which patterns
+        # are real and computes their grounding facts.
+        facts: list[InsightFact] = []
         for driver_name, outcome_name in pairs:
             driver = named[driver_name]
             outcome = named[outcome_name]
@@ -242,16 +248,37 @@ class AnalyticsService:
             if c is None or abs(c.r) < settings.correlation_significance:
                 continue
             summary = corr.describe(c, driver, outcome)
-            self.insights.upsert(
-                driver=c.driver,
-                outcome=c.outcome,
-                correlation=c.r,
-                sample_size=c.n,
-                lag_days=c.lag_days,
-                summary=summary,
+            facts.append(
+                InsightFact(
+                    driver=c.driver,
+                    outcome=c.outcome,
+                    r=c.r,
+                    n=c.n,
+                    lag_days=c.lag_days,
+                    summary=summary,
+                )
             )
-            found += 1
-        return found
+
+        # Second pass (best-effort): the LLM retells those same facts in fresher
+        # language. Failures here never block discovery — we still persist the
+        # deterministic summaries.
+        narratives: dict[str, str] = {}
+        try:
+            narratives = insight_narrator.narrate(facts, client=self.client)
+        except Exception:  # narration is a nicety, never a blocker
+            narratives = {}
+
+        for f in facts:
+            self.insights.upsert(
+                driver=f.driver,
+                outcome=f.outcome,
+                correlation=f.r,
+                sample_size=f.n,
+                lag_days=f.lag_days,
+                summary=f.summary,
+                narrative=narratives.get(f.key()),
+            )
+        return len(facts)
 
 
 def _date_range(start: date, end: date) -> list[date]:

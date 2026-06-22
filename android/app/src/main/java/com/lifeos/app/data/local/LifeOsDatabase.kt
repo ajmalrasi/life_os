@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [MoodEntity::class, ScoreEntity::class, StateEntity::class, InsightEntity::class],
-    version = 3, // v3: added ScoreEntity.fitnessScore (destructive migration is configured)
+    version = 4, // v4: added InsightEntity.narrative (destructive migration is configured)
     exportSchema = false,
 )
 abstract class LifeOsDatabase : RoomDatabase() {

@@ -635,7 +635,21 @@ fun InsightCard(insight: Insight, modifier: Modifier = Modifier) {
                     color = LifeOsColors.OnSurfaceMuted,
                 )
             }
-            Text(insight.summary, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            // Lead with the LLM narrative when we have one; keep the deterministic
+            // summary visible underneath as the grounding fact.
+            val narrative = insight.narrative?.takeIf { it.isNotBlank() }
+            Text(
+                narrative ?: insight.summary,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            if (narrative != null) {
+                Text(
+                    insight.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
         }
     }
 }

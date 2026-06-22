@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # Analytics
     correlation_min_samples: int = 7  # need at least a week of overlapping data
     correlation_significance: float = 0.35  # |r| threshold to surface an insight
+    # Let the LLM retell discovered patterns in fresher language (best-effort;
+    # falls back to the deterministic summaries when OpenClaw is unreachable).
+    insight_narration_enabled: bool = True
 
     @property
     def execution_repo_path_list(self) -> list[str]:

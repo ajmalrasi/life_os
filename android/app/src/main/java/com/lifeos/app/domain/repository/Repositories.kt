@@ -51,6 +51,10 @@ interface AnalyticsRepository {
 
 interface ChatRepository {
     suspend fun ask(message: String, history: List<ChatTurn>, contextDays: Int): ChatAnswer
+
+    /** Data-grounded starter questions for the Ask screen. Never throws — returns
+     *  sensible defaults if the backend is unreachable. */
+    suspend fun suggestions(contextDays: Int): List<String>
 }
 
 interface SettingsRepository {

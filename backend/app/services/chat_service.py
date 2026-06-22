@@ -29,6 +29,28 @@ from app.services.openclaw import OpenClawClient, OpenClawUnavailable
 # bounded so a misbehaving model can't spin forever.
 MAX_AGENT_STEPS = 4
 
+# Shown before there's enough data to tailor questions, and whenever the LLM is
+# unreachable. Kept generic but useful.
+DEFAULT_SUGGESTIONS = [
+    "How am I doing this week?",
+    "Do I get more done on days I work out?",
+    "Am I moving toward burnout?",
+    "What should I focus on today?",
+]
+
+_SUGGESTION_PROMPT = (
+    "You are LifeOS. Below is a JSON snapshot of one user's recent health, mood, "
+    "fitness and coding-execution data. Propose 4 SHORT questions this specific "
+    "user would find worth asking their data right now.\n\n"
+    "RULES:\n"
+    "- Tailor them to what's actually in the snapshot — reference real signals "
+    "(a current state, a discovered pattern, a notable metric, or a gap worth "
+    "filling). Avoid generic wellness fluff.\n"
+    "- Each question <= 9 words, first person ('my'/'I'), ends with '?'.\n"
+    "- Make them distinct from each other.\n"
+    "- Return ONLY a JSON array of 4 strings. No prose, no keys, no code fences."
+)
+
 SYSTEM_PROMPT = (
     "You are LifeOS, a personal intelligence companion. You analyze one user's own "
     "health, mood, and project-execution data to explain — in plain language — why "
@@ -187,6 +209,36 @@ class ChatService:
 
         return ChatResponse(answer=answer, citations=self._citations(context), grounded=grounded)
 
+    def suggest(self, days: int = 30) -> list[str]:
+        """Propose data-grounded starter questions for the Ask screen.
+
+        Best-effort and never raises: with no data, or when OpenClaw is
+        unreachable or returns something unparseable, falls back to the static
+        defaults so the UI always has something to show.
+        """
+        context = self.build_context(days)
+        has_data = (
+            context["totals"]["days_with_scores"] > 0
+            or context["totals"]["days_with_mood_checkin"] > 0
+        )
+        if not has_data:
+            return DEFAULT_SUGGESTIONS
+
+        messages = [
+            {"role": "system", "content": _SUGGESTION_PROMPT},
+            {
+                "role": "user",
+                "content": "DATA SNAPSHOT (JSON):\n" + json.dumps(context, indent=2),
+            },
+        ]
+        try:
+            raw = self.client.chat(messages, temperature=0.7)
+        except OpenClawUnavailable:
+            return DEFAULT_SUGGESTIONS
+
+        questions = _parse_questions(raw)
+        return questions or DEFAULT_SUGGESTIONS
+
     def _run_agent(self, messages: list[dict]) -> str:
         """Agentic loop: let OpenClaw call data tools, then answer.
 
@@ -245,3 +297,30 @@ class ChatService:
             for p in context["discovered_patterns"][:5]:
                 parts.append(f"- {p['summary']}")
         return "\n".join(parts)
+
+
+def _parse_questions(raw: str) -> list[str]:
+    """Extract up to 4 clean question strings from a model response."""
+    if not raw:
+        return []
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        nl = text.find("\n")
+        if nl != -1:
+            text = text[nl + 1 :]
+    start, end = text.find("["), text.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        text = text[start : end + 1]
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[str] = []
+    for item in data:
+        q = str(item).strip()
+        if q:
+            out.append(q[:120])
+    return out[:4]

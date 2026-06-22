@@ -68,8 +68,9 @@ fun InsightDto.toEntity() = InsightEntity(
     sampleSize = sampleSize,
     lagDays = lagDays,
     summary = summary,
+    narrative = narrative,
 )
-fun InsightEntity.toDomain() = Insight(driver, outcome, correlation, sampleSize, lagDays, summary)
+fun InsightEntity.toDomain() = Insight(driver, outcome, correlation, sampleSize, lagDays, summary, narrative)
 
 // --- Notifications ---
 fun NotificationDto.toDomain() = AppNotification(severity, title, detail)

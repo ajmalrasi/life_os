@@ -26,8 +26,14 @@ class Insight(Base):
     sample_size: Mapped[int] = mapped_column(Integer)
     lag_days: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Human-readable summary, e.g. "Productivity increases 31% when sleep exceeds 7.2 hours."
+    # Deterministic, factual summary, e.g. "Productivity increases 31% when sleep exceeds 7.2 hours."
+    # This is the grounding source of truth and is always populated.
     summary: Mapped[str] = mapped_column(String(500))
+
+    # Optional LLM-written narrative — a fresher, more natural retelling of the
+    # same correlation facts. Null when the model is unreachable; the UI falls
+    # back to ``summary`` so insights never disappear.
+    narrative: Mapped[str | None] = mapped_column(String(600), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

@@ -15,6 +15,7 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.RecomputeResultDto
+import com.lifeos.app.data.remote.dto.SuggestionsResponseDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -54,6 +55,9 @@ interface LifeOsApi {
 
     @POST("chat")
     suspend fun chat(@Body request: ChatRequestDto): ChatResponseDto
+
+    @GET("chat/suggestions")
+    suspend fun chatSuggestions(@Query("days") days: Int): SuggestionsResponseDto
 
     @POST("device/token")
     suspend fun registerDeviceToken(@Body body: DeviceTokenDto): DeviceTokenResponseDto

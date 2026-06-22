@@ -83,6 +83,7 @@ class InsightRepository:
         sample_size: int,
         lag_days: int,
         summary: str,
+        narrative: str | None = None,
     ) -> Insight:
         obj = self.db.execute(
             select(Insight).where(Insight.driver == driver, Insight.outcome == outcome)
@@ -94,6 +95,10 @@ class InsightRepository:
         obj.sample_size = sample_size
         obj.lag_days = lag_days
         obj.summary = summary
+        # Only overwrite the narrative when we have a fresh one; preserve the
+        # previous wording if narration was skipped/unavailable this run.
+        if narrative is not None:
+            obj.narrative = narrative
         self.db.commit()
         self.db.refresh(obj)
         return obj

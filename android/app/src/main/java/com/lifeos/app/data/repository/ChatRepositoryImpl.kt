@@ -31,4 +31,19 @@ class ChatRepositoryImpl @Inject constructor(
             grounded = response.grounded,
         )
     }
+
+    override suspend fun suggestions(contextDays: Int): List<String> =
+        runCatching { api.chatSuggestions(contextDays).questions }
+            .getOrDefault(emptyList())
+            .ifEmpty { DEFAULT_SUGGESTIONS }
+
+    private companion object {
+        // Mirrors the backend's fallback; used when the network call fails.
+        val DEFAULT_SUGGESTIONS = listOf(
+            "How am I doing this week?",
+            "Do I get more done on days I work out?",
+            "Am I moving toward burnout?",
+            "What should I focus on today?",
+        )
+    }
 }

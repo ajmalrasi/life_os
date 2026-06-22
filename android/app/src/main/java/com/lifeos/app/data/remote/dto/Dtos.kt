@@ -90,6 +90,7 @@ data class InsightDto(
     @SerialName("sample_size") val sampleSize: Int,
     @SerialName("lag_days") val lagDays: Int,
     val summary: String,
+    val narrative: String? = null,
 )
 
 @Serializable
@@ -135,4 +136,9 @@ data class ChatResponseDto(
     val answer: String,
     val citations: List<CitationDto> = emptyList(),
     val grounded: Boolean = true,
+)
+
+@Serializable
+data class SuggestionsResponseDto(
+    val questions: List<String> = emptyList(),
 )

@@ -12,6 +12,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -22,6 +23,12 @@ class ChatViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val repository = mockk<ChatRepository>()
+
+    @Before
+    fun setUp() {
+        // The ViewModel loads starter questions on init; keep it inert for these tests.
+        coEvery { repository.suggestions(any()) } returns emptyList()
+    }
 
     @Test
     fun `sending a message appends user and assistant turns with citations`() = runTest {

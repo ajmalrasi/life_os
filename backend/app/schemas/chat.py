@@ -24,3 +24,7 @@ class ChatResponse(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     grounded: bool = True
+
+
+class SuggestionsResponse(BaseModel):
+    questions: list[str] = Field(default_factory=list)

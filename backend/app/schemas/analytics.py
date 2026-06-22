@@ -38,6 +38,7 @@ class InsightOut(BaseModel):
     sample_size: int
     lag_days: int
     summary: str
+    narrative: str | None = None
 
 
 class RecomputeResult(BaseModel):

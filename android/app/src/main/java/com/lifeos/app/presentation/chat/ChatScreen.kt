@@ -101,7 +101,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                         modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
                     )
                 }
-                items(viewModel.suggestions) { s ->
+                items(state.suggestions) { s ->
                     SuggestionRow(text = s, onClick = { viewModel.send(s) })
                 }
             }
@@ -251,11 +251,20 @@ private fun MessageBubble(message: ChatMessage) {
                 )
                 .padding(14.dp),
         ) {
-            Text(
-                message.content,
-                color = if (isUser) LifeOsColors.OnPrimary else LifeOsColors.OnBackground,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            // User text is plain; assistant replies arrive as Markdown, so render
+            // them so bold/bullets/headings display instead of raw symbols.
+            if (isUser) {
+                Text(
+                    message.content,
+                    color = LifeOsColors.OnPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                MarkdownText(
+                    text = message.content,
+                    color = LifeOsColors.OnBackground,
+                )
+            }
             if (message.citations.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

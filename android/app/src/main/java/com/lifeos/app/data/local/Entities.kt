@@ -42,4 +42,5 @@ data class InsightEntity(
     val sampleSize: Int,
     val lagDays: Int,
     val summary: String,
+    val narrative: String? = null,
 )
