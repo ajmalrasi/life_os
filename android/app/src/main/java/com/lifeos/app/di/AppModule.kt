@@ -5,11 +5,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
+import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.InsightDao
 import com.lifeos.app.data.local.LifeOsDatabase
 import com.lifeos.app.data.local.MoodDao
 import com.lifeos.app.data.local.ScoreDao
 import com.lifeos.app.data.local.StateDao
+import com.lifeos.app.data.local.TransactionDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -52,4 +54,10 @@ object AppModule {
 
     @Provides
     fun insightDao(db: LifeOsDatabase): InsightDao = db.insightDao()
+
+    @Provides
+    fun transactionDao(db: LifeOsDatabase): TransactionDao = db.transactionDao()
+
+    @Provides
+    fun cardStatementDao(db: LifeOsDatabase): CardStatementDao = db.cardStatementDao()
 }

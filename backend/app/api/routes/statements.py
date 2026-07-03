@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from datetime import date, timedelta
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.config import Settings, get_settings
+from app.database import get_db
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.payee_label_repo import PayeeLabelRepository
+from app.repositories.statement_repo import StatementRepository
+from app.schemas.statement import (
+    CardStatementOut,
+    CategorySpend,
+    MonthTrend,
+    SpendAnalysis,
+    SpendTrends,
+    StatementSyncResult,
+)
+from app.services.gmail_client import GmailClient
+from app.services.reconcile import EXCLUDED_FROM_SPEND, run_reconciliation
+from app.services.statement_collector import StatementCollector
+
+router = APIRouter(prefix="/statements", tags=["statements"])
+
+# Deterministic keyword categorizer for the analysis rollup. Order matters —
+# first match wins. Extend freely; unknowns land in "other".
+_CATEGORY_RULES: list[tuple[str, re.Pattern]] = [
+    # "petro" catches petrol, petroleum, and "PETRO PARK" style pump names.
+    ("fuel", re.compile(r"petro|fuel|hpcl|bpcl", re.I)),
+    ("wallet_load", re.compile(r"mobikwik|paytm wallet|wallet load", re.I)),
+    ("food", re.compile(r"zomato|swiggy|kfc|restaurant|cafe|hotel|bakery|kitchen|chicking|food", re.I)),
+    ("groceries", re.compile(r"grocery|hypermarket|supermarket|mart|fresh|traders", re.I)),
+    ("shopping", re.compile(r"flipkart|myntra|amazon|decathlon|snitch|store", re.I)),
+    ("subscriptions", re.compile(r"anthropic|cursor|apple|youtube|google|netflix|zee|spotify|adobe|prime|jio|airtel", re.I)),
+    ("investments", re.compile(r"zerodha|broking|groww|smallcase|mutual\s*fund", re.I)),
+    ("entertainment", re.compile(r"bookmyshow|cinema|pvr|inox|movie", re.I)),
+    ("emi_fees", re.compile(r"emi|gst|igst|fee|interest|surcharge|markup", re.I)),
+    ("travel", re.compile(r"bus|irctc|uber|ola|rapido|airline|flight|agoda|makemytrip|goibibo|oyo|redbus", re.I)),
+]
+
+
+def _categorize(desc: str) -> str:
+    for name, pat in _CATEGORY_RULES:
+        if pat.search(desc):
+            return name
+    return "other"
+
+
+def build_categorizer(db: Session):
+    """Return a ``categorize(desc) -> category`` callable that consults the
+    user's payee labels first, then falls back to the built-in keyword rules.
+
+    Labels are loaded once here (not per-transaction) so the hot loops in the
+    analysis endpoints stay a single DB round-trip. User labels take precedence
+    over the keyword defaults so an explicit rule always wins; ties fall through
+    in (priority, id) order as returned by the repository.
+    """
+    labels = PayeeLabelRepository(db).active_ordered()
+    compiled: list[tuple[str, object, str]] = []
+    for lbl in labels:
+        if lbl.match_type == "regex":
+            try:
+                compiled.append(("regex", re.compile(lbl.pattern, re.I), lbl.category))
+            except re.error:
+                # A malformed pattern shouldn't break categorization for the
+                # whole feed; skip it (create-time validation guards against
+                # this, but be defensive against rows written another way).
+                continue
+        else:
+            compiled.append((lbl.match_type, lbl.pattern.lower(), lbl.category))
+
+    def categorize(desc: str) -> str:
+        text = desc or ""
+        lowered = text.lower()
+        for match_type, needle, category in compiled:
+            if match_type == "regex":
+                if needle.search(text):  # type: ignore[union-attr]
+                    return category
+            elif match_type == "exact":
+                if lowered == needle:
+                    return category
+            else:  # substring
+                if needle in lowered:  # type: ignore[operator]
+                    return category
+        return _categorize(text)
+
+    return categorize
+
+
+def _gmail_client(settings: Settings) -> GmailClient:
+    return GmailClient(
+        account=settings.gmail_account,
+        keyring_password=settings.gog_keyring_password,
+        gog_bin=settings.gog_bin,
+        home=settings.gog_home or None,
+    )
+
+
+@router.get("", response_model=list[CardStatementOut])
+def list_statements(months: int = 3, db: Session = Depends(get_db)) -> list[CardStatementOut]:
+    """Stored statement summaries, newest first."""
+    end = date.today()
+    start = end - timedelta(days=months * 31)
+    rows = StatementRepository(db).range(start, end)
+    return [CardStatementOut.model_validate(r) for r in rows]
+
+
+@router.post("/sync", response_model=StatementSyncResult)
+def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> StatementSyncResult:
+    """Fetch new statement emails, decrypt PDFs, parse, and ingest (idempotent).
+
+    ``window_days`` widens the Gmail search window for one-off backfills (e.g.
+    pulling 6 months of history); the default matches routine monthly polling.
+    """
+    settings = get_settings()
+    report = StatementCollector(
+        db,
+        _gmail_client(settings),
+        owner_name=settings.cc_owner_name,
+        owner_dob=settings.cc_owner_dob,
+        password_overrides=settings.cc_pdf_password_overrides,
+        window_days=window_days,
+    ).sync()
+    # Tag transfers (CC bill payments) and lend/return pairs so they never
+    # count as spend; idempotent over uncategorized rows only.
+    run_reconciliation(db)
+    return StatementSyncResult(
+        banks_run=report.banks_run,
+        emails_seen=report.emails_seen,
+        statements_new=report.statements_new,
+        line_items_ingested=report.line_items_ingested,
+        line_items_deduped=report.line_items_deduped,
+        message=report.message,
+        statements=[CardStatementOut.model_validate(s) for s in report.statements],
+    )
+
+
+@router.get("/trends", response_model=SpendTrends)
+def spend_trends(months: int = 6, db: Session = Depends(get_db)) -> SpendTrends:
+    """Month-by-month spend over the combined feed (UPI + statement line items),
+    then an aggregate across the window. Grouped by calendar month of txn_date."""
+    end = date.today()
+    start = (end.replace(day=1) - timedelta(days=(months - 1) * 31)).replace(day=1)
+    txns = ExpenseRepository(db).range(start, end)
+    categorize = build_categorizer(db)
+
+    per_month: dict[str, list] = defaultdict(list)
+    for t in txns:
+        if t.category in EXCLUDED_FROM_SPEND:
+            continue  # CC bill payments / lent-and-returned money are not spend
+        per_month[t.txn_date.strftime("%Y-%m")].append(t)
+
+    out: list[MonthTrend] = []
+    agg_cat: dict[str, list[Decimal]] = defaultdict(list)
+    agg_debits = Decimal(0)
+    for month in sorted(per_month):
+        rows = per_month[month]
+        debits = [t for t in rows if t.direction == "debit"]
+        credits = [t for t in rows if t.direction == "credit"]
+        by_cat: dict[str, list[Decimal]] = defaultdict(list)
+        by_acct: dict[str, list[Decimal]] = defaultdict(list)
+        for t in debits:
+            cat = categorize(t.counterparty or "")
+            by_cat[cat].append(t.amount)
+            agg_cat[cat].append(t.amount)
+            by_acct[t.account or "unknown"].append(t.amount)
+        month_debits = sum((t.amount for t in debits), Decimal(0))
+        agg_debits += month_debits
+        out.append(
+            MonthTrend(
+                month=month,
+                total_debits=month_debits,
+                total_credits=sum((t.amount for t in credits), Decimal(0)),
+                txn_count=len(rows),
+                by_category=sorted(
+                    (CategorySpend(category=k, total=sum(v), count=len(v)) for k, v in by_cat.items()),
+                    key=lambda c: c.total,
+                    reverse=True,
+                ),
+                by_account=sorted(
+                    (CategorySpend(category=k, total=sum(v), count=len(v)) for k, v in by_acct.items()),
+                    key=lambda c: c.total,
+                    reverse=True,
+                ),
+            )
+        )
+
+    return SpendTrends(
+        months=out,
+        aggregate_debits=agg_debits,
+        aggregate_by_category=sorted(
+            (CategorySpend(category=k, total=sum(v), count=len(v)) for k, v in agg_cat.items()),
+            key=lambda c: c.total,
+            reverse=True,
+        ),
+    )
+
+
+@router.get("/analysis", response_model=SpendAnalysis)
+def spend_analysis(days: int = 45, db: Session = Depends(get_db)) -> SpendAnalysis:
+    """Month-at-a-glance: dues across every card (latest statement per card)
+    plus category/merchant breakdown over the combined transaction feed."""
+    cards = StatementRepository(db).latest_per_card()
+    total_due = sum((c.total_due or Decimal(0)) for c in cards)
+    min_due = sum((c.min_due or Decimal(0)) for c in cards)
+    today = date.today()
+    upcoming = [c.due_date for c in cards if c.due_date and c.due_date >= today]
+    next_due = min(upcoming) if upcoming else None
+
+    end = today
+    start = end - timedelta(days=days - 1)
+    txns = ExpenseRepository(db).range(start, end)
+    categorize = build_categorizer(db)
+
+    by_cat: dict[str, list[Decimal]] = defaultdict(list)
+    by_merchant: dict[str, list[Decimal]] = defaultdict(list)
+    for t in txns:
+        if t.direction != "debit" or t.category in EXCLUDED_FROM_SPEND:
+            continue
+        desc = t.counterparty or ""
+        by_cat[categorize(desc)].append(t.amount)
+        if desc:
+            by_merchant[desc[:48]].append(t.amount)
+
+    categories = sorted(
+        (CategorySpend(category=k, total=sum(v), count=len(v)) for k, v in by_cat.items()),
+        key=lambda c: c.total,
+        reverse=True,
+    )
+    merchants = sorted(
+        (CategorySpend(category=k, total=sum(v), count=len(v)) for k, v in by_merchant.items()),
+        key=lambda c: c.total,
+        reverse=True,
+    )[:15]
+
+    return SpendAnalysis(
+        total_due_all_cards=total_due,
+        min_due_all_cards=min_due,
+        next_due_date=next_due,
+        cards=[CardStatementOut.model_validate(c) for c in cards],
+        spend_by_category=categories,
+        top_merchants=merchants,
+    )

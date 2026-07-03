@@ -346,7 +346,17 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 8. Key files
 
+> **API references (for other agents/clients):** the live machine-readable spec
+> is always at `GET /openapi.json` (interactive at `/docs`). Curated markdown:
+> **[`backend/docs/expenses-api.md`](backend/docs/expenses-api.md)** — the
+> email→transaction Expenses API (`/expenses`, `/expenses/new`, `/expenses/sync`;
+> incremental, read-only Gmail via `gog`).
+
 ```
+backend/app/api/routes/expenses.py       # /expenses (list), /expenses/new (poll), /expenses/sync
+backend/app/services/expense_collector.py # incremental cursor sync (only-new emails)
+backend/app/services/expense_parsers/     # per-source parsers (registry); add a bank = add a file
+backend/app/models/transaction.py         # transactions table (idempotent on dedup_key)
 backend/app/api/routes/health_data.py    # /health/batch + /health/auto-export
 backend/app/api/routes/analytics.py      # /analytics/recompute (bg github scan), scores, state
 backend/app/services/apple_ingest.py     # Health Auto Export JSON -> records

@@ -4,12 +4,14 @@ import com.lifeos.app.data.repository.AnalyticsRepositoryImpl
 import com.lifeos.app.data.repository.ChatRepositoryImpl
 import com.lifeos.app.data.repository.GithubRepositoryImpl
 import com.lifeos.app.data.repository.HealthRepositoryImpl
+import com.lifeos.app.data.repository.MoneyRepositoryImpl
 import com.lifeos.app.data.repository.MoodRepositoryImpl
 import com.lifeos.app.data.repository.SettingsRepositoryImpl
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.ChatRepository
 import com.lifeos.app.domain.repository.GithubRepository
 import com.lifeos.app.domain.repository.HealthRepository
+import com.lifeos.app.domain.repository.MoneyRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.SettingsRepository
 import dagger.Binds
@@ -45,4 +47,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun settingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun moneyRepository(impl: MoneyRepositoryImpl): MoneyRepository
 }

@@ -13,10 +13,13 @@ from app.api.routes import (
     chat,
     collectors,
     device,
+    expenses,
     github_data,
     health_data,
     mood,
     notifications,
+    payee_labels,
+    statements,
 )
 from app.config import get_settings
 from app.database import init_db, purge_seed_data
@@ -53,6 +56,9 @@ app.include_router(health_data.router)
 app.include_router(mood.router)
 app.include_router(collectors.router)
 app.include_router(github_data.router)
+app.include_router(expenses.router)
+app.include_router(statements.router)
+app.include_router(payee_labels.router)
 app.include_router(analytics.router)
 app.include_router(chat.router)
 app.include_router(notifications.router)

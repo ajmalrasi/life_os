@@ -8,6 +8,9 @@ pydantic-settings==2.7.0
 httpx==0.28.1
 python-dateutil==2.9.0.post0
 numpy==2.2.1
+# CC statement PDFs: decrypt (pikepdf) + text extraction (pdfplumber).
+pikepdf==9.4.2
+pdfplumber==0.11.4
 
 # Optional: only needed to enable FCM push (Phase 1 #5). Safe to omit — the
 # FCM sender degrades to a no-op when this isn't installed.

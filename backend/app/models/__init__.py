@@ -10,9 +10,14 @@ from app.models.device import DeviceToken
 from app.models.github import GithubActivity
 from app.models.health import HealthRecord, HealthRecordType
 from app.models.insight import Insight
+from app.models.card_statement import CardStatement
 from app.models.mood import MoodCheckin
+from app.models.payee_label import PayeeLabel
+from app.models.sync_state import CollectorState
+from app.models.transaction import Transaction
 
 __all__ = [
+    "CardStatement",
     "HealthRecord",
     "HealthRecordType",
     "MoodCheckin",
@@ -21,4 +26,7 @@ __all__ = [
     "DailyState",
     "DeviceToken",
     "Insight",
+    "Transaction",
+    "CollectorState",
+    "PayeeLabel",
 ]

@@ -1,0 +1,188 @@
+"""Post-ingest reconciliation over the transactions table.
+
+Three jobs, all idempotent (they only touch rows with category IS NULL):
+
+1. ``tag_transfers`` — credit-card bill payments and inter-account moves are
+   money shuffling, not spend. Tagged ``transfer`` so analysis excludes them.
+
+2. ``reconcile_returns`` — money lent and returned (user sends someone money
+   temporarily; they pay it back). A debit and a later credit with the SAME
+   amount and the SAME normalized counterparty within ``window_days`` are
+   paired: debit tagged ``lent_returned``, credit tagged ``lend_return``.
+   Both are excluded from spend. Each credit pairs with at most one debit.
+
+3. ``reconcile_reversals`` — a bank-side UPI failure/reversal (e.g. SBI's
+   "UPI/DR/<ref>/..." followed by "UPI/REV/<ref>"). Unlike (2) this is matched
+   by the UPI reference number embedded in the narration, not the counterparty
+   name, because the bank's own reversal line carries no name — just the ref.
+   Debit tagged ``reversed_debit``, credit tagged ``reversal_credit``.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.transaction import Transaction
+
+# Categories that must never count as spend.
+EXCLUDED_FROM_SPEND = {"transfer", "lent_returned", "lend_return", "reversed_debit", "reversal_credit"}
+
+# Credits matching this are money arriving from yourself (card bill payments,
+# sweep-ins) — never income/spend.
+_TRANSFER_CREDIT_PAT = re.compile(
+    r"BBPS|CC PAYMENT|PAYMENT RECEIVED|CREDIT CARD PAYMENT|BPPY|CRED CLUB|AUTO SWEEP|SWEEP TRF|REV SWEEP",
+    re.I,
+)
+# Debits matching this are you paying your own card / moving money between
+# accounts. Deliberately NOT bare "BBPS": paying an electricity bill via BBPS
+# with a card is real spend; only card-bill payments are transfers.
+#
+# CRED (cred.club) is a UPI app used specifically to pay credit-card bills, so
+# a UPI debit to it is a transfer, not spend, even though it looks like an
+# ordinary merchant payment. \bCRED\b / @cred require "cred" as a standalone
+# word or VPA handle so this doesn't match "credit", "credited", etc.
+_TRANSFER_DEBIT_PAT = re.compile(
+    r"CC PAYMENT|CREDIT CARD PAYMENT|BPPY CC|CRED CLUB|AUTO SWEEP|SWEEP TRF|CREDIT CARD BILL"
+    r"|@cred\b|\bCRED\b|\bDREAMPLUG\b",
+    re.I,
+)
+
+_NOISE = re.compile(r"^(upi[-/]?|mr\.?|mrs\.?|m/s)\s*", re.I)
+
+_REVERSAL_PAT = re.compile(r"\bREV\b", re.I)
+_REF_ID = re.compile(r"\b(\d{9,15})\b")
+
+# Generic institutional/clearing-house descriptors, not a person's name. Bank
+# statements print the SAME text for every transaction routed through these
+# rails (e.g. every SIP/mandate debit reads "ACH D- Indian Clearing..."), so
+# matching on this text pairs unrelated transactions that merely share a
+# payment rail — not evidence of lending money to a person and it coming back.
+_INSTITUTIONAL_PAT = re.compile(
+    r"\bACH\b|\bNACH\b|\bNEFT\b|\bIMPS\b|\bRTGS\b|CLEARING|MUTUAL FUND|ZERODHA|BROKING|"
+    r"\bSIP\b|INSURANCE|PREMIUM",
+    re.I,
+)
+
+
+def _norm(name: str | None) -> str:
+    """Normalize a counterparty for matching: drop UPI-/honorific prefixes,
+    digits and punctuation, collapse case/whitespace."""
+    s = _NOISE.sub("", (name or "").strip())
+    s = re.sub(r"[^a-zA-Z@ ]+", " ", s)
+    return " ".join(s.lower().split())
+
+
+@dataclass
+class ReconcileReport:
+    transfers_tagged: int
+    return_pairs: int
+    reversals_tagged: int = 0
+
+
+def tag_transfers(db: Session) -> int:
+    rows = list(
+        db.execute(
+            select(Transaction).where(Transaction.category.is_(None))
+        ).scalars()
+    )
+    n = 0
+    for t in rows:
+        pat = _TRANSFER_CREDIT_PAT if t.direction == "credit" else _TRANSFER_DEBIT_PAT
+        if pat.search(t.counterparty or "") or pat.search(t.raw_snippet or ""):
+            t.category = "transfer"
+            n += 1
+    return n
+
+
+def reconcile_returns(db: Session, window_days: int = 60) -> int:
+    """Pair uncategorized debit->credit (same amount, same PERSON, credit not
+    earlier than debit, within the window). Returns number of pairs tagged.
+
+    Institutional/clearing-house descriptors (ACH, NEFT, mutual funds, SIPs,
+    ...) are excluded from matching even when the text is identical, because
+    banks print the same generic string for every transaction on that rail —
+    matching on it pairs unrelated transactions, not a person returning money.
+    """
+    rows = list(
+        db.execute(
+            select(Transaction)
+            .where(Transaction.category.is_(None))
+            .order_by(Transaction.txn_date, Transaction.id)
+        ).scalars()
+    )
+    debits = [t for t in rows if t.direction == "debit"]
+    credits = [t for t in rows if t.direction == "credit"]
+    used: set[int] = set()
+    pairs = 0
+    for d in debits:
+        if _INSTITUTIONAL_PAT.search(d.counterparty or "") or _INSTITUTIONAL_PAT.search(d.raw_snippet or ""):
+            continue
+        dn = _norm(d.counterparty)
+        if not dn:
+            continue
+        for c in credits:
+            if c.id in used or c.amount != d.amount:
+                continue
+            if c.txn_date < d.txn_date or c.txn_date > d.txn_date + timedelta(days=window_days):
+                continue
+            if _INSTITUTIONAL_PAT.search(c.counterparty or "") or _INSTITUTIONAL_PAT.search(c.raw_snippet or ""):
+                continue
+            cn = _norm(c.counterparty)
+            if not cn:
+                continue
+            if cn == dn or cn in dn or dn in cn:
+                d.category = "lent_returned"
+                c.category = "lend_return"
+                used.add(c.id)
+                pairs += 1
+                break
+    return pairs
+
+
+def reconcile_reversals(db: Session) -> int:
+    """Pair a debit with a same-day-or-later credit that share a UPI reference
+    number and amount, where the credit's narration marks it a reversal
+    ("REV"). Returns the number of debit+credit rows tagged."""
+    rows = list(
+        db.execute(
+            select(Transaction).where(Transaction.category.is_(None))
+        ).scalars()
+    )
+    debits_by_ref: dict[str, Transaction] = {}
+    for t in rows:
+        if t.direction != "debit":
+            continue
+        text = t.raw_snippet or t.counterparty or ""
+        m = _REF_ID.search(text)
+        if m:
+            debits_by_ref.setdefault(m.group(1), t)
+
+    n = 0
+    for t in rows:
+        if t.direction != "credit":
+            continue
+        text = t.raw_snippet or t.counterparty or ""
+        if not _REVERSAL_PAT.search(text):
+            continue
+        m = _REF_ID.search(text)
+        if not m:
+            continue
+        orig = debits_by_ref.get(m.group(1))
+        if orig is not None and orig.amount == t.amount and orig.txn_date <= t.txn_date:
+            orig.category = "reversed_debit"
+            t.category = "reversal_credit"
+            n += 2
+    return n
+
+
+def run_reconciliation(db: Session, window_days: int = 60) -> ReconcileReport:
+    transfers = tag_transfers(db)
+    reversals = reconcile_reversals(db)
+    pairs = reconcile_returns(db, window_days=window_days)
+    db.commit()
+    return ReconcileReport(transfers_tagged=transfers, return_pairs=pairs, reversals_tagged=reversals)

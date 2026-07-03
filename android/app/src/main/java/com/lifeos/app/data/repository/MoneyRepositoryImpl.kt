@@ -1,0 +1,46 @@
+package com.lifeos.app.data.repository
+
+import com.lifeos.app.data.local.CardStatementDao
+import com.lifeos.app.data.local.TransactionDao
+import com.lifeos.app.data.remote.LifeOsApi
+import com.lifeos.app.data.toDomain
+import com.lifeos.app.data.toEntity
+import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.SpendAnalysis
+import com.lifeos.app.domain.model.SpendTrends
+import com.lifeos.app.domain.model.Transaction
+import com.lifeos.app.domain.repository.MoneyRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import java.time.LocalDate
+import javax.inject.Inject
+
+class MoneyRepositoryImpl @Inject constructor(
+    private val api: LifeOsApi,
+    private val transactionDao: TransactionDao,
+    private val cardStatementDao: CardStatementDao,
+) : MoneyRepository {
+
+    override fun observeTransactions(days: Int): Flow<List<Transaction>> {
+        val since = LocalDate.now().minusDays(days.toLong()).toString()
+        return transactionDao.observeSince(since).map { list -> list.map { it.toDomain() } }
+    }
+
+    override fun observeStatements(months: Int): Flow<List<CardStatement>> =
+        cardStatementDao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun refresh(transactionDays: Int, statementMonths: Int) {
+        transactionDao.upsertAll(api.listTransactions(transactionDays).map { it.toEntity() })
+        cardStatementDao.upsertAll(api.listStatements(statementMonths).map { it.toEntity() })
+    }
+
+    override suspend fun analysis(days: Int): SpendAnalysis = api.spendAnalysis(days).toDomain()
+
+    override suspend fun trends(months: Int): SpendTrends = api.spendTrends(months).toDomain()
+
+    override suspend fun syncNow() {
+        api.syncExpenses()
+        api.syncStatements()
+        refresh()
+    }
+}

@@ -44,3 +44,33 @@ data class InsightEntity(
     val summary: String,
     val narrative: String? = null,
 )
+
+@Entity(tableName = "transactions_cache")
+data class TransactionEntity(
+    @PrimaryKey val id: Int,
+    val txnDate: String,
+    val amount: String, // BigDecimal-precision string, parsed on read
+    val currency: String,
+    val direction: String,
+    val counterparty: String?,
+    val category: String?,
+    val spendCategory: String?,
+    val account: String?,
+    val source: String,
+    val reference: String?,
+)
+
+@Entity(tableName = "card_statements_cache")
+data class CardStatementEntity(
+    @PrimaryKey val id: Int,
+    val bank: String,
+    val cardLabel: String,
+    val cardLast4: String?,
+    val statementDate: String?,
+    val periodStart: String?,
+    val periodEnd: String?,
+    val dueDate: String?,
+    val totalDue: String?,
+    val minDue: String?,
+    val totalSpend: String?,
+)

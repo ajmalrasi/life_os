@@ -50,3 +50,21 @@ interface InsightDao {
     @Query("SELECT * FROM insights ORDER BY ABS(correlation) DESC")
     fun observeAll(): Flow<List<InsightEntity>>
 }
+
+@Dao
+interface TransactionDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<TransactionEntity>)
+
+    @Query("SELECT * FROM transactions_cache WHERE txnDate >= :since ORDER BY txnDate DESC, id DESC")
+    fun observeSince(since: String): Flow<List<TransactionEntity>>
+}
+
+@Dao
+interface CardStatementDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CardStatementEntity>)
+
+    @Query("SELECT * FROM card_statements_cache ORDER BY statementDate DESC")
+    fun observeAll(): Flow<List<CardStatementEntity>>
+}

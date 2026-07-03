@@ -142,3 +142,86 @@ data class ChatResponseDto(
 data class SuggestionsResponseDto(
     val questions: List<String> = emptyList(),
 )
+
+@Serializable
+data class TransactionDto(
+    val id: Int,
+    @SerialName("txn_date") val txnDate: String,
+    val amount: String,
+    val currency: String = "INR",
+    val direction: String,
+    val counterparty: String? = null,
+    val category: String? = null,
+    @SerialName("spend_category") val spendCategory: String? = null,
+    val account: String? = null,
+    val source: String,
+    val reference: String? = null,
+)
+
+@Serializable
+data class ExpenseSyncResultDto(
+    @SerialName("parsers_run") val parsersRun: Int = 0,
+    @SerialName("emails_scanned") val emailsScanned: Int = 0,
+    @SerialName("transactions_new") val transactionsNew: Int,
+    @SerialName("transactions_seen") val transactionsSeen: Int,
+    val message: String,
+)
+
+@Serializable
+data class CardStatementDto(
+    val id: Int,
+    val bank: String,
+    @SerialName("card_label") val cardLabel: String,
+    @SerialName("card_last4") val cardLast4: String? = null,
+    @SerialName("statement_date") val statementDate: String? = null,
+    @SerialName("period_start") val periodStart: String? = null,
+    @SerialName("period_end") val periodEnd: String? = null,
+    @SerialName("due_date") val dueDate: String? = null,
+    @SerialName("total_due") val totalDue: String? = null,
+    @SerialName("min_due") val minDue: String? = null,
+    @SerialName("total_spend") val totalSpend: String? = null,
+)
+
+@Serializable
+data class StatementSyncResultDto(
+    @SerialName("banks_run") val banksRun: Int = 0,
+    @SerialName("emails_seen") val emailsSeen: Int = 0,
+    @SerialName("statements_new") val statementsNew: Int,
+    @SerialName("line_items_ingested") val lineItemsIngested: Int = 0,
+    @SerialName("line_items_deduped") val lineItemsDeduped: Int = 0,
+    val message: String,
+)
+
+@Serializable
+data class CategorySpendDto(
+    val category: String,
+    val total: String,
+    val count: Int,
+)
+
+@Serializable
+data class MonthTrendDto(
+    val month: String,
+    @SerialName("total_debits") val totalDebits: String,
+    @SerialName("total_credits") val totalCredits: String,
+    @SerialName("txn_count") val txnCount: Int,
+    @SerialName("by_category") val byCategory: List<CategorySpendDto> = emptyList(),
+    @SerialName("by_account") val byAccount: List<CategorySpendDto> = emptyList(),
+)
+
+@Serializable
+data class SpendTrendsDto(
+    val months: List<MonthTrendDto> = emptyList(),
+    @SerialName("aggregate_debits") val aggregateDebits: String,
+    @SerialName("aggregate_by_category") val aggregateByCategory: List<CategorySpendDto> = emptyList(),
+)
+
+@Serializable
+data class SpendAnalysisDto(
+    @SerialName("total_due_all_cards") val totalDueAllCards: String,
+    @SerialName("min_due_all_cards") val minDueAllCards: String,
+    @SerialName("next_due_date") val nextDueDate: String? = null,
+    val cards: List<CardStatementDto> = emptyList(),
+    @SerialName("spend_by_category") val spendByCategory: List<CategorySpendDto> = emptyList(),
+    @SerialName("top_merchants") val topMerchants: List<CategorySpendDto> = emptyList(),
+)

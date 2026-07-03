@@ -1,25 +1,40 @@
 package com.lifeos.app.data
 
+import com.lifeos.app.data.local.CardStatementEntity
 import com.lifeos.app.data.local.InsightEntity
 import com.lifeos.app.data.local.MoodEntity
 import com.lifeos.app.data.local.ScoreEntity
 import com.lifeos.app.data.local.StateEntity
+import com.lifeos.app.data.local.TransactionEntity
+import com.lifeos.app.data.remote.dto.CardStatementDto
+import com.lifeos.app.data.remote.dto.CategorySpendDto
 import com.lifeos.app.data.remote.dto.ChatMessageDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
 import com.lifeos.app.data.remote.dto.DailyStateDto
 import com.lifeos.app.data.remote.dto.GithubDto
 import com.lifeos.app.data.remote.dto.HealthRecordDto
 import com.lifeos.app.data.remote.dto.InsightDto
+import com.lifeos.app.data.remote.dto.MonthTrendDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
+import com.lifeos.app.data.remote.dto.SpendAnalysisDto
+import com.lifeos.app.data.remote.dto.SpendTrendsDto
+import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
+import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.CategorySpend
 import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.GithubActivity
 import com.lifeos.app.domain.model.HealthSample
 import com.lifeos.app.domain.model.Insight
+import com.lifeos.app.domain.model.MonthSpend
 import com.lifeos.app.domain.model.MoodCheckin
+import com.lifeos.app.domain.model.SpendAnalysis
+import com.lifeos.app.domain.model.SpendTrends
+import com.lifeos.app.domain.model.Transaction
+import java.math.BigDecimal
 import java.time.LocalDate
 
 // --- Health ---
@@ -77,3 +92,65 @@ fun NotificationDto.toDomain() = AppNotification(severity, title, detail)
 
 // --- Chat ---
 fun ChatTurn.toDto() = ChatMessageDto(role, content)
+
+// --- Money: transactions ---
+fun TransactionDto.toEntity() = TransactionEntity(
+    id, txnDate, amount, currency, direction, counterparty, category, spendCategory, account, source, reference,
+)
+fun TransactionEntity.toDomain() = Transaction(
+    id = id,
+    txnDate = LocalDate.parse(txnDate),
+    amount = BigDecimal(amount),
+    currency = currency,
+    direction = direction,
+    counterparty = counterparty,
+    category = category,
+    spendCategory = spendCategory,
+    account = account,
+    source = source,
+    reference = reference,
+)
+
+// --- Money: card statements ---
+fun CardStatementDto.toEntity() = CardStatementEntity(
+    id, bank, cardLabel, cardLast4, statementDate, periodStart, periodEnd, dueDate, totalDue, minDue, totalSpend,
+)
+fun CardStatementEntity.toDomain() = CardStatement(
+    id = id,
+    bank = bank,
+    cardLabel = cardLabel,
+    cardLast4 = cardLast4,
+    statementDate = statementDate?.let { LocalDate.parse(it) },
+    periodStart = periodStart?.let { LocalDate.parse(it) },
+    periodEnd = periodEnd?.let { LocalDate.parse(it) },
+    dueDate = dueDate?.let { LocalDate.parse(it) },
+    totalDue = totalDue?.let { BigDecimal(it) },
+    minDue = minDue?.let { BigDecimal(it) },
+    totalSpend = totalSpend?.let { BigDecimal(it) },
+)
+
+// --- Money: analysis / trends (computed server-side; mapped directly, not cached) ---
+fun CategorySpendDto.toDomain() = CategorySpend(category, BigDecimal(total), count)
+
+fun MonthTrendDto.toDomain() = MonthSpend(
+    month = month,
+    totalDebits = BigDecimal(totalDebits),
+    totalCredits = BigDecimal(totalCredits),
+    txnCount = txnCount,
+    byCategory = byCategory.map { it.toDomain() },
+)
+
+fun SpendTrendsDto.toDomain() = SpendTrends(
+    months = months.map { it.toDomain() },
+    aggregateDebits = BigDecimal(aggregateDebits),
+    aggregateByCategory = aggregateByCategory.map { it.toDomain() },
+)
+
+fun SpendAnalysisDto.toDomain() = SpendAnalysis(
+    totalDueAllCards = BigDecimal(totalDueAllCards),
+    minDueAllCards = BigDecimal(minDueAllCards),
+    nextDueDate = nextDueDate?.let { LocalDate.parse(it) },
+    cards = cards.map { it.toEntity().toDomain() },
+    spendByCategory = spendByCategory.map { it.toDomain() },
+    topMerchants = topMerchants.map { it.toDomain() },
+)

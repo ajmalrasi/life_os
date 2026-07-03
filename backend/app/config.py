@@ -37,6 +37,24 @@ class Settings(BaseSettings):
     github_repos: str = ""  # comma-separated owner/repo, e.g. ajmalrasi/life_os
     github_user: str = ""   # optional commit author login/email filter
 
+    # Expense tracking — reads bank/UPI/statement emails via the `gog` CLI
+    # (Google Workspace), baked into the API image. Auth is a shared, read-only
+    # gogcli config (OAuth client + refresh token); the only secret to inject
+    # here is the file-keyring password. The mailbox is authorized once with
+    # `gog auth add` and nothing here can mutate it.
+    gmail_account: str = ""            # e.g. mail2ajmalrasi@gmail.com; empty disables
+    gog_bin: str = "gog"               # path to the gog binary
+    gog_home: str = ""                 # optional GOG_HOME (shared gogcli config dir)
+    gog_keyring_password: str = ""     # file-keyring password (inject as a secret)
+    expense_backfill_days: int = 90    # window seeded on the first sync (cursor unset)
+
+    # CC statement PDFs — unlock secrets. Passwords derive from name+DOB per
+    # bank scheme (see services/pdf_unlock.py); overrides cover banks with
+    # nonstandard passwords, format "bank:password,bank2:password2".
+    cc_owner_name: str = ""            # as printed on cards, e.g. AJMAL RASI
+    cc_owner_dob: str = ""             # DDMMYYYY
+    cc_pdf_password_overrides: str = ""  # e.g. sbi:01071993xxxx
+
     # Health Auto Export TCP server on the iPhone (live, on-demand health pull).
     # The app exposes a JSON-RPC TCP server on the LAN (Automations -> Server).
     # Used by the chat's `live_health` tool. Host is the phone's IP (DHCP — set a
@@ -73,6 +91,10 @@ class Settings(BaseSettings):
     @property
     def github_enabled(self) -> bool:
         return bool(self.github_token.strip()) and bool(self.github_repos_list)
+
+    @property
+    def gmail_expenses_enabled(self) -> bool:
+        return bool(self.gmail_account.strip())
 
     @property
     def fcm_enabled(self) -> bool:

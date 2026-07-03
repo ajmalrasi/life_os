@@ -3,6 +3,7 @@ package com.lifeos.app.presentation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Insights
@@ -29,6 +30,7 @@ import androidx.navigation.compose.rememberNavController
 import com.lifeos.app.presentation.chat.ChatScreen
 import com.lifeos.app.presentation.dashboard.DashboardScreen
 import com.lifeos.app.presentation.insights.InsightsScreen
+import com.lifeos.app.presentation.money.MoneyScreen
 import com.lifeos.app.presentation.mood.MoodScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
@@ -36,6 +38,7 @@ import com.lifeos.app.presentation.theme.LifeOsColors
 enum class Destination(val route: String, val label: String, val icon: ImageVector) {
     DASHBOARD("dashboard", "Today", Icons.Rounded.WbSunny),
     MOOD("mood", "Pulse", Icons.Rounded.Favorite),
+    MONEY("money", "Money", Icons.Rounded.AccountBalanceWallet),
     INSIGHTS("insights", "Insights", Icons.Rounded.Insights),
     CHAT("chat", "Ask", Icons.Rounded.AutoAwesome),
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
@@ -98,6 +101,7 @@ fun LifeOsApp(startTab: String? = null) {
         ) {
             composable(Destination.DASHBOARD.route) { DashboardScreen() }
             composable(Destination.MOOD.route) { MoodScreen() }
+            composable(Destination.MONEY.route) { MoneyScreen() }
             composable(Destination.INSIGHTS.route) { InsightsScreen() }
             composable(Destination.CHAT.route) { ChatScreen() }
             composable(Destination.SETTINGS.route) { SettingsScreen() }

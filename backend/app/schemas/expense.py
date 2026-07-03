@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class TransactionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    txn_date: date
+    amount: Decimal
+    currency: str
+    direction: str
+    counterparty: str | None
+    category: str | None
+    # Spend-analysis category (labels + keyword rules). ``None`` when the row is
+    # excluded from spend (card-bill transfers, reversals, lent-and-returned) so
+    # the client can slice by category without double-counting non-spend.
+    spend_category: str | None = None
+    account: str | None
+    source: str
+    reference: str | None
+    created_at: datetime
+
+
+class ExpenseSyncResult(BaseModel):
+    parsers_run: int
+    emails_scanned: int
+    transactions_new: int
+    transactions_seen: int
+    source: str
+    message: str
+    cursor_epoch: int = 0
+    new_transactions: list[TransactionOut] = []

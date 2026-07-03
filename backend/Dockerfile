@@ -1,6 +1,19 @@
 # Stage 1: grab the github-mcp-server binary (multi-arch: arm64 on Jetson, amd64 elsewhere)
 FROM ghcr.io/github/github-mcp-server AS mcp-binary
 
+# Stage 1b: fetch the gog (gogcli) binary for Google Workspace / Gmail access.
+# Auth is NOT baked in — it comes from a mounted, read-only gogcli config at
+# runtime (see docker-compose). TARGETARCH is provided automatically by the
+# builder (arm64 on the Jetson).
+FROM alpine:3.20 AS gog-binary
+ARG TARGETARCH=arm64
+ARG GOG_VERSION=0.31.1
+RUN apk add --no-cache curl tar \
+    && curl -fsSL -o /tmp/gog.tgz \
+       "https://github.com/openclaw/gogcli/releases/download/v${GOG_VERSION}/gogcli_${GOG_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    && tar -xzf /tmp/gog.tgz -C /tmp gog \
+    && install -m 0755 /tmp/gog /usr/local/bin/gog
+
 # Stage 2: LifeOS backend
 FROM python:3.12-slim
 
@@ -21,6 +34,9 @@ COPY app ./app
 
 # github-mcp-server binary for stdio-based GitHub tool calls (no OAuth needed)
 COPY --from=mcp-binary /server/github-mcp-server /usr/local/bin/github-mcp-server
+
+# gog (gogcli) binary for read-only Gmail access in the expense collector.
+COPY --from=gog-binary /usr/local/bin/gog /usr/local/bin/gog
 
 EXPOSE 8000
 

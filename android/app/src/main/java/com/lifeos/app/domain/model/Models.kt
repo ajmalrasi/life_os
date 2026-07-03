@@ -1,5 +1,6 @@
 package com.lifeos.app.domain.model
 
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 
@@ -120,4 +121,68 @@ data class ExecutionSyncReport(
     val todayCommits: Int?,
     val todayCodingMinutes: Int?,
     val message: String,
+)
+
+/** A single financial transaction, from either a live email alert (UPI) or a
+ * parsed statement PDF (cc_statement / bank_account). */
+data class Transaction(
+    val id: Int,
+    val txnDate: LocalDate,
+    val amount: BigDecimal,
+    val currency: String,
+    val direction: String, // "debit" | "credit"
+    val counterparty: String?,
+    val category: String?,
+    /** Spend-analysis category (labels + keyword rules); null when the row is
+     * excluded from spend (transfers, reversals, lent-and-returned). */
+    val spendCategory: String?,
+    val account: String?,
+    val source: String,
+    val reference: String?,
+)
+
+/** One monthly credit-card statement summary. */
+data class CardStatement(
+    val id: Int,
+    val bank: String,
+    val cardLabel: String,
+    val cardLast4: String?,
+    val statementDate: LocalDate?,
+    val periodStart: LocalDate?,
+    val periodEnd: LocalDate?,
+    val dueDate: LocalDate?,
+    val totalDue: BigDecimal?,
+    val minDue: BigDecimal?,
+    val totalSpend: BigDecimal?,
+)
+
+data class CategorySpend(
+    val category: String,
+    val total: BigDecimal,
+    val count: Int,
+)
+
+/** One calendar month of combined spend (UPI feed + statement line items). */
+data class MonthSpend(
+    val month: String, // "2026-06"
+    val totalDebits: BigDecimal,
+    val totalCredits: BigDecimal,
+    val txnCount: Int,
+    val byCategory: List<CategorySpend>,
+)
+
+data class SpendTrends(
+    val months: List<MonthSpend>,
+    val aggregateDebits: BigDecimal,
+    val aggregateByCategory: List<CategorySpend>,
+)
+
+/** Month-at-a-glance across all cards + the live UPI feed. */
+data class SpendAnalysis(
+    val totalDueAllCards: BigDecimal,
+    val minDueAllCards: BigDecimal,
+    val nextDueDate: LocalDate?,
+    val cards: List<CardStatement>,
+    val spendByCategory: List<CategorySpend>,
+    val topMerchants: List<CategorySpend>,
 )

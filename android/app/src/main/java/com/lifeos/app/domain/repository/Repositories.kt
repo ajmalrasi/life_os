@@ -1,6 +1,7 @@
 package com.lifeos.app.domain.repository
 
 import com.lifeos.app.domain.model.AppNotification
+import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.ChatAnswer
 import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.DailyScore
@@ -10,6 +11,9 @@ import com.lifeos.app.domain.model.HealthSample
 import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
+import com.lifeos.app.domain.model.SpendAnalysis
+import com.lifeos.app.domain.model.SpendTrends
+import com.lifeos.app.domain.model.Transaction
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 
@@ -55,6 +59,29 @@ interface ChatRepository {
     /** Data-grounded starter questions for the Ask screen. Never throws — returns
      *  sensible defaults if the backend is unreachable. */
     suspend fun suggestions(contextDays: Int): List<String>
+}
+
+interface MoneyRepository {
+    /** Cached transactions in the trailing window (live UPI feed + statement line items). */
+    fun observeTransactions(days: Int): Flow<List<Transaction>>
+
+    /** Cached per-card statement summaries. */
+    fun observeStatements(months: Int): Flow<List<CardStatement>>
+
+    /** Pull fresh transactions + statement summaries from the backend into the cache. */
+    suspend fun refresh(transactionDays: Int = 90, statementMonths: Int = 7)
+
+    /** Month-at-a-glance: dues across every card + category/merchant breakdown.
+     * Computed server-side on every call — not cached, always current. */
+    suspend fun analysis(days: Int = 45): SpendAnalysis
+
+    /** Month-by-month spend trend. Computed server-side on every call. */
+    suspend fun trends(months: Int = 6): SpendTrends
+
+    /** Manually trigger the backend's incremental sync (pull-to-refresh); the
+     * Jetson cron already runs this periodically, so this is a user-initiated
+     * "check now" rather than the primary ingestion path. */
+    suspend fun syncNow()
 }
 
 interface SettingsRepository {
