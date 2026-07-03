@@ -79,9 +79,14 @@ def sync_expenses(
         backfill_days=settings.expense_backfill_days,
         full=full,
     ).sync()
+    from app.services.payee_classifier import suggest_labels_for_new_payees
     from app.services.reconcile import run_reconciliation
 
     run_reconciliation(db)
+    # Best-effort: reconciliation must have already removed transfers/returns
+    # from consideration (category is no longer None on those), so this only
+    # ever sees genuine, still-uncategorized spend payees.
+    suggest_labels_for_new_payees(db, report.created)
     return ExpenseSyncResult(
         parsers_run=report.parsers_run,
         emails_scanned=report.emails_scanned,

@@ -51,19 +51,24 @@ class StatementRepository:
         self.db.flush()
         return obj
 
-    def upi_txn_exists(self, txn_date: date, amount: Decimal) -> bool:
-        """True if a live-UPI-alert transaction already covers this line item.
+    # Sources that arrive live, per-transaction, ahead of the monthly
+    # statement PDF. A statement line matching one of these by date+amount is
+    # the same real transaction seen twice — the statement line is skipped.
+    LIVE_SOURCES = ("upi", "hdfc_card_live")
 
-        HDFC RuPay-CC UPI alerts arrive live AND reappear as UPI-* lines in the
-        next statement — same real transaction, two email sources. Match on
-        (date, amount, source='upi'): if found, the statement line is skipped so
-        each real transaction is counted exactly once.
+    def upi_txn_exists(self, txn_date: date, amount: Decimal) -> bool:
+        """True if a live-alert transaction already covers this line item.
+
+        Covers HDFC RuPay-CC UPI alerts (reappear as UPI-* statement lines)
+        and HDFC Diners live "payment was made" alerts (cover every
+        transaction type, not just UPI) — both are pre-statement live feeds
+        deduped the same way. Match on (date, amount, source in LIVE_SOURCES).
         """
         count = self.db.execute(
             select(func.count())
             .select_from(Transaction)
             .where(
-                Transaction.source == "upi",
+                Transaction.source.in_(self.LIVE_SOURCES),
                 Transaction.txn_date == txn_date,
                 Transaction.amount == amount,
             )

@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # Let the LLM retell discovered patterns in fresher language (best-effort;
     # falls back to the deterministic summaries when OpenClaw is unreachable).
     insight_narration_enabled: bool = True
+    # Let the LLM suggest payee_labels for payees the keyword rules miss
+    # (best-effort; skipped entirely when OpenClaw is unreachable).
+    openclaw_payee_classification_enabled: bool = True
 
     @property
     def execution_repo_path_list(self) -> list[str]:

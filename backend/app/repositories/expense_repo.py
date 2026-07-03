@@ -25,6 +25,27 @@ class ExpenseRepository:
         ).scalar_one()
         return count > 0
 
+    # Statement-derived sources. A live-alert transaction matching one of
+    # these by date+amount is the same real transaction already ingested from
+    # a monthly statement — this can happen when a live parser is added (or
+    # backfilled) after that statement period was already ingested. Normal
+    # operation has the live alert arrive first, so this mainly guards
+    # backfills; the reverse case (statement line vs. existing live row) is
+    # handled separately in StatementRepository.upi_txn_exists.
+    STATEMENT_SOURCES = ("cc_statement", "bank_account")
+
+    def statement_txn_exists(self, txn_date: date, amount) -> bool:
+        count = self.db.execute(
+            select(func.count())
+            .select_from(Transaction)
+            .where(
+                Transaction.source.in_(self.STATEMENT_SOURCES),
+                Transaction.txn_date == txn_date,
+                Transaction.amount == amount,
+            )
+        ).scalar_one()
+        return count > 0
+
     def upsert(self, txn: ParsedTxn, message_id: str, dedup_key: str) -> Transaction | None:
         """Insert a transaction if new; return it, or None if it already existed.
 

@@ -54,6 +54,42 @@ class OpenClawClient:
         except (KeyError, IndexError, TypeError) as exc:
             raise OpenClawUnavailable(f"Unexpected OpenClaw response shape: {data}") from exc
 
+    def chat_structured(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict,
+        schema_name: str = "response",
+        temperature: float = 0.0,
+    ) -> str:
+        """Call /v1/chat/completions constrained to a JSON schema and return the
+        raw JSON text. The model can only emit one of the shapes/enums the
+        schema allows, so callers don't need to guard against category
+        hallucination or malformed JSON the way a free-text prompt requires.
+        """
+        url = f"{self.base_url}/v1/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": schema_name, "schema": schema, "strict": True},
+            },
+            "temperature": temperature,
+            "stream": False,
+        }
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.post(url, json=payload, headers=self._headers())
+                resp.raise_for_status()
+                data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise OpenClawUnavailable(f"OpenClaw request failed: {exc}") from exc
+
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise OpenClawUnavailable(f"Unexpected OpenClaw response shape: {data}") from exc
+
     def chat_with_tools(
         self,
         messages: list[dict],

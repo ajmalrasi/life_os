@@ -103,6 +103,12 @@ class ExpenseCollector:
                 scanned += 1
                 max_internal_ms = max(max_internal_ms, email.internal_date_ms)
                 for txn in parser.parse(email):
+                    # Guards a backfill/late-add scenario: a live parser added
+                    # (or backfilled) after its statement period was already
+                    # ingested would otherwise double-count each transaction.
+                    if txn.direction == "debit" and self.repo.statement_txn_exists(txn.txn_date, txn.amount):
+                        seen += 1
+                        continue
                     key = derive_dedup_key(txn, message_id)
                     obj = self.repo.upsert(txn, message_id=message_id, dedup_key=key)
                     if obj is not None:
