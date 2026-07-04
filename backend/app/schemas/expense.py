@@ -35,3 +35,31 @@ class ExpenseSyncResult(BaseModel):
     message: str
     cursor_epoch: int = 0
     new_transactions: list[TransactionOut] = []
+
+
+class ExpenseRebuildResult(BaseModel):
+    since: date
+    transactions_deleted: int
+    emails_scanned: int
+    transactions_new: int
+    transactions_seen: int
+    labels_created: int
+    message: str
+
+
+class RawEmailFetchResult(BaseModel):
+    bank: str
+    emails_found: int
+    emails_saved: int
+
+
+class RawEmailProcessResult(BaseModel):
+    processed: int
+    transactions_created: int
+    remaining: int
+    stopped_openclaw_unavailable: bool = False
+
+
+class RawEmailFinalizeResult(BaseModel):
+    labels_created: int
+    message: str

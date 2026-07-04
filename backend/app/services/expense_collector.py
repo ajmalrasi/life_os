@@ -13,12 +13,13 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 
 from sqlalchemy.orm import Session
 
 from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
-from app.services.expense_parsers import ParsedTxn, get_parsers
+from app.services.expense_parsers import ParsedTxn, Parser, get_parsers
 from app.services.gmail_client import GmailClient
 
 logger = logging.getLogger(__name__)
@@ -57,19 +58,31 @@ class ExpenseCollector:
         client: GmailClient,
         backfill_days: int = 90,
         full: bool = False,
+        parsers: list[Parser] | None = None,
+        since_date: date | None = None,
+        max_per_parser: int = _MAX_PER_PARSER,
     ) -> None:
         self.db = db
         self.client = client
         self.backfill_days = backfill_days
         self.full = full
         self.repo = ExpenseRepository(db)
+        # Overriding ``parsers`` scopes a run to specific sources (e.g. a
+        # one-off historical rebuild through only the LLM catch-all parser,
+        # bypassing the regex ones). ``since_date`` overrides the normal
+        # cursor/backfill-window logic with an explicit start date and skips
+        # advancing the shared cursor, so a scoped rebuild of old history
+        # never affects the next normal incremental sync.
+        self.parsers = parsers
+        self.since_date = since_date
+        self.max_per_parser = max_per_parser
 
     @property
     def _cursor_key(self) -> str:
         return f"gmail_expenses:{self.client.account}"
 
     def sync(self) -> ExpenseSyncReport:
-        parsers = get_parsers()
+        parsers = self.parsers if self.parsers is not None else get_parsers()
         if not self.client.is_available():
             return ExpenseSyncReport(
                 parsers_run=0,
@@ -80,9 +93,12 @@ class ExpenseCollector:
                 message="gog CLI unavailable or gmail_account unset",
             )
 
-        cursor = 0 if self.full else self.repo.get_cursor(self._cursor_key)
-        # First run (or forced full) seeds recent history; afterwards, pull only new.
-        window = f"newer_than:{self.backfill_days}d" if cursor == 0 else f"after:{cursor}"
+        if self.since_date is not None:
+            window = f"after:{self.since_date:%Y/%m/%d}"
+        else:
+            cursor = 0 if self.full else self.repo.get_cursor(self._cursor_key)
+            # First run (or forced full) seeds recent history; afterwards, pull only new.
+            window = f"newer_than:{self.backfill_days}d" if cursor == 0 else f"after:{cursor}"
 
         scanned = seen = 0
         created: list[Transaction] = []
@@ -90,7 +106,7 @@ class ExpenseCollector:
 
         for parser in parsers:
             query = f"{parser.gmail_query} {window}"
-            for meta in self.client.search(query, max_results=_MAX_PER_PARSER):
+            for meta in self.client.search(query, max_results=self.max_per_parser):
                 message_id = meta.get("id")
                 if not message_id:
                     continue
@@ -117,7 +133,10 @@ class ExpenseCollector:
                         seen += 1
 
         # Advance the cursor to the newest email we saw (seconds granularity).
-        if max_internal_ms:
+        # Skipped for a scoped historical rebuild — its emails are all old,
+        # so this would be a no-op at best, but never risk it regressing or
+        # confusing the next normal incremental sync's window.
+        if max_internal_ms and self.since_date is None:
             self.repo.set_cursor(self._cursor_key, max_internal_ms // 1000)
         self.db.commit()
 

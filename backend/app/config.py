@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # Let the LLM suggest payee_labels for payees the keyword rules miss
     # (best-effort; skipped entirely when OpenClaw is unreachable).
     openclaw_payee_classification_enabled: bool = True
+    # Registers the LLM catch-all bank-email parser (llm_bank_parser.py)
+    # alongside the regex parsers.
+    llm_bank_parser_enabled: bool = True
 
     @property
     def execution_repo_path_list(self) -> list[str]:

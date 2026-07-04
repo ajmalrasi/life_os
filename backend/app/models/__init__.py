@@ -13,6 +13,7 @@ from app.models.insight import Insight
 from app.models.card_statement import CardStatement
 from app.models.mood import MoodCheckin
 from app.models.payee_label import PayeeLabel
+from app.models.raw_bank_email import RawBankEmail
 from app.models.sync_state import CollectorState
 from app.models.transaction import Transaction
 
@@ -29,4 +30,5 @@ __all__ = [
     "Transaction",
     "CollectorState",
     "PayeeLabel",
+    "RawBankEmail",
 ]

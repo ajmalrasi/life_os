@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.sync_state import CollectorState
@@ -74,6 +74,27 @@ class ExpenseRepository:
         self.db.add(obj)
         self.db.flush()
         return obj
+
+    def delete_since(
+        self, since: date, sources: tuple[str, ...], account_prefix: str | None = None
+    ) -> int:
+        """Delete transactions dated on/after ``since`` whose ``source`` is in
+        ``sources`` — required, not defaulted, since this is destructive and
+        must never silently touch sources outside a rebuild's actual scope
+        (e.g. monthly statement PDFs, which a live-alert rebuild can't
+        regenerate). Does not commit — caller commits once the rest of the
+        rebuild step succeeds too.
+
+        ``account_prefix``, when given, further restricts to accounts whose
+        label starts with it (e.g. "HDFC") — needed when a rebuild targets
+        one bank's emails only, so it can't delete a *different* bank's
+        already-good rows it has no way to regenerate in the same run.
+        """
+        conditions = [Transaction.txn_date >= since, Transaction.source.in_(sources)]
+        if account_prefix:
+            conditions.append(Transaction.account.like(f"{account_prefix}%"))
+        result = self.db.execute(delete(Transaction).where(*conditions))
+        return result.rowcount or 0
 
     def range(self, start: date, end: date, source: str | None = None) -> list[Transaction]:
         stmt = select(Transaction).where(

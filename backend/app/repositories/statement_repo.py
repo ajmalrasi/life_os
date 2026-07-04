@@ -54,7 +54,9 @@ class StatementRepository:
     # Sources that arrive live, per-transaction, ahead of the monthly
     # statement PDF. A statement line matching one of these by date+amount is
     # the same real transaction seen twice — the statement line is skipped.
-    LIVE_SOURCES = ("upi", "hdfc_card_live")
+    # "card_live" / "bank_live" are the LLM catch-all parser's equivalents of
+    # "hdfc_card_live" for card/plain-bank alerts it identifies itself.
+    LIVE_SOURCES = ("upi", "hdfc_card_live", "card_live", "bank_live")
 
     def upi_txn_exists(self, txn_date: date, amount: Decimal) -> bool:
         """True if a live-alert transaction already covers this line item.

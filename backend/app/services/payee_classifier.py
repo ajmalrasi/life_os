@@ -132,6 +132,7 @@ def suggest_labels_for_new_payees(
     db: Session,
     transactions: list[Transaction],
     client: OpenClawClient | None = None,
+    max_payees: int = _MAX_PAYEES_PER_RUN,
 ) -> int:
     """Classify distinct debit payees among ``transactions`` that no existing
     payee_label (active or not) already covers, and write the results as new
@@ -141,6 +142,9 @@ def suggest_labels_for_new_payees(
     spend_category. Skips payees an existing label already matches so a
     payee already reviewed once (accepted or left pending) is never
     reclassified on every sync.
+
+    ``max_payees`` defaults to the small per-sync cap; a one-off bulk rebuild
+    over months of history can pass a much larger value.
     """
     if not settings.openclaw_payee_classification_enabled:
         return 0
@@ -156,7 +160,7 @@ def suggest_labels_for_new_payees(
     client = client or OpenClawClient()
 
     for txn in transactions:
-        if created >= _MAX_PAYEES_PER_RUN:
+        if created >= max_payees:
             break
         if txn.direction != "debit" or not txn.counterparty:
             continue
