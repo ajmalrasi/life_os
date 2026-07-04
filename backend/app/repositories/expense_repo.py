@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from sqlalchemy import delete, func, select
@@ -8,6 +9,18 @@ from sqlalchemy.orm import Session
 from app.models.sync_state import CollectorState
 from app.models.transaction import Transaction
 from app.services.expense_parsers.base import ParsedTxn
+
+# Mirrors services.reconcile._norm — duplicated rather than imported to keep
+# repositories from depending on services. Strips UPI-/honorific prefixes,
+# digits and punctuation so "ZEE ENTERTA" and "Zee Entertainment Enterprises
+# Limited" normalize to a comparable prefix.
+_NOISE = re.compile(r"^(upi[-/]?|mr\.?|mrs\.?|m/s)\s*", re.I)
+
+
+def _norm_counterparty(name: str | None) -> str:
+    s = _NOISE.sub("", (name or "").strip())
+    s = re.sub(r"[^a-zA-Z@ ]+", " ", s)
+    return " ".join(s.lower().split())
 
 
 class ExpenseRepository:
@@ -46,6 +59,49 @@ class ExpenseRepository:
         ).scalar_one()
         return count > 0
 
+    def unreferenced_live_txn_exists(
+        self, account: str | None, txn_date: date, amount, direction: str, counterparty: str | None
+    ) -> bool:
+        """True if a transaction with no reference number, the same
+        (account, date, amount, direction), AND an overlapping counterparty
+        name already exists.
+
+        Some banks send *two separate emails* for one real transaction (e.g.
+        Axis emails a generic "card spent" alert AND a distinct "AutoPay
+        summary" alert for the same mandate payment, one truncating the
+        merchant name to "ZEE ENTERTA" and the other spelling out "Zee
+        Entertainment Enterprises Limited") — neither carries a UPI reference
+        number, so the normal reference-based dedup_key can't tie them
+        together, and each would otherwise become its own row.
+
+        The counterparty check is NOT optional: production data shows
+        account+date+amount+direction alone collides constantly between
+        genuinely different transactions — different people sending the same
+        round amount the same day, two different petrol stations charging an
+        identical amount, etc. Only a name match (after normalizing away
+        UPI-/honorific noise) makes this safe to treat as a real duplicate.
+        """
+        if not account or not counterparty:
+            return False
+        candidates = self.db.execute(
+            select(Transaction.counterparty)
+            .where(
+                Transaction.account == account,
+                Transaction.txn_date == txn_date,
+                Transaction.amount == amount,
+                Transaction.direction == direction,
+                Transaction.reference.is_(None),
+            )
+        ).scalars()
+        new_norm = _norm_counterparty(counterparty)
+        if not new_norm:
+            return False
+        for existing_counterparty in candidates:
+            existing_norm = _norm_counterparty(existing_counterparty)
+            if existing_norm and (existing_norm in new_norm or new_norm in existing_norm):
+                return True
+        return False
+
     def upsert(self, txn: ParsedTxn, message_id: str, dedup_key: str) -> Transaction | None:
         """Insert a transaction if new; return it, or None if it already existed.
 
@@ -56,6 +112,10 @@ class ExpenseRepository:
             select(Transaction).where(Transaction.dedup_key == dedup_key)
         ).scalar_one_or_none()
         if existing:
+            return None
+        if not txn.reference and self.unreferenced_live_txn_exists(
+            txn.account, txn.txn_date, txn.amount, txn.direction, txn.counterparty
+        ):
             return None
         obj = Transaction(
             txn_date=txn.txn_date,

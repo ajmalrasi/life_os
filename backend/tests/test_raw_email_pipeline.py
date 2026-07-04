@@ -145,6 +145,32 @@ def test_process_creates_transaction_and_marks_processed(client):
         assert txn.counterparty == "RAFEEQUE PATTATH (paytm.s1hzt87@pty)"
 
 
+def test_process_skips_debit_already_covered_by_statement(client):
+    """Regression: this pipeline's since-date can span months a monthly
+    statement already fully covers (e.g. a savings account with no statement
+    history of its own shares a bank domain with cards that do have one) —
+    without this guard, re-ingesting that range via the LLM catch-all
+    duplicates every one of those already-settled transactions."""
+    from decimal import Decimal
+
+    from app.models.transaction import Transaction as TxnModel
+
+    with SessionLocal() as db:
+        db.add(TxnModel(
+            txn_date=date(2026, 7, 3), amount=Decimal("110.00"), direction="debit",
+            source="cc_statement", counterparty="RAFEEQUE PATTATH",
+            gmail_message_id="stmt-1", dedup_key="stmt-dup-test",
+        ))
+        _seed_raw(db, mid="a")
+        db.commit()
+
+        fake = _FakeClient([_YES_GATE, _fields()])  # amount 110.00, same date
+        report = process_raw_emails(db, limit=15, client=fake)
+        assert report.transactions_created == 0
+
+        assert db.query(Transaction).filter_by(gmail_message_id="a").count() == 0
+
+
 def test_process_skips_non_transaction_but_still_marks_processed(client):
     with SessionLocal() as db:
         _seed_raw(db, mid="a")

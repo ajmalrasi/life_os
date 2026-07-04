@@ -131,6 +131,15 @@ def process_raw_emails(
             internal_date_ms=row.internal_date_ms,
         )
         for txn in parser.parse(email):
+            # Same guard ExpenseCollector.sync() applies: a debit already
+            # covered by a monthly statement must not also get a live-alert
+            # row. Matters more here than in the normal incremental flow,
+            # because this pipeline's broad since-date can span months a
+            # statement has already fully covered (e.g. a bank account with
+            # no statement history of its own shares a domain with cards that
+            # do have one).
+            if txn.direction == "debit" and expense_repo.statement_txn_exists(txn.txn_date, txn.amount):
+                continue
             key = derive_dedup_key(txn, row.message_id)
             obj = expense_repo.upsert(txn, message_id=row.message_id, dedup_key=key)
             if obj is not None:

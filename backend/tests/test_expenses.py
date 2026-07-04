@@ -242,6 +242,99 @@ def test_live_alert_skipped_if_statement_already_ingested(client):
     assert report.transactions_new == 0
 
 
+def test_reference_less_duplicate_transaction_is_skipped(client):
+    """Some banks send TWO separate emails for one real transaction with no
+    UPI reference number on either (e.g. Axis's generic "card spent" alert
+    plus a distinct "AutoPay summary" alert for the same mandate payment).
+    Without a reference to key off, the second one must not become a second
+    row just because it arrived under a different message_id."""
+    from app.database import SessionLocal
+    from app.repositories.expense_repo import ExpenseRepository
+    from app.services.expense_parsers.base import ParsedTxn
+
+    with SessionLocal() as db:
+        repo = ExpenseRepository(db)
+        first = repo.upsert(
+            ParsedTxn(
+                txn_date=date(2026, 6, 11), amount=Decimal("799.00"), direction="debit",
+                source="card_live", account="Axis Bank Card ..3068", counterparty="ZEE ENTERTA",
+            ),
+            message_id="m1", dedup_key="card_live:h:aaaa",
+        )
+        assert first is not None
+
+        second = repo.upsert(
+            ParsedTxn(
+                txn_date=date(2026, 6, 11), amount=Decimal("799.00"), direction="debit",
+                source="card_live", account="Axis Bank Card ..3068",
+                counterparty="Zee Entertainment Enterprises Limited",
+            ),
+            message_id="m2", dedup_key="card_live:h:bbbb",  # different hash, different email
+        )
+        assert second is None
+
+
+def test_referenced_same_day_same_amount_transactions_are_not_merged(client):
+    """Two genuinely separate transactions (each with its own real UPI
+    reference) that happen to share date+amount+account must both survive —
+    the reference-less guard must never apply when a reference IS present."""
+    from app.database import SessionLocal
+    from app.repositories.expense_repo import ExpenseRepository
+    from app.services.expense_collector import derive_dedup_key
+    from app.services.expense_parsers.base import ParsedTxn
+
+    with SessionLocal() as db:
+        repo = ExpenseRepository(db)
+        txn1 = ParsedTxn(
+            txn_date=date(2026, 6, 22), amount=Decimal("187.50"), direction="debit",
+            source="upi", account="HDFC Bank Card ..5473", counterparty="paytm",
+            reference="125133004731",
+        )
+        txn2 = ParsedTxn(
+            txn_date=date(2026, 6, 22), amount=Decimal("187.50"), direction="debit",
+            source="upi", account="HDFC Bank Card ..5473", counterparty="paytm",
+            reference="125136290061",
+        )
+        first = repo.upsert(txn1, message_id="m1", dedup_key=derive_dedup_key(txn1, "m1"))
+        second = repo.upsert(txn2, message_id="m2", dedup_key=derive_dedup_key(txn2, "m2"))
+        assert first is not None
+        assert second is not None
+
+
+def test_reference_less_different_counterparties_are_not_merged(client):
+    """Regression: production data shows account+date+amount+direction alone
+    collides constantly between genuinely different, unrelated transactions —
+    two different people sending the same round amount on the same day, two
+    different petrol stations charging an identical amount, etc. — none of
+    which carry a UPI reference. Matching on those four fields alone (an
+    earlier version of this guard) would have silently discarded real,
+    distinct transactions as "duplicates" purely by coincidence."""
+    from app.database import SessionLocal
+    from app.repositories.expense_repo import ExpenseRepository
+    from app.services.expense_parsers.base import ParsedTxn
+
+    with SessionLocal() as db:
+        repo = ExpenseRepository(db)
+        first = repo.upsert(
+            ParsedTxn(
+                txn_date=date(2025, 12, 9), amount=Decimal("1010.00"), direction="debit",
+                source="cc_statement", account="SBI Card ..70",
+                counterparty="ITHIKKAL PETROLEUM PR4 MALAPPURAM IN",
+            ),
+            message_id="m1", dedup_key="stmt:h:aaaa",
+        )
+        second = repo.upsert(
+            ParsedTxn(
+                txn_date=date(2025, 12, 9), amount=Decimal("1010.00"), direction="debit",
+                source="cc_statement", account="SBI Card ..70",
+                counterparty="THEYYAMPATTIL PETROLEU VALANCHERRY IN",
+            ),
+            message_id="m2", dedup_key="stmt:h:bbbb",
+        )
+        assert first is not None
+        assert second is not None
+
+
 # Real HDFC SAVINGS ACCOUNT (···7672) UPI debit alert — user-provided example.
 _HDFC_BANK_DEBIT_HTML = """
 <html><body>
