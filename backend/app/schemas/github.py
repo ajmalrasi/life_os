@@ -12,6 +12,10 @@ class GithubActivityIn(BaseModel):
     deletions: int = Field(default=0, ge=0)
     active_repos: int = Field(default=0, ge=0)
     coding_minutes: int = Field(default=0, ge=0)
+    prs_opened: int = Field(default=0, ge=0)
+    prs_merged: int = Field(default=0, ge=0)
+    issues_opened: int = Field(default=0, ge=0)
+    issues_closed: int = Field(default=0, ge=0)
 
 
 class GithubActivityOut(BaseModel):
@@ -24,3 +28,7 @@ class GithubActivityOut(BaseModel):
     deletions: int
     active_repos: int
     coding_minutes: int
+    prs_opened: int
+    prs_merged: int
+    issues_opened: int
+    issues_closed: int

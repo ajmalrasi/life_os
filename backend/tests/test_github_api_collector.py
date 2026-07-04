@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.execution_collector import CommitEvent, merge_commit_events, rollup_commit_events
-from app.services.github_api_collector import collect_github_commit_events
+from app.services.execution_collector import rollup_commit_events
+from app.services.github_api_collector import collect_github_commit_events, collect_github_pr_issue_events
 
 
 def _ts(dt: datetime) -> str:
@@ -110,20 +110,62 @@ def test_collect_mcp_none_response():
     assert events == []
 
 
-def test_merge_commit_events_dedupes_by_sha():
-    ts = int(datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc).timestamp())
-    git_event = CommitEvent(sha="shared", repo="/local/proj", ts=ts)
-    gh_event = CommitEvent(sha="shared", repo="github:me/proj", ts=ts, additions=20, deletions=4)
-    gh_only = CommitEvent(sha="ghonly", repo="github:me/proj", ts=ts, additions=3, deletions=0)
+def test_collect_pr_events_opened_and_merged():
+    day = date(2026, 6, 14)
+    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
 
-    merged = merge_commit_events([gh_event, gh_only], [git_event])
-    by_sha = {e.sha: e for e in merged}
+    client = _mock_client({
+        ("list_pull_requests", "me", "proj", None): [
+            {
+                "number": 5,
+                "updated_at": _ts(noon),
+                "created_at": _ts(noon),
+                "merged_at": _ts(noon),
+            },
+        ],
+    })
 
-    assert len(merged) == 2
-    assert by_sha["shared"].additions == 20
-    assert by_sha["shared"].repo == "github:me/proj"
+    events = collect_github_pr_issue_events(["me/proj"], day, day, client=client)
+    kinds = {(e.kind, e.number) for e in events if e.repo == "github:me/proj"}
+    assert ("pr_opened", 5) in kinds
+    assert ("pr_merged", 5) in kinds
 
-    rollups = rollup_commit_events(merged)
-    day = datetime.fromtimestamp(ts).date()
-    assert rollups[day].commits == 2
-    assert rollups[day].additions == 23
+
+def test_collect_pr_events_stops_pagination_before_window():
+    day = date(2026, 6, 14)
+    in_window = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+    before_window = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
+
+    client = MagicMock()
+
+    def call_tool(tool_name, arguments=None):
+        if tool_name == "list_pull_requests":
+            return [
+                {"number": 2, "updated_at": _ts(in_window), "created_at": _ts(in_window)},
+                {"number": 1, "updated_at": _ts(before_window), "created_at": _ts(before_window)},
+            ]
+        return None
+
+    client.call_tool.side_effect = call_tool
+
+    events = collect_github_pr_issue_events(["me/proj"], day, day, client=client)
+    assert {e.number for e in events} == {2}
+
+
+def test_collect_issue_events_opened_and_closed_excludes_prs():
+    day = date(2026, 6, 14)
+    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+
+    client = _mock_client({
+        "list_pull_requests": [],
+        "list_issues": [
+            {"number": 7, "created_at": _ts(noon), "closed_at": _ts(noon)},
+            {"number": 8, "created_at": _ts(noon), "pull_request": {"url": "x"}},
+        ],
+    })
+
+    events = collect_github_pr_issue_events(["me/proj"], day, day, client=client)
+    kinds = {(e.kind, e.number) for e in events}
+    assert ("issue_opened", 7) in kinds
+    assert ("issue_closed", 7) in kinds
+    assert not any(number == 8 for _, number in kinds)

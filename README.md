@@ -65,8 +65,7 @@ LifeOS is **not** a fitness app or a budgeting app. It is a private, local-first
 | Health Connect ingest | ✅ | `POST /health/batch` idempotent by `source_id` |
 | Mood / Pulse API | ✅ | One-tap emoji: mood, energy, focus, stress (1–5 each day) |
 | Wellness score | ✅ | 0–100 from Pulse fields, surfaced on dashboard + correlations |
-| Auto git execution detector | ✅ | Scans local repos, stores commits + coding minutes |
-| GitHub API execution collector | ✅ | Supplements git (needs `GITHUB_TOKEN` + `GITHUB_REPOS` in `.env`) |
+| GitHub API execution collector | ✅ | Commits, PRs, issues via github-mcp-server (needs `GITHUB_TOKEN` + `GITHUB_REPOS` in `.env`) |
 | Scoring engine | ✅ | Sleep, Recovery, Execution, Consistency, Burnout (5 daily scores) |
 | State engine | ✅ | 7 life states (Peak Performance, Burnout, Avoidance, etc.) + confidence |
 | Correlation / insights | ✅ | Lagged Pearson pattern discovery, human-readable summaries |
@@ -197,7 +196,9 @@ The backend uses the official [github-mcp-server](https://github.com/github/gith
    docker compose up -d
    ```
 
-4. **Next sync fetches commits** via the MCP server and computes your Execution score. The LLM can also search GitHub live during chat.
+4. **Next sync fetches commits, PRs, and issues** via the MCP server and computes your Execution score. The LLM can also search GitHub live during chat.
+
+Execution is sourced entirely from GitHub — there is no local `git log` scan. The backend runs on the Jetson, a different host than the dev machine, so a local scan would only ever see whatever happened to be pulled onto that host; GitHub is the actual source of truth for whether the work happened.
 
 ---
 
@@ -251,11 +252,7 @@ OPENCLAW_BASE_URL=http://host.docker.internal:11434
 OPENCLAW_MODEL=qwen3.5:4b
 OPENCLAW_API_KEY=
 
-# Auto execution (local git repos)
-EXECUTION_REPO_PATHS=/Users/you/life_os
-EXECUTION_GIT_AUTHOR=
-
-# GitHub execution via github-mcp-server sidecar (optional)
+# GitHub execution via github-mcp-server sidecar (commits + PRs + issues)
 GITHUB_TOKEN=ghp_xxxxx
 GITHUB_REPOS=ajmalrasi/life_os,ajmalrasi/other_repo
 GITHUB_USER=ajmalrasi
@@ -304,7 +301,7 @@ FIREBASE_PROJECT_ID=
 | Limitation | Mitigation |
 |---|---|
 | Lagged Pearson needs 2+ weeks before insights are meaningful | Show "not enough data" gracefully; seed with demo data in dev |
-| Docker backend can't access local git repos without bind-mounts | Use GitHub API collector (Phase 1 #3) as a supplement |
+| Execution only reflects pushed GitHub activity | Unpushed local commits don't count — push before expecting a sync to pick them up |
 | No user authentication — assumes single-user local setup | Acceptable for personal use; add if multi-user needed |
 | Schema migrations via `create_all` (not Alembic) | Plan to add Alembic before Phase 2 schema changes |
 | Backend must be on LAN | Tailscale or WireGuard for remote access if needed |

@@ -1,21 +1,18 @@
 """Automatic execution signal collection.
 
 LifeOS should observe project output — not ask you to type commits/minutes.
-The deterministic baseline is local ``git`` history on configured repo paths.
-A GitHub API collector (``github_api_collector.py``) supplements this so work
-done on other machines — or when the backend runs in Docker without
-bind-mounts — is still observed. Both sources emit :class:`CommitEvent`s which
-are deduplicated by commit SHA before being rolled up per day. OpenClaw/MCP
-agents can also POST structured rollups to ``/github``.
+Execution is sourced entirely from GitHub (``github_api_collector.py``):
+commits, pull requests, and issues, all fetched via the official
+github-mcp-server MCP sidecar. This module holds the source-agnostic event
+types and the per-day rollup logic that turns those events into
+:class:`DayExecution` rows.
 """
 
 from __future__ import annotations
 
-import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
-from pathlib import Path
+from datetime import date, datetime
 from typing import Iterable
 
 from sqlalchemy.orm import Session
@@ -40,6 +37,20 @@ class CommitEvent:
 
 
 @dataclass
+class PrIssueEvent:
+    """A pull-request or issue lifecycle event (opened/merged/closed).
+
+    Deduplicated by ``(repo, kind, number)`` — a PR opened and merged the same
+    day yields two distinct events (one per ``kind``), which is intentional.
+    """
+
+    repo: str
+    kind: str  # "pr_opened" | "pr_merged" | "issue_opened" | "issue_closed"
+    number: int
+    day: date
+
+
+@dataclass
 class DayExecution:
     day: date
     commits: int
@@ -47,6 +58,10 @@ class DayExecution:
     active_repos: int
     additions: int = 0
     deletions: int = 0
+    prs_opened: int = 0
+    prs_merged: int = 0
+    issues_opened: int = 0
+    issues_closed: int = 0
 
 
 @dataclass
@@ -57,64 +72,6 @@ class ExecutionSyncReport:
     message: str
     today_commits: int | None = None
     today_coding_minutes: int | None = None
-
-
-class ExecutionCollector:
-    def __init__(
-        self,
-        db: Session,
-        repo_paths: list[str] | None = None,
-        git_author: str | None = None,
-    ) -> None:
-        self.db = db
-        self.repo_paths = [p for p in (repo_paths or []) if p.strip()]
-        self.git_author = (git_author or "").strip() or None
-        self.github = GithubRepository(db)
-
-    def sync(self, days: int = 14) -> ExecutionSyncReport:
-        paths = resolve_repo_paths(self.repo_paths)
-        if not paths:
-            return ExecutionSyncReport(
-                days_updated=0,
-                repos_scanned=0,
-                source="git",
-                message=(
-                    "No repo paths configured. Set EXECUTION_REPO_PATHS in backend/.env "
-                    "(comma-separated git repo directories on the machine running the backend)."
-                ),
-            )
-
-        end = date.today()
-        start = end - timedelta(days=max(days - 1, 0))
-        events = collect_git_commit_events(paths, self.git_author, start, end)
-        rollups = rollup_commit_events(events)
-
-        persist_rollups(self.github, rollups)
-
-        today = rollups.get(end)
-        return ExecutionSyncReport(
-            days_updated=len(rollups),
-            repos_scanned=len(paths),
-            source="git",
-            today_commits=today.commits if today else 0,
-            today_coding_minutes=today.coding_minutes if today else 0,
-            message=(
-                f"Auto-detected execution from {len(paths)} repo(s) over {days}d "
-                f"({len(rollups)} day(s) updated)."
-            ),
-        )
-
-
-def resolve_repo_paths(raw_paths: Iterable[str]) -> list[Path]:
-    """Expand, resolve, and keep only directories that are actually git repos."""
-    resolved: list[Path] = []
-    for raw in raw_paths:
-        if not raw or not raw.strip():
-            continue
-        path = Path(raw).expanduser().resolve()
-        if (path / ".git").exists():
-            resolved.append(path)
-    return resolved
 
 
 def persist_rollups(github: GithubRepository, rollups: dict[date, DayExecution]) -> None:
@@ -128,6 +85,10 @@ def persist_rollups(github: GithubRepository, rollups: dict[date, DayExecution])
                 active_repos=rollup.active_repos,
                 additions=rollup.additions,
                 deletions=rollup.deletions,
+                prs_opened=rollup.prs_opened,
+                prs_merged=rollup.prs_merged,
+                issues_opened=rollup.issues_opened,
+                issues_closed=rollup.issues_closed,
             )
         )
 
@@ -136,8 +97,7 @@ def merge_commit_events(*event_lists: Iterable[CommitEvent]) -> list[CommitEvent
     """Combine commit events from multiple sources, deduplicated by SHA.
 
     Earlier lists win on conflict, so pass the source with richer data (e.g.
-    GitHub stats) first. The same commit observed by both the local git scan and
-    the GitHub API shares one SHA and is therefore counted exactly once.
+    GitHub stats) first.
     """
     merged: dict[str, CommitEvent] = {}
     for events in event_lists:
@@ -147,8 +107,22 @@ def merge_commit_events(*event_lists: Iterable[CommitEvent]) -> list[CommitEvent
     return list(merged.values())
 
 
-def rollup_commit_events(events: Iterable[CommitEvent]) -> dict[date, DayExecution]:
-    """Build per-day execution rollups from deduplicated commit events."""
+def merge_pr_issue_events(*event_lists: Iterable[PrIssueEvent]) -> list[PrIssueEvent]:
+    """Combine PR/issue events from multiple sources, deduplicated by (repo, kind, number)."""
+    merged: dict[tuple[str, str, int], PrIssueEvent] = {}
+    for events in event_lists:
+        for event in events:
+            key = (event.repo, event.kind, event.number)
+            if key not in merged:
+                merged[key] = event
+    return list(merged.values())
+
+
+def rollup_commit_events(
+    events: Iterable[CommitEvent],
+    pr_issue_events: Iterable[PrIssueEvent] = (),
+) -> dict[date, DayExecution]:
+    """Build per-day execution rollups from deduplicated commit + PR/issue events."""
     ts_by_day: dict[date, list[int]] = defaultdict(list)
     repos_by_day: dict[date, set[str]] = defaultdict(set)
     additions_by_day: dict[date, int] = defaultdict(int)
@@ -161,8 +135,27 @@ def rollup_commit_events(events: Iterable[CommitEvent]) -> dict[date, DayExecuti
         additions_by_day[day] += event.additions
         deletions_by_day[day] += event.deletions
 
+    pr_issue_counts: dict[date, dict[str, int]] = defaultdict(
+        lambda: {"prs_opened": 0, "prs_merged": 0, "issues_opened": 0, "issues_closed": 0}
+    )
+    field_by_kind = {
+        "pr_opened": "prs_opened",
+        "pr_merged": "prs_merged",
+        "issue_opened": "issues_opened",
+        "issue_closed": "issues_closed",
+    }
+    for event in pr_issue_events:
+        field = field_by_kind.get(event.kind)
+        if field is None:
+            continue
+        pr_issue_counts[event.day][field] += 1
+        repos_by_day[event.day].add(event.repo)
+
+    all_days = set(ts_by_day) | set(pr_issue_counts)
     rollups: dict[date, DayExecution] = {}
-    for day, timestamps in ts_by_day.items():
+    for day in all_days:
+        timestamps = ts_by_day.get(day, [])
+        counts = pr_issue_counts.get(day, {})
         rollups[day] = DayExecution(
             day=day,
             commits=len(timestamps),
@@ -170,76 +163,14 @@ def rollup_commit_events(events: Iterable[CommitEvent]) -> dict[date, DayExecuti
             active_repos=len(repos_by_day[day]),
             additions=additions_by_day[day],
             deletions=deletions_by_day[day],
+            prs_opened=counts.get("prs_opened", 0),
+            prs_merged=counts.get("prs_merged", 0),
+            issues_opened=counts.get("issues_opened", 0),
+            issues_closed=counts.get("issues_closed", 0),
         )
 
     # Explicit zero-days are not written — absence means no output that day.
     return rollups
-
-
-def collect_git_activity(
-    repo_paths: list[Path],
-    author: str | None,
-    start: date,
-    end: date,
-) -> dict[date, DayExecution]:
-    """Scan git logs and build per-day execution rollups (deterministic baseline)."""
-    events = collect_git_commit_events(repo_paths, author, start, end)
-    return rollup_commit_events(events)
-
-
-def collect_git_commit_events(
-    repo_paths: list[Path],
-    author: str | None,
-    start: date,
-    end: date,
-) -> list[CommitEvent]:
-    """Read git history across the window and return per-commit events."""
-    events: list[CommitEvent] = []
-    seen: set[str] = set()
-    for repo in repo_paths:
-        for sha, ts in _git_commits(repo, start, end, author):
-            if sha in seen:
-                continue
-            seen.add(sha)
-            events.append(CommitEvent(sha=sha, repo=str(repo), ts=ts))
-    return events
-
-
-def _git_commits(
-    repo: Path,
-    start: date,
-    end: date,
-    author: str | None,
-) -> list[tuple[str, int]]:
-    since = datetime.combine(start, time.min).isoformat(sep=" ")
-    until = datetime.combine(end + timedelta(days=1), time.min).isoformat(sep=" ")
-    cmd = [
-        "git",
-        "-C",
-        str(repo),
-        "log",
-        f"--since={since}",
-        f"--until={until}",
-        "--no-merges",
-        "--format=%H %ct",
-    ]
-    if author:
-        cmd.append(f"--author={author}")
-
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-
-    if proc.returncode != 0:
-        return []
-
-    out: list[tuple[str, int]] = []
-    for line in proc.stdout.splitlines():
-        parts = line.strip().split()
-        if len(parts) == 2 and parts[1].isdigit():
-            out.append((parts[0], int(parts[1])))
-    return out
 
 
 def _estimate_coding_minutes(timestamps: list[int]) -> int:

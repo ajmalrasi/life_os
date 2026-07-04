@@ -48,6 +48,7 @@ class ExecutionInputs:
     commits: int = 0
     coding_minutes: int = 0
     active_repos: int = 0
+    pr_issue_activity: int = 0  # prs_opened + prs_merged + issues_opened + issues_closed
 
 
 @dataclass
@@ -211,16 +212,22 @@ def recovery_score(inp: RecoveryInputs) -> float | None:
 
 
 def execution_score(inp: ExecutionInputs) -> float | None:
-    """Project output for the day. 0 commits & 0 minutes => 0 (a real avoidance signal)."""
-    if inp.commits == 0 and inp.coding_minutes == 0 and inp.active_repos == 0:
+    """Project output for the day. All-zero signal => 0 (a real avoidance signal)."""
+    if (
+        inp.commits == 0
+        and inp.coding_minutes == 0
+        and inp.active_repos == 0
+        and inp.pr_issue_activity == 0
+    ):
         return 0.0
 
     # Diminishing returns via soft caps.
-    commit_c = _clamp(inp.commits * 12.0)             # ~8 commits saturates
-    time_c = _clamp(inp.coding_minutes / 240.0 * 100) # 4h of focused coding saturates
-    repo_c = _clamp(inp.active_repos * 25.0)          # spreading across repos
+    commit_c = _clamp(inp.commits * 12.0)              # ~8 commits saturates
+    time_c = _clamp(inp.coding_minutes / 240.0 * 100)  # 4h of focused coding saturates
+    repo_c = _clamp(inp.active_repos * 25.0)           # spreading across repos
+    pr_issue_c = _clamp(inp.pr_issue_activity * 15.0)  # ~7 PR/issue events saturates
 
-    score = 0.45 * commit_c + 0.45 * time_c + 0.10 * repo_c
+    score = 0.40 * commit_c + 0.40 * time_c + 0.10 * repo_c + 0.10 * pr_issue_c
     return round(_clamp(score), 1)
 
 

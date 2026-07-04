@@ -1,9 +1,11 @@
 """GitHub execution collector via the official github-mcp-server MCP sidecar.
 
-Replaces the direct REST API implementation with MCP tool calls so authentication,
-pagination, and rate-limit handling are delegated to the official server. The
-public interface (``GitHubApiCollector``, ``CommitEvent``) is unchanged, so
-``execution_sync.py`` and ``collectors.py`` need no edits.
+This is the sole source of execution signal — LifeOS does not scan local git
+repos (the backend and the dev machine are different hosts, so a local scan
+would only ever see whatever happened to be pulled onto the backend host).
+Everything here reads from GitHub itself: commits, pull requests, and issues,
+all fetched via MCP tool calls so authentication, pagination, and rate-limit
+handling are delegated to the official server.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from app.repositories.github_repo import GithubRepository
 from app.services.execution_collector import (
     CommitEvent,
     ExecutionSyncReport,
+    PrIssueEvent,
     persist_rollups,
     rollup_commit_events,
 )
@@ -25,7 +28,7 @@ from app.services.github_mcp_client import GitHubMcpClient
 logger = logging.getLogger(__name__)
 
 _MAX_PER_PAGE = 100
-_MAX_PAGES = 10  # safety cap: up to 1000 commits per repo per window
+_MAX_PAGES = 10  # safety cap: up to 1000 commits/PRs per repo per window
 
 
 class GitHubApiCollector:
@@ -57,14 +60,20 @@ class GitHubApiCollector:
 
         end = date.today()
         start = end - timedelta(days=max(days - 1, 0))
-        events = collect_github_commit_events(
+        commit_events = collect_github_commit_events(
             self.repos,
             self.author,
             start,
             end,
             client=self.client,
         )
-        rollups = rollup_commit_events(events)
+        pr_issue_events = collect_github_pr_issue_events(
+            self.repos,
+            start,
+            end,
+            client=self.client,
+        )
+        rollups = rollup_commit_events(commit_events, pr_issue_events)
         persist_rollups(self.github, rollups)
 
         today = rollups.get(end)
@@ -79,6 +88,9 @@ class GitHubApiCollector:
                 f"over {days}d ({len(rollups)} day(s) updated)."
             ),
         )
+
+
+# -- commits ----------------------------------------------------------------------
 
 
 def collect_github_commit_events(
@@ -105,18 +117,18 @@ def collect_github_commit_events(
 
     for repo in repos:
         try:
-            repo_events = _collect_repo_events(client, repo, author, since, until)
+            repo_events = _collect_repo_commit_events(client, repo, author, since, until)
             for event in repo_events:
                 if event.sha not in seen:
                     seen.add(event.sha)
                     events.append(event)
         except Exception as exc:
-            logger.warning("github-mcp: skipping repo %s — %s", repo, exc)
+            logger.warning("github-mcp: skipping commits for %s — %s", repo, exc)
 
     return events
 
 
-def _collect_repo_events(
+def _collect_repo_commit_events(
     client: GitHubMcpClient,
     repo: str,
     author: str | None,
@@ -165,13 +177,8 @@ def _parse_commit(
 
     commit = entry.get("commit") or {}
     author_info = commit.get("author") or commit.get("committer") or {}
-    raw_date = author_info.get("date")
-    if not raw_date:
-        return None
-
-    try:
-        ts = int(datetime.fromisoformat(raw_date.rstrip("Z")).replace(tzinfo=timezone.utc).timestamp())
-    except (ValueError, TypeError):
+    dt = _parse_dt(author_info.get("date"))
+    if dt is None:
         return None
 
     additions, deletions = _fetch_stats(client, owner, repo, sha)
@@ -179,7 +186,7 @@ def _parse_commit(
     return CommitEvent(
         sha=sha,
         repo=f"github:{owner}/{repo}",
-        ts=ts,
+        ts=int(dt.timestamp()),
         additions=additions,
         deletions=deletions,
     )
@@ -196,6 +203,147 @@ def _fetch_stats(
         return 0, 0
     stats = detail.get("stats") or {}
     return int(stats.get("additions", 0) or 0), int(stats.get("deletions", 0) or 0)
+
+
+# -- pull requests + issues ---------------------------------------------------------
+
+
+def collect_github_pr_issue_events(
+    repos: list[str],
+    start: date,
+    end: date,
+    client: GitHubMcpClient | None = None,
+    token: str = "",
+) -> list[PrIssueEvent]:
+    """Fetch PR-opened/merged and issue-opened/closed events for each repo via MCP."""
+    if client is None:
+        client = GitHubMcpClient(token=token)
+
+    events: list[PrIssueEvent] = []
+    for repo in repos:
+        try:
+            events.extend(_collect_repo_pr_events(client, repo, start, end))
+        except Exception as exc:
+            logger.warning("github-mcp: skipping PRs for %s — %s", repo, exc)
+        try:
+            events.extend(_collect_repo_issue_events(client, repo, start, end))
+        except Exception as exc:
+            logger.warning("github-mcp: skipping issues for %s — %s", repo, exc)
+
+    return events
+
+
+def _collect_repo_pr_events(
+    client: GitHubMcpClient,
+    repo: str,
+    start: date,
+    end: date,
+) -> list[PrIssueEvent]:
+    """``list_pull_requests`` has no ``since`` filter, so we sort by ``updated``
+    (descending) and stop as soon as an entry falls before the window — every
+    later entry is guaranteed to be at least as old.
+    """
+    owner, name = _split_repo(repo)
+    events: list[PrIssueEvent] = []
+
+    for page in range(1, _MAX_PAGES + 1):
+        args = {
+            "owner": owner,
+            "repo": name,
+            "state": "all",
+            "sort": "updated",
+            "direction": "desc",
+            "perPage": _MAX_PER_PAGE,
+            "page": page,
+        }
+        prs = client.call_tool("list_pull_requests", args)
+        if not prs or not isinstance(prs, list):
+            break
+
+        for entry in prs:
+            updated = _parse_dt(entry.get("updated_at"))
+            if updated is not None and updated.date() < start:
+                return events  # sorted desc: nothing after this is newer
+
+            number = entry.get("number")
+            if number is None:
+                continue
+
+            created = _parse_dt(entry.get("created_at"))
+            if created is not None and start <= created.date() <= end:
+                events.append(
+                    PrIssueEvent(repo=f"github:{owner}/{name}", kind="pr_opened", number=number, day=created.date())
+                )
+
+            merged = _parse_dt(entry.get("merged_at"))
+            if merged is not None and start <= merged.date() <= end:
+                events.append(
+                    PrIssueEvent(repo=f"github:{owner}/{name}", kind="pr_merged", number=number, day=merged.date())
+                )
+
+        if len(prs) < _MAX_PER_PAGE:
+            break
+
+    return events
+
+
+def _collect_repo_issue_events(
+    client: GitHubMcpClient,
+    repo: str,
+    start: date,
+    end: date,
+) -> list[PrIssueEvent]:
+    """``list_issues`` supports a server-side ``since`` (updated-at) filter, so
+    one page comfortably covers a personal repo's trailing-week activity.
+    """
+    owner, name = _split_repo(repo)
+    since = datetime.combine(start, time.min, tzinfo=timezone.utc).isoformat()
+
+    args = {
+        "owner": owner,
+        "repo": name,
+        "state": "all",
+        "since": since,
+        "perPage": _MAX_PER_PAGE,
+    }
+    issues = client.call_tool("list_issues", args)
+    if not issues or not isinstance(issues, list):
+        return []
+
+    events: list[PrIssueEvent] = []
+    for entry in issues:
+        if entry.get("pull_request"):
+            continue  # PRs are also surfaced via the issues API; handled separately
+
+        number = entry.get("number")
+        if number is None:
+            continue
+
+        created = _parse_dt(entry.get("created_at"))
+        if created is not None and start <= created.date() <= end:
+            events.append(
+                PrIssueEvent(repo=f"github:{owner}/{name}", kind="issue_opened", number=number, day=created.date())
+            )
+
+        closed = _parse_dt(entry.get("closed_at"))
+        if closed is not None and start <= closed.date() <= end:
+            events.append(
+                PrIssueEvent(repo=f"github:{owner}/{name}", kind="issue_closed", number=number, day=closed.date())
+            )
+
+    return events
+
+
+# -- shared -------------------------------------------------------------------------
+
+
+def _parse_dt(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.rstrip("Z")).replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
 
 
 def _split_repo(repo: str) -> tuple[str, str]:

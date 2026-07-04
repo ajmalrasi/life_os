@@ -40,6 +40,18 @@ def test_execution_score_scales_with_output():
     assert 0 < low < high <= 100
 
 
+def test_execution_score_pr_issue_activity_alone_is_nonzero():
+    assert scoring.execution_score(scoring.ExecutionInputs(pr_issue_activity=2)) > 0.0
+
+
+def test_execution_score_pr_issue_activity_boosts_score():
+    without = scoring.execution_score(scoring.ExecutionInputs(commits=2, coding_minutes=30))
+    with_activity = scoring.execution_score(
+        scoring.ExecutionInputs(commits=2, coding_minutes=30, pr_issue_activity=3)
+    )
+    assert with_activity > without
+
+
 def test_recovery_uses_baseline_direction():
     above = scoring.recovery_score(
         scoring.RecoveryInputs(hrv_ms=80, hrv_baseline_ms=60)

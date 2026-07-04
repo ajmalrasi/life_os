@@ -1,63 +1,17 @@
-"""Tests for automatic git-based execution collection."""
+"""Tests for source-agnostic execution rollup logic (commits + PR/issue events)."""
 
 from __future__ import annotations
 
-import subprocess
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date, datetime, timezone
 
-import pytest
-
-from app.services.execution_collector import collect_git_activity, _estimate_coding_minutes
-
-
-def _init_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "lifeos@test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "LifeOS Test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
-def _commit_at(path: Path, when: datetime, message: str) -> None:
-    (path / "work.txt").write_text(f"{message}\n", encoding="utf-8")
-    subprocess.run(["git", "add", "work.txt"], cwd=path, check=True, capture_output=True)
-    env = {
-        **__import__("os").environ,
-        "GIT_AUTHOR_DATE": when.isoformat(),
-        "GIT_COMMITTER_DATE": when.isoformat(),
-    }
-    subprocess.run(
-        ["git", "commit", "-m", message],
-        cwd=path,
-        check=True,
-        capture_output=True,
-        env=env,
-    )
-
-
-def test_collect_git_activity_counts_commits_and_repos(tmp_path: Path) -> None:
-    repo = tmp_path / "project"
-    repo.mkdir()
-    _init_repo(repo)
-
-    day = date.today()
-    noon = datetime.combine(day, datetime.min.time()) + timedelta(hours=12)
-    _commit_at(repo, noon, "first")
-    _commit_at(repo, noon + timedelta(minutes=20), "second")
-
-    rollups = collect_git_activity([repo], author=None, start=day, end=day)
-    assert rollups[day].commits == 2
-    assert rollups[day].active_repos == 1
-    assert rollups[day].coding_minutes >= 15
+from app.services.execution_collector import (
+    CommitEvent,
+    PrIssueEvent,
+    _estimate_coding_minutes,
+    merge_commit_events,
+    merge_pr_issue_events,
+    rollup_commit_events,
+)
 
 
 def test_estimate_coding_minutes_groups_sessions() -> None:
@@ -69,18 +23,54 @@ def test_estimate_coding_minutes_groups_sessions() -> None:
     assert two_sessions >= one_session
 
 
-def test_author_filter_limits_commits(tmp_path: Path) -> None:
-    repo = tmp_path / "project"
-    repo.mkdir()
-    _init_repo(repo)
-    day = date.today()
-    when = datetime.combine(day, datetime.min.time()) + timedelta(hours=9)
-    _commit_at(repo, when, "mine")
+def test_merge_commit_events_dedupes_by_sha() -> None:
+    ts = int(datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc).timestamp())
+    a = CommitEvent(sha="shared", repo="github:me/proj", ts=ts, additions=5)
+    b = CommitEvent(sha="shared", repo="github:me/proj", ts=ts, additions=99)
+    c = CommitEvent(sha="other", repo="github:me/proj", ts=ts)
 
-    all_commits = collect_git_activity([repo], author=None, start=day, end=day)
-    filtered = collect_git_activity([repo], author="lifeos@test", start=day, end=day)
-    assert all_commits[day].commits == 1
-    assert filtered[day].commits == 1
+    merged = merge_commit_events([a], [b, c])
+    assert {e.sha for e in merged} == {"shared", "other"}
+    assert next(e for e in merged if e.sha == "shared").additions == 5  # first list wins
 
-    missing = collect_git_activity([repo], author="nobody@example.com", start=day, end=day)
-    assert day not in missing
+
+def test_merge_pr_issue_events_dedupes_by_repo_kind_number() -> None:
+    day = date(2026, 6, 14)
+    a = PrIssueEvent(repo="github:me/proj", kind="pr_merged", number=1, day=day)
+    b = PrIssueEvent(repo="github:me/proj", kind="pr_merged", number=1, day=day)
+    c = PrIssueEvent(repo="github:me/proj", kind="pr_opened", number=1, day=day)
+
+    merged = merge_pr_issue_events([a], [b, c])
+    assert len(merged) == 2
+
+
+def test_rollup_combines_commits_and_pr_issue_events() -> None:
+    day = date(2026, 6, 14)
+    ts = int(datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc).timestamp())
+
+    commit_events = [CommitEvent(sha="a", repo="github:me/proj", ts=ts)]
+    pr_issue_events = [
+        PrIssueEvent(repo="github:me/proj", kind="pr_opened", number=1, day=day),
+        PrIssueEvent(repo="github:me/proj", kind="pr_merged", number=1, day=day),
+        PrIssueEvent(repo="github:me/proj", kind="issue_closed", number=2, day=day),
+    ]
+
+    rollups = rollup_commit_events(commit_events, pr_issue_events)
+
+    assert rollups[day].commits == 1
+    assert rollups[day].prs_opened == 1
+    assert rollups[day].prs_merged == 1
+    assert rollups[day].issues_closed == 1
+    assert rollups[day].issues_opened == 0
+
+
+def test_rollup_includes_pr_issue_only_days() -> None:
+    """A day with PR/issue activity but no commits still produces a rollup row."""
+    day = date(2026, 6, 15)
+    pr_issue_events = [PrIssueEvent(repo="github:me/proj", kind="issue_opened", number=3, day=day)]
+
+    rollups = rollup_commit_events([], pr_issue_events)
+
+    assert rollups[day].commits == 0
+    assert rollups[day].issues_opened == 1
+    assert rollups[day].active_repos == 1

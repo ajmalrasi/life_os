@@ -26,11 +26,6 @@ class Settings(BaseSettings):
     openclaw_api_key: str = ""  # optional; many local servers ignore it
     openclaw_timeout_seconds: float = 120.0
 
-    # Automatic execution collection (local git repos on the backend host).
-    # Comma-separated absolute paths, e.g. /Users/you/projects/life_os,/Users/you/other
-    execution_repo_paths: str = ""
-    execution_git_author: str = ""  # optional git --author filter (email or name)
-
     # GitHub execution collection via the official github-mcp-server sidecar.
     # The sidecar runs inside docker-compose; GITHUB_TOKEN is its auth credential.
     github_token: str = ""  # personal access token (repo / contents:read)
@@ -81,12 +76,6 @@ class Settings(BaseSettings):
     # Registers the LLM catch-all bank-email parser (llm_bank_parser.py)
     # alongside the regex parsers.
     llm_bank_parser_enabled: bool = True
-
-    @property
-    def execution_repo_path_list(self) -> list[str]:
-        if not self.execution_repo_paths.strip():
-            return []
-        return [p.strip() for p in self.execution_repo_paths.split(",") if p.strip()]
 
     @property
     def github_repos_list(self) -> list[str]:

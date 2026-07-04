@@ -14,10 +14,11 @@ router = APIRouter(prefix="/collectors", tags=["collectors"])
 
 @router.post("/execution/sync", response_model=ExecutionSyncResult)
 def sync_execution(days: int = 14, db: Session = Depends(get_db)) -> ExecutionSyncResult:
-    """Auto-detect coding execution from local git repos and/or the GitHub API.
+    """Auto-detect coding execution from GitHub (commits, PRs, issues).
 
-    Both sources run when configured and are deduplicated by commit SHA, so this
-    is safe to trigger on demand (e.g. a "sync now" button) without double counting.
+    Idempotent — commits are deduplicated by SHA and PR/issue events by
+    (repo, kind, number), so this is safe to trigger on demand (e.g. a "sync
+    now" button) without double counting.
     """
     settings = get_settings()
     report = run_execution_sync(db, settings, days=days)

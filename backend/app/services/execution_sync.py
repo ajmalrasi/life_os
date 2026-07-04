@@ -1,10 +1,9 @@
-"""Combined execution sync — local git scan + GitHub API, deduped by SHA.
+"""Execution sync entrypoint — GitHub only (commits + PRs + issues).
 
-This is the entrypoint the nightly recompute uses. It runs both collectors when
-configured, merges their commit events (the GitHub source wins on conflict so
-code-churn stats are preserved), and writes a single set of per-day rollups.
-Because both sources key commits by SHA, a commit observed locally *and* on
-GitHub is counted exactly once.
+This is what the nightly recompute uses. Local git scanning was removed: the
+backend runs on a different host than the dev machine, so a local `git log`
+scan only ever saw whatever happened to be pulled onto the backend host —
+GitHub is the actual source of truth for "did the work happen."
 """
 
 from __future__ import annotations
@@ -15,70 +14,54 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.repositories.github_repo import GithubRepository
-from app.services.execution_collector import (
-    ExecutionSyncReport,
-    collect_git_commit_events,
-    merge_commit_events,
-    persist_rollups,
-    resolve_repo_paths,
-    rollup_commit_events,
+from app.services.execution_collector import ExecutionSyncReport, persist_rollups, rollup_commit_events
+from app.services.github_api_collector import (
+    collect_github_commit_events,
+    collect_github_pr_issue_events,
 )
-from app.services.github_api_collector import collect_github_commit_events
 
 
 def run_execution_sync(db: Session, settings: Settings, days: int = 14) -> ExecutionSyncReport:
     end = date.today()
     start = end - timedelta(days=max(days - 1, 0))
 
-    sources: list[str] = []
+    if not settings.github_enabled:
+        return ExecutionSyncReport(
+            days_updated=0,
+            repos_scanned=0,
+            source="none",
+            message=(
+                "No execution source configured. Set GITHUB_TOKEN + GITHUB_REPOS "
+                "in backend/.env."
+            ),
+        )
 
-    git_paths = resolve_repo_paths(settings.execution_repo_path_list)
-    git_events = collect_git_commit_events(
-        git_paths,
-        settings.execution_git_author or None,
+    commit_events = collect_github_commit_events(
+        settings.github_repos_list,
+        settings.github_user or None,
         start,
         end,
+        token=settings.github_token,
     )
-    if git_paths:
-        sources.append(f"git({len(git_paths)})")
-
-    github_events = []
-    if settings.github_enabled:
-        github_events = collect_github_commit_events(
-            settings.github_repos_list,
-            settings.github_user or None,
-            start,
-            end,
-            token=settings.github_token,
-        )
-        sources.append(f"github-mcp({len(settings.github_repos_list)})")
-
-    # GitHub events first so their churn stats win when the same SHA appears in
-    # both sources.
-    events = merge_commit_events(github_events, git_events)
-    rollups = rollup_commit_events(events)
-
+    pr_issue_events = collect_github_pr_issue_events(
+        settings.github_repos_list,
+        start,
+        end,
+        token=settings.github_token,
+    )
+    rollups = rollup_commit_events(commit_events, pr_issue_events)
     persist_rollups(GithubRepository(db), rollups)
 
-    repos_scanned = len(git_paths) + len(settings.github_repos_list if settings.github_enabled else [])
     today = rollups.get(end)
-
-    if sources:
-        message = (
-            f"Auto-detected execution from {', '.join(sources)} over {days}d "
-            f"({len(rollups)} day(s) updated, {len(events)} unique commit(s))."
-        )
-    else:
-        message = (
-            "No execution sources configured. Set EXECUTION_REPO_PATHS and/or "
-            "GITHUB_TOKEN + GITHUB_REPOS in backend/.env."
-        )
-
     return ExecutionSyncReport(
         days_updated=len(rollups),
-        repos_scanned=repos_scanned,
-        source="+".join(s.split("(")[0] for s in sources) or "none",
+        repos_scanned=len(settings.github_repos_list),
+        source="github-mcp",
         today_commits=today.commits if today else 0,
         today_coding_minutes=today.coding_minutes if today else 0,
-        message=message,
+        message=(
+            f"GitHub MCP: detected execution across {len(settings.github_repos_list)} repo(s) "
+            f"over {days}d ({len(rollups)} day(s) updated, {len(commit_events)} commit(s), "
+            f"{len(pr_issue_events)} PR/issue event(s))."
+        ),
     )

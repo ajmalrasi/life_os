@@ -22,5 +22,9 @@ class GithubActivity(Base):
     deletions: Mapped[int] = mapped_column(Integer, default=0)
     active_repos: Mapped[int] = mapped_column(Integer, default=0)
     coding_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    prs_opened: Mapped[int] = mapped_column(Integer, default=0)
+    prs_merged: Mapped[int] = mapped_column(Integer, default=0)
+    issues_opened: Mapped[int] = mapped_column(Integer, default=0)
+    issues_closed: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

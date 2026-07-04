@@ -95,6 +95,9 @@ class AnalyticsService:
                 commits=gh.commits if gh else 0,
                 coding_minutes=gh.coding_minutes if gh else 0,
                 active_repos=gh.active_repos if gh else 0,
+                pr_issue_activity=(
+                    gh.prs_opened + gh.prs_merged + gh.issues_opened + gh.issues_closed if gh else 0
+                ),
             )
         )
 
