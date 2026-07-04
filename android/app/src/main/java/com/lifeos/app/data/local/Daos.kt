@@ -56,6 +56,17 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<TransactionEntity>)
 
+    // The server can delete-and-reinsert a transaction under a new id (e.g. a
+    // backend rebuild reprocessing an email) — upsertAll alone never removes
+    // the old id, so it lingers forever as a phantom duplicate. Call this
+    // with every id the server just returned for the same window so the
+    // cache mirrors the server instead of only ever growing.
+    @Query("DELETE FROM transactions_cache WHERE txnDate >= :since AND id NOT IN (:keepIds)")
+    suspend fun deleteStaleSince(since: String, keepIds: List<Int>)
+
+    @Query("DELETE FROM transactions_cache WHERE txnDate >= :since")
+    suspend fun deleteSince(since: String)
+
     @Query("SELECT * FROM transactions_cache WHERE txnDate >= :since ORDER BY txnDate DESC, id DESC")
     fun observeSince(since: String): Flow<List<TransactionEntity>>
 }

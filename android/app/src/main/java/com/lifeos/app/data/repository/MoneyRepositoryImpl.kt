@@ -30,7 +30,17 @@ class MoneyRepositoryImpl @Inject constructor(
         cardStatementDao.observeAll().map { list -> list.map { it.toDomain() } }
 
     override suspend fun refresh(transactionDays: Int, statementMonths: Int) {
-        transactionDao.upsertAll(api.listTransactions(transactionDays).map { it.toEntity() })
+        val since = LocalDate.now().minusDays(transactionDays.toLong()).toString()
+        val fresh = api.listTransactions(transactionDays)
+        // Reconcile, don't just append: a transaction the server deleted
+        // (e.g. reprocessed under a new id) must disappear locally too, not
+        // linger forever as a phantom duplicate alongside its replacement.
+        if (fresh.isEmpty()) {
+            transactionDao.deleteSince(since)
+        } else {
+            transactionDao.deleteStaleSince(since, fresh.map { it.id })
+            transactionDao.upsertAll(fresh.map { it.toEntity() })
+        }
         cardStatementDao.upsertAll(api.listStatements(statementMonths).map { it.toEntity() })
     }
 
