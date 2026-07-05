@@ -113,7 +113,7 @@ def test_fetch_rejects_unknown_bank(client):
 
     gmail = _FakeGmail([])
     with SessionLocal() as db, pytest.raises(KeyError):
-        fetch_raw_emails(db, gmail, bank="SBI", since=date(2026, 1, 1))
+        fetch_raw_emails(db, gmail, bank="Nonexistent", since=date(2026, 1, 1))
 
 
 # --- process_raw_emails --------------------------------------------------------------
@@ -294,7 +294,7 @@ def test_process_bank_filter_only_processes_matching_bank(client):
 
 
 def test_fetch_endpoint_rejects_unknown_bank(client):
-    resp = client.post("/expenses/rebuild-llm/fetch", params={"since": "2026-01-01", "bank": "SBI"})
+    resp = client.post("/expenses/rebuild-llm/fetch", params={"since": "2026-01-01", "bank": "Nonexistent"})
     assert resp.status_code == 422
 
 
@@ -308,7 +308,7 @@ def test_fetch_endpoint_no_gmail_account_returns_zero(client):
 
 
 def test_process_endpoint_rejects_unknown_bank(client):
-    resp = client.post("/expenses/rebuild-llm/process", params={"bank": "SBI"})
+    resp = client.post("/expenses/rebuild-llm/process", params={"bank": "Nonexistent"})
     assert resp.status_code == 422
 
 

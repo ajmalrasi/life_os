@@ -112,14 +112,28 @@ _FIELDS_PROMPT = (
     "is_rupay_upi, last4, txn_date, reference."
 )
 
-# Bank domains the existing regex parsers already cover — kept as one shared
-# net so this parser's broader (no-subject-filter) query still only ever
+# Bank senders whose live-alert emails this parser is allowed to fetch — kept
+# as one shared net so its broader (no-subject-filter) query still only ever
 # fetches from banks you actually use, not the whole mailbox. Keyed by bank
 # name (matching the "HDFC ..."/"Axis ..." prefix ParsedTxn.account labels
 # use) so a scoped historical rebuild can target one bank's emails only —
 # different banks can have very different statement coverage, so they need
 # different "since" dates.
-BANK_DOMAINS = {"HDFC": "alerts@hdfcbank.bank.in", "Axis": "alerts@axis.bank.in"}
+#
+# A value can be a specific alert address (HDFC/Axis each send every alert
+# from one) OR a bare domain (ICICI/SBI). ICICI spreads card alerts across
+# several local-parts — credit_cards@, cards@, customernotification@ — so the
+# domain root is the only net that catches them all; the LLM gate then drops
+# the estatement/marketing noise that the wider net also pulls in. Verified
+# against the live mailbox: these are the exact senders that deliver card
+# transaction alerts (e.g. ICICI "Transaction alert for your ICICI Bank Credit
+# Card", SBI Card onlinesbicard@).
+BANK_DOMAINS = {
+    "HDFC": "alerts@hdfcbank.bank.in",
+    "Axis": "alerts@axis.bank.in",
+    "ICICI": "icici.bank.in",
+    "SBI": "sbicard.com",
+}
 
 
 @dataclass
