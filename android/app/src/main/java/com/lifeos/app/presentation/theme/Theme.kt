@@ -7,49 +7,50 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Fresh light palette — soft mint canvas, emerald→teal identity, vivid but
-// restrained metric accents (Tailwind-derived). One cohesive design language.
+// Claude-inspired warm palette — ivory canvas, terracotta identity, earthy
+// muted accents. Calm, book-like, never loud. One cohesive design language.
 object LifeOsColors {
-    val Background = Color(0xFFF4F8F6)     // soft mint-tinted canvas
+    val Background = Color(0xFFFAF9F5)     // warm ivory canvas
     val Surface = Color(0xFFFFFFFF)
     val SurfaceElevated = Color(0xFFFFFFFF)
-    val SurfaceMuted = Color(0xFFE8F3EE)   // pale mint
-    val SurfaceBorder = Color(0xFFDCE9E3)
+    val SurfaceMuted = Color(0xFFF0EEE6)   // pampas / warm paper
+    val SurfaceBorder = Color(0xFFE5E2D9)  // hairline on ivory
 
-    val Primary = Color(0xFF059669)        // emerald-600 (accessible on white)
-    val PrimarySoft = Color(0xFFD1FAE5)    // emerald-100
+    val Primary = Color(0xFFC15F3C)        // terracotta (accessible on white)
+    val PrimarySoft = Color(0xFFF6E3DA)    // terracotta wash
     val OnPrimary = Color(0xFFFFFFFF)
 
-    val Secondary = Color(0xFF0D9488)      // teal-600
-    val SecondarySoft = Color(0xFFCCFBF1)  // teal-100
+    val Secondary = Color(0xFF6E7B5E)      // sage
+    val SecondarySoft = Color(0xFFEAEDE2)  // sage wash
 
-    val AccentTeal = Color(0xFF14B8A6)
-    val AccentCoral = Color(0xFFFB7185)
-    val AccentAmber = Color(0xFFF59E0B)
+    val AccentTeal = Color(0xFF5FA396)
+    val AccentCoral = Color(0xFFD97757)    // Claude coral, for soft emphasis
+    val AccentAmber = Color(0xFFC99A3C)
 
-    val OnBackground = Color(0xFF0F1F1A)   // near-ink, green-tinted
-    val OnSurfaceMuted = Color(0xFF5C6B64)
+    val OnBackground = Color(0xFF29261F)   // warm ink
+    val OnSurfaceMuted = Color(0xFF6E6A5E) // warm gray
 
-    val ScoreHigh = Color(0xFF10B981)      // emerald
-    val ScoreMid = Color(0xFFF59E0B)       // amber
-    val ScoreLow = Color(0xFFEF4444)       // red
-    val Warning = Color(0xFFF97316)        // orange
-    val Positive = Color(0xFF0D9488)
+    val ScoreHigh = Color(0xFF6B9B5E)      // moss
+    val ScoreMid = Color(0xFFC99A3C)       // ochre
+    val ScoreLow = Color(0xFFC24E4E)       // clay red
+    val Warning = Color(0xFFC76E3B)        // burnt orange
+    val Positive = Color(0xFF4A7C59)       // forest
 
-    // Per-metric identity colors — distinct hues, no purple, harmonized with the green identity.
-    val MetricSleep = Color(0xFF3B82F6)     // blue (night/rest)
-    val MetricRecovery = Color(0xFF14B8A6)  // teal
-    val MetricExecution = Color(0xFFF59E0B) // amber (drive/output)
-    val MetricWellness = Color(0xFFF43F5E)  // rose
-    val MetricFitness = Color(0xFF10B981)   // emerald
+    // Per-metric identity colors — distinct hues, desaturated to sit calmly on ivory.
+    val MetricSleep = Color(0xFF5B7DB1)     // dusk blue (night/rest)
+    val MetricRecovery = Color(0xFF5FA396)  // sea teal
+    val MetricExecution = Color(0xFFC99A3C) // ochre (drive/output)
+    val MetricWellness = Color(0xFFC05F86)  // rose clay
+    val MetricFitness = Color(0xFF6B9B5E)   // moss
 
     // Charting — gridlines and faint axis text on the trend graph.
-    val ChartGrid = Color(0xFFE6EFEA)
-    val ChartAxisText = Color(0xFF8A9A93)
+    val ChartGrid = Color(0xFFEAE7DE)
+    val ChartAxisText = Color(0xFF9B968A)
 }
 
 val LifeOsShapes = androidx.compose.material3.Shapes(
@@ -79,9 +80,10 @@ private val LightScheme = lightColorScheme(
     tertiary = LifeOsColors.AccentTeal,
 )
 
+// Serif for display + headlines (Claude's editorial voice); clean sans for the rest.
 private val LifeOsTypography = Typography(
-    headlineLarge = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-    headlineMedium = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LifeOsColors.OnBackground),
+    headlineLarge = TextStyle(fontFamily = FontFamily.Serif, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
+    headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LifeOsColors.OnBackground),
     titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
     titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp),
@@ -91,7 +93,7 @@ private val LifeOsTypography = Typography(
     labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.5.sp),
     labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
-    displaySmall = TextStyle(fontSize = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp),
+    displaySmall = TextStyle(fontFamily = FontFamily.Serif, fontSize = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
 )
 
 @Composable

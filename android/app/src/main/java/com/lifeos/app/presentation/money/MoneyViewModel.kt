@@ -2,6 +2,7 @@ package com.lifeos.app.presentation.money
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.domain.repository.MoneyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -14,8 +15,8 @@ import java.math.BigDecimal
 import java.time.LocalDate
 import javax.inject.Inject
 
-/** How the spend view is bucketed. All three are always selectable. */
-enum class SpendPeriod { DAY, WEEK, MONTH }
+/** How the spend view is bucketed. All are always selectable. */
+enum class SpendPeriod { DAY, WEEK, MONTH, SIX_MONTHS, YEAR, CUSTOM }
 
 data class MoneyUiState(
     val loading: Boolean = true,
@@ -24,14 +25,21 @@ data class MoneyUiState(
     val period: SpendPeriod = SpendPeriod.MONTH,
     /** The period currently in view; moved by [prevPeriod]/[nextPeriod]. */
     val anchor: LocalDate = LocalDate.now(),
+    /** Inclusive bounds of the user-picked range; only used when [period] == CUSTOM. */
+    val customStart: LocalDate? = null,
+    val customEnd: LocalDate? = null,
     /** All cached spend + income transactions in the trailing window (Room). */
     val transactions: List<Transaction> = emptyList(),
     /** Non-null when the user has tapped a category to drill into it. */
     val selectedCategory: String? = null,
+    /** Multi-select category filter; empty = show everything. */
+    val categoryFilter: Set<String> = emptySet(),
     // Demoted card-dues summary — loaded softly so a backend hiccup never blanks
     // the (offline, cache-driven) spend view.
     val totalDue: BigDecimal? = null,
     val nextDueDate: LocalDate? = null,
+    /** Per-card statements with an outstanding due, soonest due date first. */
+    val cardDues: List<CardStatement> = emptyList(),
 )
 
 @HiltViewModel
@@ -64,6 +72,10 @@ class MoneyViewModel @Inject constructor(
                     error = refresh.exceptionOrNull()?.let { e -> e.message ?: "Couldn't reach the server" },
                     totalDue = dues?.totalDueAllCards ?: it.totalDue,
                     nextDueDate = dues?.nextDueDate ?: it.nextDueDate,
+                    cardDues = dues?.cards
+                        ?.filter { c -> (c.totalDue ?: BigDecimal.ZERO) > BigDecimal.ZERO }
+                        ?.sortedBy { c -> c.dueDate ?: LocalDate.MAX }
+                        ?: it.cardDues,
                 )
             }
         }
@@ -79,9 +91,31 @@ class MoneyViewModel @Inject constructor(
         }
     }
 
-    /** Switch bucketing. Resets to the current period and clears any drill-down. */
+    /** Switch bucketing. Resets to the current period and clears any drill-down.
+     * The category filter is intentionally kept — it's an orthogonal control. */
     fun setPeriod(period: SpendPeriod) {
         _state.update { it.copy(period = period, anchor = LocalDate.now(), selectedCategory = null) }
+    }
+
+    /** Apply a user-picked date range and switch to the CUSTOM period. */
+    fun setCustomRange(start: LocalDate, end: LocalDate) {
+        val (s, e) = if (start.isAfter(end)) end to start else start to end
+        _state.update {
+            it.copy(period = SpendPeriod.CUSTOM, customStart = s, customEnd = e, selectedCategory = null)
+        }
+    }
+
+    /** Toggle one category in the multi-select filter. */
+    fun toggleCategoryFilter(category: String) {
+        _state.update {
+            val next = if (category in it.categoryFilter) it.categoryFilter - category
+            else it.categoryFilter + category
+            it.copy(categoryFilter = next, selectedCategory = null)
+        }
+    }
+
+    fun clearCategoryFilter() {
+        _state.update { it.copy(categoryFilter = emptySet(), selectedCategory = null) }
     }
 
     fun prevPeriod() {
@@ -105,10 +139,13 @@ class MoneyViewModel @Inject constructor(
         SpendPeriod.DAY -> anchor.plusDays(steps)
         SpendPeriod.WEEK -> anchor.plusWeeks(steps)
         SpendPeriod.MONTH -> anchor.plusMonths(steps)
+        SpendPeriod.SIX_MONTHS -> anchor.plusMonths(6 * steps)
+        SpendPeriod.YEAR -> anchor.plusYears(steps)
+        SpendPeriod.CUSTOM -> anchor // fixed range; user re-picks instead of paging
     }
 
     private companion object {
-        // Wide enough to page back ~6 months of Day/Week/Month views offline.
-        const val TRANSACTION_WINDOW_DAYS = 180
+        // Wide enough to cover "This year" and paging back through 6-month views.
+        const val TRANSACTION_WINDOW_DAYS = 400
     }
 }
