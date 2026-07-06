@@ -88,7 +88,8 @@ def test_fetch_saves_new_emails_and_builds_correct_query(client):
         report = fetch_raw_emails(db, gmail, bank="Axis", since=date(2026, 1, 1))
     assert report.emails_found == 2
     assert report.emails_saved == 2
-    assert gmail.queries == ["from:alerts@axis.bank.in after:2026/01/01"]
+    # Bare domain (not a pinned local-part) so an address change can't blind us.
+    assert gmail.queries == ["from:axis.bank.in after:2026/01/01"]
 
     with SessionLocal() as db:
         saved = db.query(RawBankEmail).all()

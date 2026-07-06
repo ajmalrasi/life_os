@@ -126,17 +126,20 @@ _FIELDS_PROMPT = (
 # different banks can have very different statement coverage, so they need
 # different "since" dates.
 #
-# A value can be a specific alert address (HDFC/Axis each send every alert
-# from one) OR a bare domain (ICICI/SBI). ICICI spreads card alerts across
-# several local-parts — credit_cards@, cards@, customernotification@ — so the
-# domain root is the only net that catches them all; the LLM gate then drops
-# the estatement/marketing noise that the wider net also pulls in. Verified
-# against the live mailbox: these are the exact senders that deliver card
-# transaction alerts (e.g. ICICI "Transaction alert for your ICICI Bank Credit
-# Card", SBI Card onlinesbicard@).
+# Every value is a BARE DOMAIN, deliberately. A bank changing the local-part it
+# sends from (alerts@ -> txnalerts@, cards@ -> creditcards@, etc.) is a common,
+# silent way for transactions to go missing: a query pinned to one address stops
+# matching and nothing tells you. Matching the whole domain means any address at
+# the bank still gets fetched; the LLM gate then drops the estatement/marketing
+# noise the wider net also pulls in (that filtering is the whole point of the
+# gate). ICICI already needed this — it spreads card alerts across credit_cards@,
+# cards@, customernotification@ — and HDFC/Axis get the same treatment so an
+# address change on them can't blind us either. Keyed by bank name (matching the
+# "HDFC ..."/"Axis ..." ParsedTxn.account prefixes) so a scoped historical
+# rebuild can still target one bank's emails.
 BANK_DOMAINS = {
-    "HDFC": "alerts@hdfcbank.bank.in",
-    "Axis": "alerts@axis.bank.in",
+    "HDFC": "hdfcbank.bank.in",
+    "Axis": "axis.bank.in",
     "ICICI": "icici.bank.in",
     "SBI": "sbicard.com",
 }

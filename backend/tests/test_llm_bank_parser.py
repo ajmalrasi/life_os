@@ -243,14 +243,17 @@ def test_registry_has_llm_bank_parser():
 def test_gmail_query_has_no_subject_filter_and_covers_both_banks():
     query = LlmBankParser().gmail_query
     assert "subject:" not in query
-    assert "alerts@hdfcbank.bank.in" in query
-    assert "alerts@axis.bank.in" in query
+    # Bare domains, so a change of sending address (alerts@ -> txnalerts@) can't
+    # silently drop a bank's transactions.
+    assert "hdfcbank.bank.in" in query
+    assert "axis.bank.in" in query
+    assert "alerts@" not in query
 
 
 def test_gmail_query_can_be_scoped_to_one_bank_domain():
     """Needed for a per-bank historical rebuild — different banks can have
     very different statement coverage, so a rebuild often needs a different
     "since" date per bank rather than one shared query for both."""
-    query = LlmBankParser(domains=["alerts@hdfcbank.bank.in"]).gmail_query
-    assert "alerts@hdfcbank.bank.in" in query
-    assert "alerts@axis.bank.in" not in query
+    query = LlmBankParser(domains=["hdfcbank.bank.in"]).gmail_query
+    assert "hdfcbank.bank.in" in query
+    assert "axis.bank.in" not in query

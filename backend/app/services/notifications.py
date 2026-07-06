@@ -7,6 +7,8 @@ carries the metric that triggered it so nothing is unexplained.
 
 from __future__ import annotations
 
+import statistics
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -14,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_state import LifeState
 from app.repositories.analytics_repo import ScoreRepository, StateRepository
+from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.github_repo import GithubRepository
 
 
@@ -26,12 +29,23 @@ class Notification:
 
 SLEEP_DEBT_THRESHOLD = 60.0  # sleep score below this counts toward debt
 
+# Payment-source silence ("dead man's switch"). A card/account that was clearly
+# active but has since gone quiet longer than its own normal rhythm is the only
+# signal that catches a transaction going fully un-parsed — an email whose sender
+# or format changed so much that nothing (not even the LLM catch-all) fetched it,
+# so there's no row to notice the absence of any other way.
+SILENCE_WINDOW_DAYS = 120  # history looked at to learn each source's rhythm
+SILENCE_MIN_ACTIVE_DAYS = 5  # distinct spending days needed to call it "active"
+SILENCE_GAP_MULTIPLE = 4  # flag once silence exceeds this * the usual gap
+SILENCE_FLOOR_DAYS = 7  # never nag about a daily-use card before a week is up
+
 
 class NotificationService:
     def __init__(self, db: Session) -> None:
         self.scores = ScoreRepository(db)
         self.states = StateRepository(db)
         self.github = GithubRepository(db)
+        self.expenses = ExpenseRepository(db)
 
     def generate(self) -> list[Notification]:
         end = date.today()
@@ -48,6 +62,50 @@ class NotificationService:
         out.extend(self._idle_projects(gh))
         out.extend(self._low_wellness(scores))
         out.extend(self._sedentary(scores))
+        out.extend(self._silent_payment_sources(end))
+        return out
+
+    def _silent_payment_sources(self, today: date) -> list[Notification]:
+        """Flag any card/account that was regularly active but has now been
+        silent for far longer than its own typical gap between transactions.
+
+        This is the safety net for the invisible case: if a bank changes its
+        sender address or email format enough that no parser fetches the alert,
+        no transaction row is ever written — so the *absence* over time is the
+        only thing left to notice. Only reasonably-active sources are watched
+        (>= SILENCE_MIN_ACTIVE_DAYS distinct days in the window), which keeps
+        rarely-used cards from producing noise; a genuinely retired card ages
+        out of the window on its own once its last use is > SILENCE_WINDOW_DAYS old.
+        """
+        start = today - timedelta(days=SILENCE_WINDOW_DAYS)
+        by_account: dict[str, set[date]] = defaultdict(set)
+        for t in self.expenses.range(start, today):
+            if t.account:
+                by_account[t.account].add(t.txn_date)
+
+        out: list[Notification] = []
+        for account, day_set in by_account.items():
+            days = sorted(day_set)
+            if len(days) < SILENCE_MIN_ACTIVE_DAYS:
+                continue
+            gaps = [(b - a).days for a, b in zip(days, days[1:])]
+            typical_gap = statistics.median(gaps)
+            days_silent = (today - days[-1]).days
+            threshold = max(SILENCE_FLOOR_DAYS, round(SILENCE_GAP_MULTIPLE * typical_gap))
+            if days_silent > threshold:
+                out.append(
+                    Notification(
+                        "warning",
+                        f"No activity from {account} in {days_silent} days",
+                        f"{account} usually has a transaction about every "
+                        f"{typical_gap:.0f} day(s), but none has come through in "
+                        f"{days_silent}. If you've actually used it, its alert email's "
+                        "sender or format may have changed and the parser is now "
+                        "missing it — worth checking.",
+                    )
+                )
+        # Most-overdue first, then stable by name.
+        out.sort(key=lambda n: n.title)
         return out
 
     def _sedentary(self, scores) -> list[Notification]:
