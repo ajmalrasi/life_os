@@ -21,9 +21,15 @@ Two-stage chain, not one big pass:
    be reliable when combined, so there's no accuracy reason to split it
    further and pay for extra round-trips.
 
-Best-effort throughout: any OpenClaw failure or unparseable response simply
-skips the email (``parse()`` returns ``[]``) rather than raising, so this
-running alongside the regex parsers can never break a sync.
+A *definite* negative — an unparseable model response, or a body the model
+classifies as not-a-transaction — skips the email (``parse()`` returns ``[]``),
+so noise like OTP/marketing mail never breaks a sync. But a *transient* backend
+failure (OpenClaw unreachable or out of memory) is different: we genuinely don't
+know whether the email was a transaction, so ``parse()`` raises
+``ParserUnavailable`` instead of silently returning ``[]``. That tells the
+collector to hold its cursor and retry the email later rather than skip it
+forever — otherwise every transaction that lands while the LLM is down would be
+lost the moment the cursor moved past it.
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.config import get_settings
-from app.services.expense_parsers.base import BankEmail, ParsedTxn
+from app.services.expense_parsers.base import BankEmail, ParsedTxn, ParserUnavailable
 from app.services.openclaw import OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.llm_bank_parser")
@@ -183,17 +189,17 @@ def _parse_txn_date(raw: str) -> date | None:
 
 
 def _is_transaction(text: str, client: OpenClawClient) -> bool | None:
-    """None means "couldn't tell" (OpenClaw down / bad response) — caller
-    must treat that as "don't touch it", same as a firm false."""
+    """True/False is the model's verdict; None means the response was
+    unparseable (a definite "give up on this email", treated as False).
+
+    A transient backend failure is *not* represented here — ``OpenClawUnavailable``
+    propagates to ``parse()``, which turns it into ``ParserUnavailable`` so the
+    email is deferred rather than skipped."""
     messages = [
         {"role": "system", "content": _GATE_PROMPT},
         {"role": "user", "content": "EMAIL:\n" + text[:4000]},
     ]
-    try:
-        raw = client.chat_structured(messages, schema=_GATE_SCHEMA, schema_name="is_transaction")
-    except OpenClawUnavailable as exc:
-        logger.info("llm_bank_parser gate skipped (OpenClaw unavailable): %s", exc)
-        return None
+    raw = client.chat_structured(messages, schema=_GATE_SCHEMA, schema_name="is_transaction")
     try:
         return bool(json.loads(raw)["is_transaction"])
     except (KeyError, ValueError, TypeError):
@@ -206,11 +212,9 @@ def _extract_fields(text: str, client: OpenClawClient) -> _ExtractedFields | Non
         {"role": "system", "content": _FIELDS_PROMPT},
         {"role": "user", "content": "EMAIL:\n" + text[:4000]},
     ]
-    try:
-        raw = client.chat_structured(messages, schema=_FIELDS_SCHEMA, schema_name="txn_fields")
-    except OpenClawUnavailable as exc:
-        logger.info("llm_bank_parser extraction skipped (OpenClaw unavailable): %s", exc)
-        return None
+    # OpenClawUnavailable is left to propagate (transient failure -> defer the
+    # email in parse()); only a parseable-but-wrong response is swallowed here.
+    raw = client.chat_structured(messages, schema=_FIELDS_SCHEMA, schema_name="txn_fields")
 
     try:
         data = json.loads(raw)
@@ -282,10 +286,16 @@ class LlmBankParser:
             return []
 
         client = self._get_client()
-        if not _is_transaction(email.text, client):
-            return []
+        try:
+            if not _is_transaction(email.text, client):
+                return []
+            fields = _extract_fields(email.text, client)
+        except OpenClawUnavailable as exc:
+            # Transient: the LLM backend is down / OOM, so we can't tell whether
+            # this email is a transaction. Signal the collector to defer it
+            # rather than let it skip the email and advance its cursor past it.
+            raise ParserUnavailable(f"llm_bank_parser: OpenClaw unavailable: {exc}") from exc
 
-        fields = _extract_fields(email.text, client)
         if fields is None or fields.direction not in ("debit", "credit"):
             return []
         if fields.amount <= 0:

@@ -14,6 +14,19 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 
+class ParserUnavailable(Exception):
+    """A parser could not process an email because of a *transient* dependency
+    failure (e.g. the LLM backend was down or out of memory) — as opposed to the
+    email simply containing no transaction.
+
+    The collector must treat this as "unknown, retry later": it must NOT advance
+    its sync cursor past such an email, or the transaction it carries would be
+    skipped forever once the cursor moves on. Anything the parser can decide on
+    its own (not a transaction, malformed amount, etc.) should return ``[]``
+    instead — those emails are genuinely done and should let the cursor advance.
+    """
+
+
 @dataclass(frozen=True)
 class BankEmail:
     """A fetched email, normalized for parsers (HTML already stripped to text)."""

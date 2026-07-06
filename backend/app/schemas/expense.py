@@ -34,6 +34,7 @@ class ExpenseSyncResult(BaseModel):
     source: str
     message: str
     cursor_epoch: int = 0
+    transactions_deferred: int = 0
     new_transactions: list[TransactionOut] = []
 
 

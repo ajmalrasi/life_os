@@ -1,9 +1,11 @@
 """Tests for the LLM catch-all bank-email parser.
 
 Two-stage chain: a gate (is this even a transaction?) then field extraction,
-only run if the gate says yes. Best-effort throughout — any OpenClaw failure
-or unparseable response must degrade to "don't touch it" (empty list), never
-raise and never fabricate a transaction.
+only run if the gate says yes. A *definite* negative (unparseable response, or
+the gate saying "not a transaction") degrades to "don't touch it" (empty list),
+never fabricating a transaction. A *transient* backend failure (OpenClaw down /
+OOM) instead raises ``ParserUnavailable`` so the collector defers the email
+rather than skipping it forever.
 """
 
 from __future__ import annotations
@@ -11,8 +13,10 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.services.expense_parsers import get_parsers
-from app.services.expense_parsers.base import BankEmail
+from app.services.expense_parsers.base import BankEmail, ParserUnavailable
 from app.services.expense_parsers.llm_bank_parser import LlmBankParser
 from app.services.openclaw import OpenClawUnavailable
 
@@ -80,9 +84,12 @@ def test_non_transaction_email_is_skipped_without_extraction_call():
     assert client.calls == 1  # extraction never called
 
 
-def test_gate_unavailable_skips_email():
+def test_gate_unavailable_defers_email():
+    # Transient backend failure on the gate call must raise (defer), not skip —
+    # otherwise a transaction email is lost while the LLM is down.
     client = _FakeClient(fail_at=0)
-    assert LlmBankParser(client=client).parse(_email("some email")) == []
+    with pytest.raises(ParserUnavailable):
+        LlmBankParser(client=client).parse(_email("some email"))
 
 
 def test_gate_unparseable_response_skips_email():
@@ -167,9 +174,12 @@ def test_plain_bank_transfer_uses_bank_live_source():
     assert txn.account is None  # no last4 to label with
 
 
-def test_extraction_unavailable_skips_email():
+def test_extraction_unavailable_defers_email():
+    # Gate says "yes" but the extraction call hits a transient backend failure:
+    # raise (defer) rather than skip, so the confirmed-transaction email isn't lost.
     client = _FakeClient([_YES_GATE], fail_at=1)
-    assert LlmBankParser(client=client).parse(_email("some txn")) == []
+    with pytest.raises(ParserUnavailable):
+        LlmBankParser(client=client).parse(_email("some txn"))
 
 
 def test_extraction_unparseable_response_skips_email():

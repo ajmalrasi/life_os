@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
-from app.services.expense_parsers import ParsedTxn, Parser, get_parsers
+from app.services.expense_parsers import ParsedTxn, Parser, ParserUnavailable, get_parsers
 from app.services.gmail_client import GmailClient
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,10 @@ class ExpenseSyncReport:
     source: str
     message: str
     cursor_epoch: int = 0
+    # Emails a parser couldn't process this run because of a transient backend
+    # failure (e.g. the LLM was down). They were deliberately left un-skipped —
+    # the cursor is held before them so a later run retries them.
+    transactions_deferred: int = 0
     created: list[Transaction] = field(default_factory=list)
 
 
@@ -100,9 +104,14 @@ class ExpenseCollector:
             # First run (or forced full) seeds recent history; afterwards, pull only new.
             window = f"newer_than:{self.backfill_days}d" if cursor == 0 else f"after:{cursor}"
 
-        scanned = seen = 0
+        scanned = seen = deferred = 0
         created: list[Transaction] = []
         max_internal_ms = 0
+        # internalDate (epoch ms) of the OLDEST email a parser couldn't process
+        # this run because of a transient backend failure. The cursor must stay
+        # strictly before it so the email — and everything after it — is retried
+        # next run instead of being skipped forever.
+        deferred_min_ms: int | None = None
 
         for parser in parsers:
             query = f"{parser.gmail_query} {window}"
@@ -116,9 +125,26 @@ class ExpenseCollector:
                 email = self.client.get_message(message_id)
                 if email is None:
                     continue
+                try:
+                    parsed = list(parser.parse(email))
+                except ParserUnavailable as exc:
+                    # A transient dependency (e.g. the LLM backend) was down, so
+                    # we can't tell whether this email is a transaction. Defer
+                    # it: track the oldest such email so the cursor is held
+                    # before it below. Do NOT count it as scanned/seen.
+                    deferred += 1
+                    deferred_min_ms = (
+                        email.internal_date_ms
+                        if deferred_min_ms is None
+                        else min(deferred_min_ms, email.internal_date_ms)
+                    )
+                    logger.warning(
+                        "expense sync deferred email %s via %s: %s", message_id, parser.name, exc
+                    )
+                    continue
                 scanned += 1
                 max_internal_ms = max(max_internal_ms, email.internal_date_ms)
-                for txn in parser.parse(email):
+                for txn in parsed:
                     # Guards a backfill/late-add scenario: a live parser added
                     # (or backfilled) after its statement period was already
                     # ingested would otherwise double-count each transaction.
@@ -132,22 +158,36 @@ class ExpenseCollector:
                     else:
                         seen += 1
 
-        # Advance the cursor to the newest email we saw (seconds granularity).
-        # Skipped for a scoped historical rebuild — its emails are all old,
-        # so this would be a no-op at best, but never risk it regressing or
-        # confusing the next normal incremental sync's window.
-        if max_internal_ms and self.since_date is None:
-            self.repo.set_cursor(self._cursor_key, max_internal_ms // 1000)
+        # Advance the cursor to the newest email we saw (seconds granularity) —
+        # but never past the oldest email we had to defer, so a transient LLM
+        # outage can't make the cursor jump over (and permanently lose) the
+        # transactions those emails carried. Re-scanning the already-succeeded
+        # emails after that point next run is harmless: they dedup on Gmail
+        # message id. Skipped entirely for a scoped historical rebuild
+        # (``since_date``), which never touches the shared incremental cursor.
+        if self.since_date is None:
+            if deferred_min_ms is not None:
+                # Park one second before the oldest deferral so `after:` re-includes it.
+                new_cursor = (deferred_min_ms - 1000) // 1000
+            elif max_internal_ms:
+                new_cursor = max_internal_ms // 1000
+            else:
+                new_cursor = None
+            # Guard against ever moving the cursor backwards.
+            if new_cursor is not None and new_cursor > self.repo.get_cursor(self._cursor_key):
+                self.repo.set_cursor(self._cursor_key, new_cursor)
         self.db.commit()
 
         new_cursor = self.repo.get_cursor(self._cursor_key)
+        deferred_msg = f", {deferred} deferred (backend down)" if deferred else ""
         return ExpenseSyncReport(
             parsers_run=len(parsers),
             emails_scanned=scanned,
             transactions_new=len(created),
             transactions_seen=seen,
             source="gmail",
-            message=f"{len(created)} new, {seen} existing across {len(parsers)} parser(s)",
+            message=f"{len(created)} new, {seen} existing{deferred_msg} across {len(parsers)} parser(s)",
             cursor_epoch=new_cursor,
+            transactions_deferred=deferred,
             created=created,
         )

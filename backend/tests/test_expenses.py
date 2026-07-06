@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from app.services.expense_collector import ExpenseCollector, derive_dedup_key
 from app.services.expense_parsers import get_parsers
-from app.services.expense_parsers.base import BankEmail
+from app.services.expense_parsers.base import BankEmail, ParsedTxn, ParserUnavailable
 from app.services.expense_parsers.hdfc_upi import HdfcUpiParser
 from app.services.gmail_client import strip_html
 
@@ -128,6 +128,65 @@ def test_collector_incremental_cursor(client):
     second = _FakeGmail([_hdfc_email(mid="m1", internal_ms=1_751_000_000_000)])
     _run_sync(second)
     assert second.queries and "after:1751000000" in second.queries[0]
+
+
+class _FlakyParser:
+    """A parser that yields a transaction normally but raises ``ParserUnavailable``
+    for one designated email while ``down`` is set — simulating a transient LLM
+    backend outage on a single message."""
+
+    name = "flaky"
+    gmail_query = "from:test"
+
+    def __init__(self, flaky_id: str, down: bool) -> None:
+        self.flaky_id = flaky_id
+        self.down = down
+
+    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+        if email.message_id == self.flaky_id and self.down:
+            raise ParserUnavailable("backend down")
+        return [
+            ParsedTxn(
+                txn_date=date(2026, 7, 3),
+                amount=Decimal("42.00"),
+                direction="debit",
+                source="upi",
+                counterparty=email.message_id,
+            )
+        ]
+
+
+def test_deferred_email_holds_cursor_and_is_recovered_next_run(client):
+    from app.database import SessionLocal
+
+    # Older email parses fine; newer one hits a "backend down" deferral.
+    ok = _hdfc_email(mid="m_ok", internal_ms=1_800_000_000_000)
+    late = _hdfc_email(mid="m_defer", internal_ms=1_800_000_100_000)
+
+    gmail = _FakeGmail([ok, late])
+    with SessionLocal() as db:
+        report = ExpenseCollector(
+            db, gmail, parsers=[_FlakyParser("m_defer", down=True)]
+        ).sync()
+
+    assert report.transactions_new == 1  # only the healthy email
+    assert report.transactions_deferred == 1
+    # Cursor held one second BEFORE the deferred email, never jumping over it —
+    # even though a newer email was seen. (Bug would advance to 1_800_000_100.)
+    assert report.cursor_epoch == 1_800_000_099
+
+    # Next run: backend recovered. The window must still re-include the deferred
+    # email (after: strictly before its timestamp), and it gets ingested now.
+    gmail2 = _FakeGmail([ok, late])
+    with SessionLocal() as db:
+        report2 = ExpenseCollector(
+            db, gmail2, parsers=[_FlakyParser("m_defer", down=False)]
+        ).sync()
+
+    assert "after:1800000099" in gmail2.queries[0]
+    assert report2.transactions_new == 1  # the recovered deferred email
+    assert report2.transactions_deferred == 0
+    assert report2.cursor_epoch == 1_800_000_100  # now free to advance fully
 
 
 def test_new_since_endpoint(client):

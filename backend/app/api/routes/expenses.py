@@ -105,6 +105,7 @@ def sync_expenses(
         source=report.source,
         message=report.message,
         cursor_epoch=report.cursor_epoch,
+        transactions_deferred=report.transactions_deferred,
         new_transactions=_to_out(report.created, db),
     )
 
