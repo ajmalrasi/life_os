@@ -7,7 +7,6 @@ carries the metric that triggered it so nothing is unexplained.
 
 from __future__ import annotations
 
-import re
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
@@ -15,6 +14,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.account_identity import normalize_account
 from app.models.daily_state import LifeState
 from app.repositories.analytics_repo import ScoreRepository, StateRepository
 from app.repositories.expense_repo import ExpenseRepository
@@ -46,18 +46,15 @@ SILENCE_FLOOR_DAYS = 14  # absolute floor: never fire before two quiet weeks
 SILENCE_MAX_ALERTS = 3  # cap so this can never become a wall of warnings
 
 
-def _source_key(account: str) -> tuple[str, str]:
-    """Stable identity for a card/account, robust to label drift.
+def _source_key(account: str) -> str:
+    """Stable identity for a card/account.
 
-    The same physical card shows up under slightly different labels depending on
-    which parser wrote it (e.g. "ICICI Card ..0010" from a statement vs "ICICI
-    Amazon ..0010" from a live alert). Keying on (bank word, last4) merges those
-    so one card's activity isn't split into a "dead" phantom and a live twin.
+    Accounts are collapsed to one canonical label per physical card at
+    ingestion (see ``app.account_identity``), so the canonical label *is* the
+    identity now — no (bank, last4) heuristic needed. Normalize defensively
+    here too, in case a legacy row predates the backfill migration.
     """
-    m = re.search(r"\.\.\s*(\w+)\s*$", account)
-    last4 = m.group(1) if m else ""
-    bank = account.split()[0] if account.split() else account
-    return (bank, last4) if last4 else (account, "")
+    return normalize_account(account) or account
 
 
 class NotificationService:
@@ -99,8 +96,8 @@ class NotificationService:
         """
         start = today - timedelta(days=SILENCE_WINDOW_DAYS)
         # key -> (distinct txn days, label of the most recent txn)
-        days_by_key: dict[tuple[str, str], set[date]] = defaultdict(set)
-        label_by_key: dict[tuple[str, str], tuple[date, str]] = {}
+        days_by_key: dict[str, set[date]] = defaultdict(set)
+        label_by_key: dict[str, tuple[date, str]] = {}
         for t in self.expenses.range(start, today):
             if not t.account:
                 continue

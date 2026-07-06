@@ -89,6 +89,18 @@ def test_label_variants_of_one_card_merge_by_last4(client):
     assert not any("..0010" in t for t in _silence_titles(client))
 
 
+def test_last4_length_variants_of_one_card_merge(client):
+    # Same physical SBI card under a 2-digit and a 4-digit last4 (the case the
+    # old (bank, last4) key could NOT merge). The 4-digit label is recent, so
+    # the stale 2-digit label must NOT be flagged as a phantom dead source.
+    with SessionLocal() as db:
+        _add_txns(db, "SBI Card ..70", [60, 63, 66, 69, 72, 75, 78, 81])  # old, short last4
+        _add_txns(db, "SBI Card ..1970", [1, 4, 7, 10])  # same card, still active
+        db.commit()
+
+    assert not any("SBI Card" in t for t in _silence_titles(client))
+
+
 def test_output_is_capped(client):
     # Six clearly-dark cards, but the surface is capped so it never floods.
     with SessionLocal() as db:

@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.account_identity import normalize_account
 from app.models.sync_state import CollectorState
 from app.models.transaction import Transaction
 from app.services.expense_parsers.base import ParsedTxn
@@ -113,8 +114,14 @@ class ExpenseRepository:
         ).scalar_one_or_none()
         if existing:
             return None
+        # Collapse label drift to one canonical identity per physical card at the
+        # single write choke point every parser funnels through, so one card is
+        # one label everywhere. Normalize BEFORE the unreferenced-dedup check:
+        # a new "SBI Card ..70" must match already-canonical "SBI Card ..1970"
+        # rows, not slip past as a distinct account.
+        account = normalize_account(txn.account)
         if not txn.reference and self.unreferenced_live_txn_exists(
-            txn.account, txn.txn_date, txn.amount, txn.direction, txn.counterparty
+            account, txn.txn_date, txn.amount, txn.direction, txn.counterparty
         ):
             return None
         obj = Transaction(
@@ -124,7 +131,7 @@ class ExpenseRepository:
             direction=txn.direction,
             counterparty=txn.counterparty,
             category=txn.category,
-            account=txn.account,
+            account=account,
             source=txn.source,
             reference=txn.reference,
             gmail_message_id=message_id,
