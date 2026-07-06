@@ -23,6 +23,12 @@ services:
       db:
         condition: service_healthy
     environment:
+      # Local-day binning (expense date windows, daily scores) uses the
+      # container's wall-clock day, so it must run in India time — otherwise a
+      # UTC container treats an IST-evening transaction (dated "tomorrow" in IST)
+      # as a future date and the /expenses window hides it for ~5.5h each night.
+      # Audit columns store UTC explicitly via utcnow(), so this is binning-only.
+      TZ: ${TZ:-Asia/Kolkata}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-lifeos}:${POSTGRES_PASSWORD:-lifeos}@db:5432/${POSTGRES_DB:-lifeos}
       OPENCLAW_BASE_URL: ${OPENCLAW_BASE_URL:-http://host.docker.internal:11434}
       OPENCLAW_MODEL: ${OPENCLAW_MODEL:-qwen3.5:4b}
