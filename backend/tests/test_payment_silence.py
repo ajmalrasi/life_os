@@ -3,7 +3,7 @@
 The point of this check is to catch a transaction going *fully un-parsed* — a
 bank alert whose sender/format changed so much that nothing fetched it, so no
 row exists and the only remaining signal is a normally-active source falling
-unusually quiet.
+unusually quiet. Tuned conservative and capped so it never becomes noise.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from app.database import SessionLocal
 from app.models.transaction import Transaction
-from app.services.notifications import NotificationService
+from app.services.notifications import SILENCE_MAX_ALERTS, NotificationService
 
 
 def _add_txns(db, account: str, days_ago: list[int]) -> None:
@@ -32,48 +32,68 @@ def _add_txns(db, account: str, days_ago: list[int]) -> None:
         )
 
 
-def _titles(client) -> list[str]:
+def _silence_titles(client) -> list[str]:
     with SessionLocal() as db:
-        return [n.title for n in NotificationService(db).generate()]
+        return [
+            n.title
+            for n in NotificationService(db).generate()
+            if n.title.startswith("No activity from")
+        ]
 
 
 def test_active_then_silent_source_is_flagged(client):
-    # Used every ~2 days for a stretch, then nothing for ~30 days.
+    # ~10 distinct days at a 2-day cadence, then silent ~40 days: clearly dark.
     with SessionLocal() as db:
-        _add_txns(db, "SBI Card ..1970", [30, 32, 34, 36, 38, 40, 42, 44])
+        _add_txns(db, "SBI Card ..1970", [40, 42, 44, 46, 48, 50, 52, 54, 56, 58])
         db.commit()
 
-    titles = _titles(client)
-    assert any("SBI Card ..1970" in t and "30 days" in t for t in titles)
+    titles = _silence_titles(client)
+    assert any("SBI Card ..1970" in t and "40 days" in t for t in titles)
 
 
 def test_still_active_source_is_not_flagged(client):
-    # Same cadence but the most recent use was just 1 day ago.
     with SessionLocal() as db:
-        _add_txns(db, "HDFC RuPay CC ..5473", [1, 3, 5, 7, 9, 11, 13])
+        _add_txns(db, "HDFC RuPay CC ..5473", [1, 3, 5, 7, 9, 11, 13, 15, 17])
         db.commit()
 
-    titles = _titles(client)
-    assert not any("HDFC RuPay CC ..5473" in t for t in titles)
+    assert not any("HDFC RuPay CC ..5473" in t for t in _silence_titles(client))
 
 
 def test_rarely_used_source_is_not_flagged(client):
-    # Only 3 distinct active days in the window — below the "active" bar, so a
-    # long gap on it is expected, not alarming. Must not produce noise.
+    # Below the "active" bar (< 8 distinct days) — a long gap is expected, not alarming.
     with SessionLocal() as db:
-        _add_txns(db, "Some Rare Card ..0001", [10, 50, 90])
+        _add_txns(db, "Some Rare Card ..0001", [10, 40, 70, 100])
         db.commit()
 
-    titles = _titles(client)
-    assert not any("Some Rare Card ..0001" in t for t in titles)
+    assert not any("Some Rare Card ..0001" in t for t in _silence_titles(client))
 
 
-def test_daily_card_is_not_flagged_within_the_floor(client):
-    # Heavy daily use, last seen 5 days ago. 4*median(1) = 4, but the floor is 7,
-    # so a 5-day gap on a daily card must stay quiet (avoids weekend false alarms).
+def test_gap_within_the_floor_is_not_flagged(client):
+    # Heavy daily use, last seen 12 days ago. 5*median(1)=5, but the 14-day floor
+    # keeps a not-yet-two-weeks gap quiet (avoids seasonal/holiday false alarms).
     with SessionLocal() as db:
-        _add_txns(db, "Daily Card ..1234", [5, 6, 7, 8, 9, 10, 11, 12])
+        _add_txns(db, "Daily Card ..1234", list(range(12, 25)))
         db.commit()
 
-    titles = _titles(client)
-    assert not any("Daily Card ..1234" in t for t in titles)
+    assert not any("Daily Card ..1234" in t for t in _silence_titles(client))
+
+
+def test_label_variants_of_one_card_merge_by_last4(client):
+    # Same physical card (..0010) under two parser labels; the live label is
+    # recent, so the "dead" statement label must NOT be flagged as a phantom.
+    with SessionLocal() as db:
+        _add_txns(db, "ICICI Card ..0010", [60, 63, 66, 69, 72, 75, 78, 81])  # old label
+        _add_txns(db, "ICICI Amazon ..0010", [1, 4, 7, 10])  # same card, still active
+        db.commit()
+
+    assert not any("..0010" in t for t in _silence_titles(client))
+
+
+def test_output_is_capped(client):
+    # Six clearly-dark cards, but the surface is capped so it never floods.
+    with SessionLocal() as db:
+        for n in range(6):
+            _add_txns(db, f"Card ..{n}{n}{n}{n}", [40, 43, 46, 49, 52, 55, 58, 61])
+        db.commit()
+
+    assert len(_silence_titles(client)) == SILENCE_MAX_ALERTS

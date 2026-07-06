@@ -7,6 +7,7 @@ carries the metric that triggered it so nothing is unexplained.
 
 from __future__ import annotations
 
+import re
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
@@ -34,10 +35,29 @@ SLEEP_DEBT_THRESHOLD = 60.0  # sleep score below this counts toward debt
 # signal that catches a transaction going fully un-parsed — an email whose sender
 # or format changed so much that nothing (not even the LLM catch-all) fetched it,
 # so there's no row to notice the absence of any other way.
+#
+# Tuned conservative on purpose: a wall of "quiet card" warnings would just get
+# ignored, so this only fires on genuinely anomalous silence and surfaces at most
+# a handful, most-overdue first.
 SILENCE_WINDOW_DAYS = 120  # history looked at to learn each source's rhythm
-SILENCE_MIN_ACTIVE_DAYS = 5  # distinct spending days needed to call it "active"
-SILENCE_GAP_MULTIPLE = 4  # flag once silence exceeds this * the usual gap
-SILENCE_FLOOR_DAYS = 7  # never nag about a daily-use card before a week is up
+SILENCE_MIN_ACTIVE_DAYS = 8  # distinct spending days needed to call it "active"
+SILENCE_GAP_MULTIPLE = 5  # flag once silence exceeds this * the usual gap
+SILENCE_FLOOR_DAYS = 14  # absolute floor: never fire before two quiet weeks
+SILENCE_MAX_ALERTS = 3  # cap so this can never become a wall of warnings
+
+
+def _source_key(account: str) -> tuple[str, str]:
+    """Stable identity for a card/account, robust to label drift.
+
+    The same physical card shows up under slightly different labels depending on
+    which parser wrote it (e.g. "ICICI Card ..0010" from a statement vs "ICICI
+    Amazon ..0010" from a live alert). Keying on (bank word, last4) merges those
+    so one card's activity isn't split into a "dead" phantom and a live twin.
+    """
+    m = re.search(r"\.\.\s*(\w+)\s*$", account)
+    last4 = m.group(1) if m else ""
+    bank = account.split()[0] if account.split() else account
+    return (bank, last4) if last4 else (account, "")
 
 
 class NotificationService:
@@ -78,13 +98,19 @@ class NotificationService:
         out of the window on its own once its last use is > SILENCE_WINDOW_DAYS old.
         """
         start = today - timedelta(days=SILENCE_WINDOW_DAYS)
-        by_account: dict[str, set[date]] = defaultdict(set)
+        # key -> (distinct txn days, label of the most recent txn)
+        days_by_key: dict[tuple[str, str], set[date]] = defaultdict(set)
+        label_by_key: dict[tuple[str, str], tuple[date, str]] = {}
         for t in self.expenses.range(start, today):
-            if t.account:
-                by_account[t.account].add(t.txn_date)
+            if not t.account:
+                continue
+            key = _source_key(t.account)
+            days_by_key[key].add(t.txn_date)
+            if key not in label_by_key or t.txn_date >= label_by_key[key][0]:
+                label_by_key[key] = (t.txn_date, t.account)
 
-        out: list[Notification] = []
-        for account, day_set in by_account.items():
+        flagged: list[tuple[float, int, float, str]] = []  # (ratio, days_silent, gap, label)
+        for key, day_set in days_by_key.items():
             days = sorted(day_set)
             if len(days) < SILENCE_MIN_ACTIVE_DAYS:
                 continue
@@ -93,20 +119,21 @@ class NotificationService:
             days_silent = (today - days[-1]).days
             threshold = max(SILENCE_FLOOR_DAYS, round(SILENCE_GAP_MULTIPLE * typical_gap))
             if days_silent > threshold:
-                out.append(
-                    Notification(
-                        "warning",
-                        f"No activity from {account} in {days_silent} days",
-                        f"{account} usually has a transaction about every "
-                        f"{typical_gap:.0f} day(s), but none has come through in "
-                        f"{days_silent}. If you've actually used it, its alert email's "
-                        "sender or format may have changed and the parser is now "
-                        "missing it — worth checking.",
-                    )
-                )
-        # Most-overdue first, then stable by name.
-        out.sort(key=lambda n: n.title)
-        return out
+                flagged.append((days_silent / threshold, days_silent, typical_gap, label_by_key[key][1]))
+
+        # Most anomalous first, capped — never a wall of warnings.
+        flagged.sort(reverse=True)
+        return [
+            Notification(
+                "warning",
+                f"No activity from {label} in {days_silent} days",
+                f"{label} usually has a transaction about every {gap:.0f} day(s), "
+                f"but none has come through in {days_silent}. If you've actually "
+                "used it, its alert email's sender or format may have changed and "
+                "the parser is now missing it — worth checking.",
+            )
+            for _ratio, days_silent, gap, label in flagged[:SILENCE_MAX_ALERTS]
+        ]
 
     def _sedentary(self, scores) -> list[Notification]:
         """Sustained low movement — nudge action, since fitness tends to lift mood
