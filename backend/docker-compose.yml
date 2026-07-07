@@ -46,6 +46,9 @@ services:
       CC_OWNER_NAME: ${CC_OWNER_NAME:-}
       CC_OWNER_DOB: ${CC_OWNER_DOB:-}
       CC_PDF_PASSWORD_OVERRIDES: ${CC_PDF_PASSWORD_OVERRIDES:-}
+      # Owner name(s)/VPA handle(s) for self-transfer detection (reconcile.py).
+      # Falls back to CC_OWNER_NAME when unset.
+      EXPENSE_OWNER_IDENTITIES: ${EXPENSE_OWNER_IDENTITIES:-}
     ports:
       - "8000:8000"
     extra_hosts:
