@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     cc_owner_dob: str = ""             # DDMMYYYY
     cc_pdf_password_overrides: str = ""  # e.g. sbi:01071993xxxx
 
+    # Self-transfers move money between your OWN accounts, so the counterparty
+    # is your own name / UPI handle rather than a merchant. List your name
+    # variant(s) and VPA handle(s) here (comma-separated) so reconciliation
+    # tags them "transfer" (excluded from spend) instead of counting them as
+    # spend or income — in either direction, from any bank. Matching is
+    # case-insensitive and truncation-tolerant (banks clip long names, e.g.
+    # "AJMAL RASI K P" -> "AJMAL RAS"). Falls back to cc_owner_name when unset.
+    expense_owner_identities: str = ""  # e.g. "AJMAL RASI K P, ajmalrasi@upi"
+
     # Health Auto Export TCP server on the iPhone (live, on-demand health pull).
     # The app exposes a JSON-RPC TCP server on the LAN (Automations -> Server).
     # Used by the chat's `live_health` tool. Host is the phone's IP (DHCP — set a
@@ -90,6 +99,13 @@ class Settings(BaseSettings):
     @property
     def gmail_expenses_enabled(self) -> bool:
         return bool(self.gmail_account.strip())
+
+    @property
+    def expense_owner_identities_list(self) -> list[str]:
+        """Owner name/VPA variants used to detect self-transfers. Falls back to
+        cc_owner_name so self-transfer tagging works with existing config."""
+        raw = self.expense_owner_identities.strip() or self.cc_owner_name.strip()
+        return [s.strip() for s in raw.split(",") if s.strip()]
 
     @property
     def fcm_enabled(self) -> bool:

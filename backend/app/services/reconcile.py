@@ -27,6 +27,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models.transaction import Transaction
 
 # Categories that must never count as spend.
@@ -84,7 +85,61 @@ class ReconcileReport:
     reversals_tagged: int = 0
 
 
-def tag_transfers(db: Session) -> int:
+def _compact(name: str | None) -> str:
+    """Letters only, lowercased — 'AJMAL RASI K P' -> 'ajmalrasikp'. Collapses
+    spacing/punctuation so a clipped bank name compares by prefix."""
+    return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def _owner_identities(identities: list[str]) -> tuple[set[str], set[str]]:
+    """Split configured owner identities into (vpa_handle_locals, name_compacts).
+
+    A handle like ``ajmalrasi@upi`` contributes its local part ``ajmalrasi`` so
+    it still matches when the PSP suffix drifts (``ajmalrasi@okhdfcbank``)."""
+    handles: set[str] = set()
+    names: set[str] = set()
+    for ident in identities:
+        ident = ident.strip()
+        if not ident:
+            continue
+        if "@" in ident:
+            local = _compact(ident.split("@", 1)[0])
+            if local:
+                handles.add(local)
+        else:
+            c = _compact(ident)
+            if len(c) >= 4:  # a bare initial or two isn't identifying enough
+                names.add(c)
+    return handles, names
+
+
+def _is_self(counterparty: str | None, snippet: str | None, handles: set[str], names: set[str]) -> bool:
+    """True when the counterparty is the account owner — i.e. money moved
+    between the owner's own accounts (a self-transfer), not spend/income.
+
+    Names are matched truncation-tolerantly: a self-transfer's counterparty is
+    the owner's own name, which banks routinely clip ("AJMAL RASI K P" arrives
+    as "AJMAL RAS" on the other leg), so a configured name and the clipped name
+    match when either is a prefix of the other (min 6 chars, to avoid a short
+    shared prefix pairing two different people)."""
+    blob = f"{counterparty or ''} {snippet or ''}".lower()
+    for local in handles:
+        # VPA local part immediately followed by '@' (a UPI handle in the text).
+        if re.search(rf"\b{re.escape(local)}\s*@", blob):
+            return True
+    # Leading name segment, before any VPA/parenthetical/reference digits.
+    lead = _compact(re.split(r"[(@0-9]", counterparty or "", maxsplit=1)[0])
+    if len(lead) >= 6:
+        for owner in names:
+            if owner.startswith(lead) or lead.startswith(owner):
+                return True
+    return False
+
+
+def tag_transfers(db: Session, owner_identities: list[str] | None = None) -> int:
+    if owner_identities is None:
+        owner_identities = get_settings().expense_owner_identities_list
+    handles, names = _owner_identities(owner_identities)
     rows = list(
         db.execute(
             select(Transaction).where(Transaction.category.is_(None))
@@ -93,7 +148,14 @@ def tag_transfers(db: Session) -> int:
     n = 0
     for t in rows:
         pat = _TRANSFER_CREDIT_PAT if t.direction == "credit" else _TRANSFER_DEBIT_PAT
-        if pat.search(t.counterparty or "") or pat.search(t.raw_snippet or ""):
+        is_transfer = bool(
+            pat.search(t.counterparty or "") or pat.search(t.raw_snippet or "")
+        )
+        # A move to/from the owner's own name/VPA is a self-transfer in either
+        # direction (debit out of one bank, credit into another).
+        if not is_transfer and (handles or names):
+            is_transfer = _is_self(t.counterparty, t.raw_snippet, handles, names)
+        if is_transfer:
             t.category = "transfer"
             n += 1
     return n

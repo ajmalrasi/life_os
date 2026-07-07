@@ -230,6 +230,69 @@ def test_cred_upi_debit_is_a_transfer_not_credit_confusion():
     assert not _TRANSFER_DEBIT_PAT.search("someuser@credpay")
 
 
+def test_is_self_matches_owner_name_and_vpa_truncation_tolerant():
+    """Self-transfers carry the owner's own name/VPA as the counterparty, which
+    banks clip differently on each leg. Match either-way prefix; reject others."""
+    from app.services.reconcile import _is_self, _owner_identities
+
+    handles, names = _owner_identities(["AJMAL RASI K P", "ajmalrasi@upi"])
+
+    # Full name + VPA (the outgoing HDFC leg).
+    assert _is_self("AJMAL RASI K P (ajmalrasi@upi)", None, handles, names)
+    # Clipped name, no VPA (the incoming Axis leg) — owner name is a prefix.
+    assert _is_self("AJMAL RAS (AJMAL RAS)", None, handles, names)
+    # PSP suffix drift on the handle still matches (local part is what counts).
+    assert _is_self("SELF (ajmalrasi@okhdfcbank)", None, handles, names)
+
+    # Different people who merely share a short prefix must NOT match.
+    assert not _is_self("AJMAL RASHEED", None, handles, names)
+    assert not _is_self("AJMAL TRADERS", None, handles, names)
+    assert not _is_self("ZOMATO LTD", None, handles, names)
+    # No configured identities -> never self.
+    assert not _is_self("AJMAL RASI K P", None, set(), set())
+
+
+def test_tag_transfers_tags_self_transfer_both_directions(client):
+    """A self-transfer (own name) is a transfer in either direction, from any
+    bank — the debit out of one account and the credit into another."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.repositories.expense_repo import ExpenseRepository
+    from app.services.expense_parsers.base import ParsedTxn
+    from app.services.reconcile import EXCLUDED_FROM_SPEND, tag_transfers
+
+    with SessionLocal() as db:
+        repo = ExpenseRepository(db)
+
+        def put(day, amt, direction, who, key, acct):
+            repo.upsert(
+                ParsedTxn(txn_date=day, amount=Decimal(amt), direction=direction,
+                          source="upi", counterparty=who, account=acct),
+                message_id="m-" + key, dedup_key=key,
+            )
+
+        put(date(2026, 7, 7), "30000.00", "debit", "AJMAL RASI K P (ajmalrasi@upi)",
+            "self-d", "HDFC Savings ..7672")
+        put(date(2026, 7, 7), "30000.00", "credit", "AJMAL RAS (AJMAL RAS)",
+            "self-c", "Axis Bank Ltd. Savings ..4402")
+        put(date(2026, 7, 7), "450.00", "debit", "UPI-ZOMATO", "spend", "HDFC Savings ..7672")
+        db.commit()
+
+        n = tag_transfers(db, owner_identities=["AJMAL RASI K P", "ajmalrasi@upi"])
+        db.commit()
+        assert n == 2  # both self legs, not the Zomato spend
+
+        rows = {t.dedup_key: t.category for t in repo.range(date(2026, 7, 7), date(2026, 7, 7))}
+        assert rows["self-d"] == "transfer" and rows["self-d"] in EXCLUDED_FROM_SPEND
+        assert rows["self-c"] == "transfer"
+        assert rows["spend"] is None  # real spend untouched
+
+        # Idempotent: a second pass tags nothing new.
+        assert tag_transfers(db, owner_identities=["AJMAL RASI K P"]) == 0
+
+
 def test_hdfc_account_parser_explicit_columns():
     from app.services.statement_parsers.bank_accounts import HdfcAccountParser
 
