@@ -127,8 +127,11 @@ def _is_self(counterparty: str | None, snippet: str | None, handles: set[str], n
         # VPA local part immediately followed by '@' (a UPI handle in the text).
         if re.search(rf"\b{re.escape(local)}\s*@", blob):
             return True
-    # Leading name segment, before any VPA/parenthetical/reference digits.
-    lead = _compact(re.split(r"[(@0-9]", counterparty or "", maxsplit=1)[0])
+    # Leading name segment: drop a "UPI-"/honorific marker, then take the name
+    # up to the first VPA/parenthetical/reference/hyphen delimiter. Banks emit
+    # both "NAME (vpa)" and "UPI-NAME-vpa" layouts for the same self-transfer.
+    cleaned = _NOISE.sub("", (counterparty or "").strip())
+    lead = _compact(re.split(r"[(@0-9-]", cleaned, maxsplit=1)[0])
     if len(lead) >= 6:
         for owner in names:
             if owner.startswith(lead) or lead.startswith(owner):

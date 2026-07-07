@@ -243,6 +243,9 @@ def test_is_self_matches_owner_name_and_vpa_truncation_tolerant():
     assert _is_self("AJMAL RAS (AJMAL RAS)", None, handles, names)
     # PSP suffix drift on the handle still matches (local part is what counts).
     assert _is_self("SELF (ajmalrasi@okhdfcbank)", None, handles, names)
+    # "UPI-NAME-vpa" layout, even with a *different* VPA handle (kpajmalrasi@):
+    # the name still resolves after stripping the UPI marker.
+    assert _is_self("UPI-AJMAL RASI K P-kpajmalrasi@", None, handles, names)
 
     # Different people who merely share a short prefix must NOT match.
     assert not _is_self("AJMAL RASHEED", None, handles, names)
