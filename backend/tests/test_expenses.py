@@ -333,6 +333,27 @@ def test_reference_less_duplicate_transaction_is_skipped(client):
         assert second is None
 
 
+def test_upsert_canonicalizes_account_label(client):
+    """The write choke point collapses label drift to one canonical identity:
+    a "SBI Card ..70" (2-digit last4) is persisted as the canonical
+    "SBI Card ..1970", so one physical card is one label in the store."""
+    from app.database import SessionLocal
+    from app.repositories.expense_repo import ExpenseRepository
+    from app.services.expense_parsers.base import ParsedTxn
+
+    with SessionLocal() as db:
+        repo = ExpenseRepository(db)
+        obj = repo.upsert(
+            ParsedTxn(
+                txn_date=date(2026, 6, 20), amount=Decimal("250.00"), direction="debit",
+                source="card_live", account="SBI Card ..70", counterparty="NESTO",
+            ),
+            message_id="m1", dedup_key="canon-1",
+        )
+        assert obj is not None
+        assert obj.account == "SBI Card ..1970"
+
+
 def test_referenced_same_day_same_amount_transactions_are_not_merged(client):
     """Two genuinely separate transactions (each with its own real UPI
     reference) that happen to share date+amount+account must both survive —
