@@ -167,5 +167,7 @@ def test_rebuild_endpoint_bank_param_scopes_delete_to_that_bank(client):
 
 
 def test_rebuild_endpoint_rejects_unknown_bank(client):
-    resp = client.post("/expenses/rebuild-llm", params={"since": "2026-01-01", "bank": "SBI"})
+    # "Kotak" is deliberately a bank NOT in BANK_DOMAINS (unlike HDFC/Axis/ICICI/SBI,
+    # which are all valid) so this asserts the unknown-bank guard, not a typo.
+    resp = client.post("/expenses/rebuild-llm", params={"since": "2026-01-01", "bank": "Kotak"})
     assert resp.status_code == 422
