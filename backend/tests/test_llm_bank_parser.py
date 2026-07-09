@@ -156,6 +156,28 @@ def test_card_transaction_uses_card_live_source_and_label():
     assert txn.account == "HDFC Card ..6116"
 
 
+def test_bank_name_is_canonicalized_to_match_regex_parser_labels():
+    """The model answers "HDFC Bank" where the regex/statement parsers emit
+    "HDFC". account_identity keys identity on the first-word bank token, so an
+    un-normalized "HDFC Bank Savings ..7672" would split the card off from the
+    regex parser's canonical "HDFC Savings ..7672". Normalize at the source."""
+    for chatty, canonical in [
+        ("HDFC Bank", "HDFC Savings ..7672"),
+        ("Axis Bank Ltd", "Axis Savings ..7672"),
+        ("ICICI BANK", "ICICI Savings ..7672"),
+        ("SBI", "SBI Savings ..7672"),
+    ]:
+        client = _FakeClient([_YES_GATE, _fields(bank=chatty, last4="7672")])
+        (txn,) = LlmBankParser(client=client).parse(_email("txn"))
+        assert txn.account == canonical, f"{chatty!r} -> {txn.account!r}"
+
+
+def test_unknown_bank_name_passes_through_unchanged():
+    client = _FakeClient([_YES_GATE, _fields(bank="Kotak Mahindra", last4="7672")])
+    (txn,) = LlmBankParser(client=client).parse(_email("txn"))
+    assert txn.account == "Kotak Mahindra Savings ..7672"
+
+
 def test_rupay_upi_card_transaction_uses_upi_source():
     """RuPay-via-UPI is both a card AND a UPI rail — source should reflect the
     rail (upi), matching how the regex parsers categorize the same case."""

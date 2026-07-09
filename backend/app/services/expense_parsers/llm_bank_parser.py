@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -228,7 +229,7 @@ def _extract_fields(text: str, client: OpenClawClient) -> _ExtractedFields | Non
             return None
         return _ExtractedFields(
             direction=str(data["direction"]),
-            bank=str(data["bank"]).strip() or "unknown",
+            bank=_canonical_bank(str(data["bank"])),
             amount=amount,
             counterparty_name=str(data["counterparty_name"]).strip(),
             counterparty_vpa=str(data["counterparty_vpa"]).strip(),
@@ -242,6 +243,25 @@ def _extract_fields(text: str, client: OpenClawClient) -> _ExtractedFields | Non
     except (KeyError, ValueError, TypeError, InvalidOperation):
         logger.info("llm_bank_parser extraction skipped (unparseable response): %r", raw)
         return None
+
+
+def _canonical_bank(bank: str) -> str:
+    """Collapse the LLM's free-text bank name to the short token the regex and
+    statement parsers use, so an LLM-parsed row shares an account identity with
+    them instead of splitting the card in two.
+
+    The model tends to answer "HDFC Bank" / "Axis Bank Ltd" where the
+    deterministic parsers emit "HDFC" / "Axis". ``account_identity`` keys
+    identity on the *first-word* bank token, so "HDFC Bank Savings ..7672" and
+    "HDFC Savings ..7672" would otherwise be two different accounts (and HDFC
+    isn't in that module's registry to be merged back). Mapping to the known
+    ``BANK_DOMAINS`` token here fixes it at the source for all four banks.
+    """
+    stripped = bank.strip()
+    for token in BANK_DOMAINS:  # "HDFC", "Axis", "ICICI", "SBI"
+        if re.search(rf"\b{re.escape(token)}\b", stripped, re.IGNORECASE):
+            return token
+    return stripped or "unknown"
 
 
 def _account_label(fields: _ExtractedFields) -> str | None:
