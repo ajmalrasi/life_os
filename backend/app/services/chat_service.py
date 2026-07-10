@@ -17,6 +17,7 @@ from app.repositories.analytics_repo import (
     InsightRepository,
     ScoreRepository,
     StateRepository,
+    SynthesizedInsightRepository,
 )
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.github_repo import GithubRepository
@@ -102,6 +103,7 @@ class ChatService:
         self.mood = MoodRepository(db)
         self.github = GithubRepository(db)
         self.insights = InsightRepository(db)
+        self.synth = SynthesizedInsightRepository(db)
         self.expenses = ExpenseRepository(db)
 
     def build_context(self, days: int) -> dict:
@@ -113,6 +115,7 @@ class ChatService:
         mood_rows = self.mood.range(start, end)
         gh_rows = self.github.range(start, end)
         insight_rows = self.insights.all()
+        synth_rows = self.synth.all()
         spend_map = self.expenses.daily_spend(start, end)
 
         def avg(attr: str, rows) -> float | None:
@@ -167,6 +170,9 @@ class ChatService:
             "discovered_patterns": [
                 {"summary": i.summary, "r": i.correlation, "n": i.sample_size}
                 for i in insight_rows
+            ],
+            "synthesized_insights": [
+                {"title": s.title, "insight": s.body} for s in synth_rows
             ],
             "recent_daily": [
                 {

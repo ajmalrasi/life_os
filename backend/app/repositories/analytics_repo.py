@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.daily_score import DailyScore
 from app.models.daily_state import DailyState, LifeState
 from app.models.insight import Insight
+from app.models.synthesized_insight import SynthesizedInsight
 
 
 class ScoreRepository:
@@ -111,3 +112,38 @@ class InsightRepository:
         for row in self.db.execute(select(Insight)).scalars():
             self.db.delete(row)
         self.db.commit()
+
+
+class SynthesizedInsightRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def replace(self, drafts: list[dict]) -> list[SynthesizedInsight]:
+        """Swap the whole set for a freshly synthesized batch.
+
+        These insights are regenerated wholesale each nightly run, so there's no
+        per-row identity to preserve — clear and reinsert. A falsy/empty batch
+        leaves the existing rows untouched (best-effort: a skipped or failed
+        synthesis must not wipe the last good insights the user is looking at).
+        """
+        if not drafts:
+            return self.all()
+        for row in self.db.execute(select(SynthesizedInsight)).scalars():
+            self.db.delete(row)
+        rows = [
+            SynthesizedInsight(
+                title=d["title"],
+                body=d["body"],
+                theme=d.get("theme"),
+                cites=",".join(d.get("cites", [])),
+                rank=i,
+            )
+            for i, d in enumerate(drafts)
+        ]
+        self.db.add_all(rows)
+        self.db.commit()
+        return self.all()
+
+    def all(self) -> list[SynthesizedInsight]:
+        stmt = select(SynthesizedInsight).order_by(SynthesizedInsight.rank)
+        return list(self.db.execute(stmt).scalars())

@@ -41,6 +41,15 @@ class InsightOut(BaseModel):
     narrative: str | None = None
 
 
+class SynthesizedInsightOut(BaseModel):
+    """An LLM-synthesized, cross-domain insight grounded in cited evidence."""
+
+    title: str
+    body: str
+    theme: str | None = None
+    cites: list[str] = []
+
+
 class RecomputeResult(BaseModel):
     days_scored: int
     states_classified: int

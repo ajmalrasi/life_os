@@ -11,12 +11,14 @@ from app.repositories.analytics_repo import (
     InsightRepository,
     ScoreRepository,
     StateRepository,
+    SynthesizedInsightRepository,
 )
 from app.schemas.analytics import (
     DailyScoreOut,
     DailyStateOut,
     InsightOut,
     RecomputeResult,
+    SynthesizedInsightOut,
 )
 from app.config import get_settings
 from app.repositories.device_repo import DeviceRepository
@@ -127,3 +129,18 @@ def get_states(days: int = 30, db: Session = Depends(get_db)) -> list[DailyState
 def get_insights(db: Session = Depends(get_db)) -> list[InsightOut]:
     rows = InsightRepository(db).all()
     return [InsightOut.model_validate(r) for r in rows]
+
+
+@router.get("/synthesis", response_model=list[SynthesizedInsightOut])
+def get_synthesis(db: Session = Depends(get_db)) -> list[SynthesizedInsightOut]:
+    """LLM-synthesized, cross-domain insights grounded in cited evidence."""
+    rows = SynthesizedInsightRepository(db).all()
+    return [
+        SynthesizedInsightOut(
+            title=r.title,
+            body=r.body,
+            theme=r.theme,
+            cites=[c for c in r.cites.split(",") if c],
+        )
+        for r in rows
+    ]

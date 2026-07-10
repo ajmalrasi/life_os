@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     # Let the LLM retell discovered patterns in fresher language (best-effort;
     # falls back to the deterministic summaries when OpenClaw is unreachable).
     insight_narration_enabled: bool = True
+    # Let the LLM synthesize higher-level, cross-domain insights by connecting
+    # several grounded facts at once (best-effort; each insight must cite the
+    # computed evidence it rests on, so it can't invent relationships).
+    insight_synthesis_enabled: bool = True
     # Let the LLM suggest payee_labels for payees the keyword rules miss
     # (best-effort; skipped entirely when OpenClaw is unreachable).
     openclaw_payee_classification_enabled: bool = True
