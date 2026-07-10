@@ -45,6 +45,15 @@ data class InsightEntity(
     val narrative: String? = null,
 )
 
+@Entity(tableName = "synthesized_insights")
+data class SynthesizedInsightEntity(
+    @PrimaryKey val rank: Int, // display order; the batch is replaced wholesale
+    val title: String,
+    val body: String,
+    val theme: String?,
+    val cites: String, // comma-joined evidence fact ids
+)
+
 @Entity(tableName = "transactions_cache")
 data class TransactionEntity(
     @PrimaryKey val id: Int,

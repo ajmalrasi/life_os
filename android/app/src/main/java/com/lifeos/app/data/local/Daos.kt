@@ -52,6 +52,18 @@ interface InsightDao {
 }
 
 @Dao
+interface SynthesizedInsightDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<SynthesizedInsightEntity>)
+
+    @Query("DELETE FROM synthesized_insights")
+    suspend fun clear()
+
+    @Query("SELECT * FROM synthesized_insights ORDER BY rank")
+    fun observeAll(): Flow<List<SynthesizedInsightEntity>>
+}
+
+@Dao
 interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<TransactionEntity>)

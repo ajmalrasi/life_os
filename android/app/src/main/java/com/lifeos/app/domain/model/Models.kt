@@ -95,6 +95,15 @@ data class Insight(
     val narrative: String? = null,
 )
 
+/** An LLM-synthesized, cross-domain insight that connects several discovered
+ * facts. Grounded: [cites] holds the evidence fact ids it was built from. */
+data class SynthesizedInsight(
+    val title: String,
+    val body: String,
+    val theme: String? = null,
+    val cites: List<String> = emptyList(),
+)
+
 data class AppNotification(
     val severity: String,
     val title: String,

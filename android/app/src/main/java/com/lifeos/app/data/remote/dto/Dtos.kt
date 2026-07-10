@@ -94,6 +94,14 @@ data class InsightDto(
 )
 
 @Serializable
+data class SynthesizedInsightDto(
+    val title: String,
+    val body: String,
+    val theme: String? = null,
+    val cites: List<String> = emptyList(),
+)
+
+@Serializable
 data class RecomputeResultDto(
     @SerialName("days_scored") val daysScored: Int,
     @SerialName("states_classified") val statesClassified: Int,

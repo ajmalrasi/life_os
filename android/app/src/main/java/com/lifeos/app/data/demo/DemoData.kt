@@ -6,6 +6,7 @@ import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.domain.model.Insight
+import com.lifeos.app.domain.model.SynthesizedInsight
 import java.time.LocalDate
 
 object DemoMode {
@@ -41,6 +42,21 @@ object DemoData {
             severity = "warning",
             title = "Sleep debt accumulated 2 days ago",
             detail = "Sleep score dropped to 58. Recovery and focus typically follow sleep.",
+        ),
+    )
+
+    val synthesizedInsights: List<SynthesizedInsight> = listOf(
+        SynthesizedInsight(
+            title = "The hidden cost of your best output",
+            body = "Your highest-execution weeks come right as recovery dips and mood softens a day later — you're borrowing from rest to ship.",
+            theme = "cross-domain",
+            cites = listOf("corr:execution_score->mood", "trend:recovery_score", "avg:execution_score"),
+        ),
+        SynthesizedInsight(
+            title = "Stress shows up in your spending",
+            body = "Heavier-spend days cluster after high-stress ones, and mood tends to dip two days on — an early stress-spending loop worth watching.",
+            theme = "spending",
+            cites = listOf("corr:stress->daily_spend", "corr:daily_spend->mood", "spend:peak"),
         ),
     )
 

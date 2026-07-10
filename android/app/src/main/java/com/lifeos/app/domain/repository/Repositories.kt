@@ -13,6 +13,7 @@ import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
+import com.lifeos.app.domain.model.SynthesizedInsight
 import com.lifeos.app.domain.model.Transaction
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
@@ -47,6 +48,8 @@ interface AnalyticsRepository {
     fun observeScores(days: Int): Flow<List<DailyScore>>
     fun observeStates(days: Int): Flow<List<DailyState>>
     fun observeInsights(): Flow<List<Insight>>
+    /** LLM-synthesized, cross-domain insights (grounded in cited evidence). */
+    fun observeSynthesizedInsights(): Flow<List<SynthesizedInsight>>
     suspend fun refresh(days: Int)
     /** Trigger a backend recompute (nightly analysis on demand). */
     suspend fun recompute(days: Int): ExecutionSyncReport

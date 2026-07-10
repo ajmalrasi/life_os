@@ -8,6 +8,7 @@ import androidx.room.Room
 import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.InsightDao
 import com.lifeos.app.data.local.LifeOsDatabase
+import com.lifeos.app.data.local.SynthesizedInsightDao
 import com.lifeos.app.data.local.MoodDao
 import com.lifeos.app.data.local.ScoreDao
 import com.lifeos.app.data.local.StateDao
@@ -54,6 +55,9 @@ object AppModule {
 
     @Provides
     fun insightDao(db: LifeOsDatabase): InsightDao = db.insightDao()
+
+    @Provides
+    fun synthesizedInsightDao(db: LifeOsDatabase): SynthesizedInsightDao = db.synthesizedInsightDao()
 
     @Provides
     fun transactionDao(db: LifeOsDatabase): TransactionDao = db.transactionDao()

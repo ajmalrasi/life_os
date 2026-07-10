@@ -5,6 +5,7 @@ import com.lifeos.app.data.local.InsightEntity
 import com.lifeos.app.data.local.MoodEntity
 import com.lifeos.app.data.local.ScoreEntity
 import com.lifeos.app.data.local.StateEntity
+import com.lifeos.app.data.local.SynthesizedInsightEntity
 import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CategorySpendDto
@@ -19,6 +20,7 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SpendAnalysisDto
 import com.lifeos.app.data.remote.dto.SpendTrendsDto
+import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.CardStatement
@@ -33,6 +35,7 @@ import com.lifeos.app.domain.model.MonthSpend
 import com.lifeos.app.domain.model.MoodCheckin
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
+import com.lifeos.app.domain.model.SynthesizedInsight
 import com.lifeos.app.domain.model.Transaction
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -86,6 +89,21 @@ fun InsightDto.toEntity() = InsightEntity(
     narrative = narrative,
 )
 fun InsightEntity.toDomain() = Insight(driver, outcome, correlation, sampleSize, lagDays, summary, narrative)
+
+// --- Synthesized insights ---
+fun SynthesizedInsightDto.toEntity(rank: Int) = SynthesizedInsightEntity(
+    rank = rank,
+    title = title,
+    body = body,
+    theme = theme,
+    cites = cites.joinToString(","),
+)
+fun SynthesizedInsightEntity.toDomain() = SynthesizedInsight(
+    title = title,
+    body = body,
+    theme = theme,
+    cites = cites.split(",").filter { it.isNotBlank() },
+)
 
 // --- Notifications ---
 fun NotificationDto.toDomain() = AppNotification(severity, title, detail)

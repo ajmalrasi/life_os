@@ -21,6 +21,7 @@ import com.lifeos.app.data.remote.dto.SpendAnalysisDto
 import com.lifeos.app.data.remote.dto.SpendTrendsDto
 import com.lifeos.app.data.remote.dto.StatementSyncResultDto
 import com.lifeos.app.data.remote.dto.SuggestionsResponseDto
+import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -55,6 +56,9 @@ interface LifeOsApi {
 
     @GET("analytics/insights")
     suspend fun insights(): List<InsightDto>
+
+    @GET("analytics/synthesis")
+    suspend fun synthesis(): List<SynthesizedInsightDto>
 
     @GET("notifications")
     suspend fun notifications(): List<NotificationDto>

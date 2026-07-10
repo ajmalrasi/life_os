@@ -23,6 +23,7 @@ import com.lifeos.app.presentation.components.InsightCard
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.components.SectionHeader
+import com.lifeos.app.presentation.components.SynthesizedInsightCard
 import com.lifeos.app.presentation.theme.LifeOsColors
 
 @Composable
@@ -46,7 +47,11 @@ fun InsightsScreen(viewModel: InsightsViewModel = hiltViewModel()) {
                 DemoBanner()
             }
         }
-        if (state.insights.isEmpty()) {
+        if (state.synthesized.isNotEmpty()) {
+            item { SectionHeader("Key insights") }
+            items(state.synthesized) { SynthesizedInsightCard(it) }
+        }
+        if (state.insights.isEmpty() && state.synthesized.isEmpty()) {
             item {
                 LifeOsCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -63,8 +68,8 @@ fun InsightsScreen(viewModel: InsightsViewModel = hiltViewModel()) {
                     }
                 }
             }
-        } else {
-            item { SectionHeader("${state.insights.size} patterns found") }
+        } else if (state.insights.isNotEmpty()) {
+            item { SectionHeader("${state.insights.size} correlations") }
             items(state.insights) { InsightCard(it) }
         }
         item { Spacer(Modifier.height(24.dp)) }

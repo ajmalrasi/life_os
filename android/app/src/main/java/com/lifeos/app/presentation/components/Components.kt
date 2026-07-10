@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.domain.model.Insight
+import com.lifeos.app.domain.model.SynthesizedInsight
 import com.lifeos.app.presentation.theme.LifeOsColors
 import kotlin.math.abs
 
@@ -670,6 +671,50 @@ fun NotificationCard(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = accent, fontWeight = FontWeight.SemiBold)
             Text(detail, style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnBackground)
+        }
+    }
+}
+
+@Composable
+fun SynthesizedInsightCard(insight: SynthesizedInsight, modifier: Modifier = Modifier) {
+    LifeOsCard(modifier = modifier, accent = LifeOsColors.AccentTeal) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val theme = insight.theme?.takeIf { it.isNotBlank() }
+                if (theme != null) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = LifeOsColors.AccentTeal.copy(alpha = 0.12f)) {
+                        Text(
+                            theme.replaceFirstChar { it.uppercase() },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LifeOsColors.AccentTeal,
+                        )
+                    }
+                }
+                Text(
+                    "Synthesized",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+            Text(
+                insight.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = LifeOsColors.OnBackground,
+            )
+            Text(
+                insight.body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = LifeOsColors.OnBackground,
+            )
+            if (insight.cites.isNotEmpty()) {
+                Text(
+                    "Grounded in ${insight.cites.size} signal${if (insight.cites.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
         }
     }
 }
