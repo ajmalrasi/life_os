@@ -23,6 +23,7 @@ from app.repositories.analytics_repo import (
     ScoreRepository,
     StateRepository,
 )
+from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.github_repo import GithubRepository
 from app.repositories.health_repo import HealthRepository
 from app.repositories.mood_repo import MoodRepository
@@ -48,6 +49,7 @@ class AnalyticsService:
         self.scores = ScoreRepository(db)
         self.states = StateRepository(db)
         self.insights = InsightRepository(db)
+        self.expenses = ExpenseRepository(db)
         # Lazily constructed inside the narrator if left as None; injectable for tests.
         self.client = client
 
@@ -203,6 +205,13 @@ class AnalyticsService:
         fitness = series(lambda d: getattr(score_rows.get(d), "fitness_score", None))
         mood_s = series(lambda d: getattr(mood_rows.get(d), "mood", None))
         focus_s = series(lambda d: getattr(mood_rows.get(d), "focus", None))
+        stress_s = series(lambda d: getattr(mood_rows.get(d), "stress", None))
+
+        # Daily spend (real outflow). Once any spend is on record, a day with no
+        # debit is a genuine 0-spend day; with no expense data at all the series
+        # stays empty so no spurious money correlations form.
+        spend_map = self.expenses.daily_spend(start, end)
+        spend = [float(spend_map.get(day, 0.0)) for day in days] if spend_map else [None] * len(days)
 
         named = {
             "sleep_score": sleep,
@@ -212,6 +221,8 @@ class AnalyticsService:
             "fitness_score": fitness,
             "mood": mood_s,
             "focus": focus_s,
+            "stress": stress_s,
+            "daily_spend": spend,
         }
 
         # Driver -> candidate outcomes. We intentionally test plausible causal links.
@@ -232,6 +243,19 @@ class AnalyticsService:
             ("fitness_score", "wellness_score"),
             ("fitness_score", "focus"),
             ("fitness_score", "sleep_score"),
+            # Spending as a behavioral signal: what states precede heavier spend,
+            # and how spending relates back to mood/sleep the next day.
+            ("stress", "daily_spend"),
+            ("mood", "daily_spend"),
+            ("recovery_score", "daily_spend"),
+            ("sleep_score", "daily_spend"),
+            ("execution_score", "daily_spend"),
+            ("daily_spend", "mood"),
+            ("daily_spend", "stress"),
+            ("daily_spend", "sleep_score"),
+            # Stress as a driver in its own right (newly available series).
+            ("stress", "execution_score"),
+            ("stress", "mood"),
         ]
 
         # First pass: the deterministic correlation engine decides which patterns

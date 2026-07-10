@@ -18,6 +18,7 @@ from app.repositories.analytics_repo import (
     ScoreRepository,
     StateRepository,
 )
+from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.github_repo import GithubRepository
 from app.repositories.mood_repo import MoodRepository
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
@@ -53,8 +54,12 @@ _SUGGESTION_PROMPT = (
 
 SYSTEM_PROMPT = (
     "You are LifeOS, a personal intelligence companion. You analyze one user's own "
-    "health, mood, and project-execution data to explain — in plain language — why "
-    "they perform well, procrastinate, or drift toward burnout, and what to do next.\n\n"
+    "health, mood, project-execution and daily-spending data to explain — in plain "
+    "language — why they perform well, procrastinate, drift toward burnout, or spend "
+    "the way they do, and what to do next. The DATA CONTEXT includes a 'spending' "
+    "block (total, daily average, and recent daily spend) when expense data exists; "
+    "treat those amounts as the user's local currency and cite them like any other "
+    "metric.\n\n"
     "HOW YOU WORK\n"
     "- Each turn begins with a DATA CONTEXT snapshot (JSON). It is your primary source "
     "of truth.\n"
@@ -97,6 +102,7 @@ class ChatService:
         self.mood = MoodRepository(db)
         self.github = GithubRepository(db)
         self.insights = InsightRepository(db)
+        self.expenses = ExpenseRepository(db)
 
     def build_context(self, days: int) -> dict:
         end = date.today()
@@ -107,6 +113,7 @@ class ChatService:
         mood_rows = self.mood.range(start, end)
         gh_rows = self.github.range(start, end)
         insight_rows = self.insights.all()
+        spend_map = self.expenses.daily_spend(start, end)
 
         def avg(attr: str, rows) -> float | None:
             vals = [getattr(r, attr) for r in rows if getattr(r, attr) is not None]
@@ -144,6 +151,19 @@ class ChatService:
                 "days_with_mood_checkin": len(mood_rows),
                 "days_with_scores": len(score_rows),
             },
+            "spending": (
+                {
+                    "total_spend": round(sum(spend_map.values())),
+                    "avg_daily_spend": round(sum(spend_map.values()) / len(spend_map), 1),
+                    "days_with_spend": len(spend_map),
+                    "recent_daily_spend": [
+                        {"day": d.isoformat(), "spend": round(spend_map[d])}
+                        for d in sorted(spend_map)[-14:]
+                    ],
+                }
+                if spend_map
+                else None
+            ),
             "discovered_patterns": [
                 {"summary": i.summary, "r": i.correlation, "n": i.sample_size}
                 for i in insight_rows

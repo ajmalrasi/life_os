@@ -24,6 +24,12 @@ def _norm_counterparty(name: str | None) -> str:
     return " ".join(s.lower().split())
 
 
+# Debit categories that are NOT real spending: money moved between the user's
+# own accounts, reversed charges, and lent money returned. Excluded from the
+# daily-spend signal so behavioral correlations aren't distorted by shuffling.
+_NON_SPEND_CATEGORIES = ("transfer", "lent_returned", "reversed_debit")
+
+
 class ExpenseRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -162,6 +168,32 @@ class ExpenseRepository:
             conditions.append(Transaction.account.like(f"{account_prefix}%"))
         result = self.db.execute(delete(Transaction).where(*conditions))
         return result.rowcount or 0
+
+    def daily_spend(self, start: date, end: date) -> dict[date, float]:
+        """Total real debit outflow per day in [start, end].
+
+        Excludes non-spend debits — self-transfers, reversed charges, and money
+        lent that was returned — so the series reflects actual spending rather
+        than money shuffled between the user's own accounts. Uncategorized
+        debits (the bulk of real spend) are kept. Only days with such a debit
+        appear; callers decide whether a missing day means "0 spent" or "no
+        data" for that day.
+        """
+        stmt = (
+            select(Transaction.txn_date, func.sum(Transaction.amount))
+            .where(
+                Transaction.txn_date >= start,
+                Transaction.txn_date <= end,
+                Transaction.direction == "debit",
+                func.coalesce(Transaction.category, "").notin_(_NON_SPEND_CATEGORIES),
+            )
+            .group_by(Transaction.txn_date)
+        )
+        return {
+            txn_date: float(total)
+            for txn_date, total in self.db.execute(stmt)
+            if total is not None
+        }
 
     def range(self, start: date, end: date, source: str | None = None) -> list[Transaction]:
         stmt = select(Transaction).where(
