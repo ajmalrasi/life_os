@@ -53,8 +53,10 @@ _SYSTEM_PROMPT = (
     "- Vary your sentence openings and verbs across the list; do not start every line "
     "the same way.\n"
     "- Plain language, no markdown, no emojis, no bullet characters.\n"
-    "- Return ONLY a JSON array of strings, one per pattern, in the same order you "
-    "received them. No prose, no keys, no code fences."
+    '- Return ONLY a JSON array of objects, one per pattern, each exactly '
+    '{"id": "<the id you were given, copied verbatim>", "insight": "<your one-line '
+    'insight for THAT pattern>"}. Echo every id unchanged and keep each insight with '
+    "its own id — do not reorder, merge, add, or drop items. No prose, no code fences."
 )
 
 
@@ -92,6 +94,7 @@ def narrate(facts: list[InsightFact], client: OpenClawClient | None = None) -> d
 
     payload = [
         {
+            "id": f.key(),
             "driver": f.driver,
             "outcome": f.outcome,
             "r": round(f.r, 3),
@@ -117,22 +120,30 @@ def narrate(facts: list[InsightFact], client: OpenClawClient | None = None) -> d
         logger.info("insight narration skipped (OpenClaw unavailable): %s", exc)
         return {}
 
-    narratives = _parse(raw)
-    if not narratives:
-        return {}
-
+    # Match by id, never by position: a reordered/short/over-long model response
+    # must never staple one pattern's narrative onto a different pattern (that
+    # would contradict the grounded summary the user sees). Unmatched facts keep
+    # their deterministic summary downstream.
+    by_id = _parse(raw)
+    valid_keys = {f.key() for f in facts}
     out: dict[str, str] = {}
-    for fact, text in zip(facts, narratives):
-        text = (text or "").strip()
-        if text:
-            out[fact.key()] = text[:600]
+    for key, text in by_id.items():
+        if key in valid_keys:
+            text = (text or "").strip()
+            if text:
+                out[key] = text[:600]
     return out
 
 
-def _parse(raw: str) -> list[str]:
-    """Extract a JSON array of strings from the model output, tolerantly."""
+def _parse(raw: str) -> dict[str, str]:
+    """Extract ``{id: insight}`` from the model output, tolerantly.
+
+    Accepts only ``[{"id": ..., "insight": ...}, ...]`` objects; anything that
+    isn't a well-formed id/insight pair is ignored so a malformed item can't be
+    misattributed to a pattern.
+    """
     if not raw:
-        return []
+        return {}
     text = raw.strip()
     # Strip ``` fences if a chatty model added them despite instructions.
     if text.startswith("```"):
@@ -147,7 +158,14 @@ def _parse(raw: str) -> list[str]:
     try:
         data = json.loads(text)
     except (ValueError, TypeError):
-        return []
+        return {}
     if not isinstance(data, list):
-        return []
-    return [str(item) for item in data]
+        return {}
+    out: dict[str, str] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        key, insight = item.get("id"), item.get("insight")
+        if isinstance(key, str) and isinstance(insight, str):
+            out[key] = insight
+    return out

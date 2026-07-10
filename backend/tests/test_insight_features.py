@@ -41,8 +41,11 @@ def _facts() -> list[InsightFact]:
 # --- insight narration ---------------------------------------------------------
 
 
-def test_narrate_maps_parsed_lines_to_pair_keys():
-    client = _FakeClient('["You ship more on rested days.", "Movement lifts your mood."]')
+def test_narrate_maps_insights_to_pair_keys_by_id():
+    client = _FakeClient(
+        '[{"id": "sleep_score|execution_score", "insight": "You ship more on rested days."},'
+        ' {"id": "fitness_score|mood", "insight": "Movement lifts your mood."}]'
+    )
     out = narrate(_facts(), client=client)
     assert out == {
         "sleep_score|execution_score": "You ship more on rested days.",
@@ -50,8 +53,33 @@ def test_narrate_maps_parsed_lines_to_pair_keys():
     }
 
 
+def test_narrate_matches_by_id_even_when_reordered():
+    """A response in a different order than the facts must not misattribute —
+    each narrative stays with its own pattern via the id, not by position."""
+    client = _FakeClient(
+        '[{"id": "fitness_score|mood", "insight": "mood one"},'
+        ' {"id": "sleep_score|execution_score", "insight": "exec one"}]'
+    )
+    out = narrate(_facts(), client=client)
+    assert out["sleep_score|execution_score"] == "exec one"
+    assert out["fitness_score|mood"] == "mood one"
+
+
+def test_narrate_drops_unknown_ids():
+    """Narratives for ids we didn't send are ignored, never stapled onto a fact."""
+    client = _FakeClient(
+        '[{"id": "hallucinated|pair", "insight": "wrong"},'
+        ' {"id": "sleep_score|execution_score", "insight": "right"}]'
+    )
+    out = narrate(_facts(), client=client)
+    assert out == {"sleep_score|execution_score": "right"}
+
+
 def test_narrate_tolerates_code_fences_and_prose():
-    client = _FakeClient('```json\n["a narrative", "b narrative"]\n```')
+    client = _FakeClient(
+        '```json\n[{"id": "sleep_score|execution_score", "insight": "a narrative"},'
+        ' {"id": "fitness_score|mood", "insight": "b narrative"}]\n```'
+    )
     out = narrate(_facts(), client=client)
     assert out["sleep_score|execution_score"] == "a narrative"
 
