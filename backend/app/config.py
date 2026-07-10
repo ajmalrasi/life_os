@@ -28,9 +28,13 @@ class Settings(BaseSettings):
 
     # GitHub execution collection via the official github-mcp-server sidecar.
     # The sidecar runs inside docker-compose; GITHUB_TOKEN is its auth credential.
+    # Execution is discovered by author search across ALL of GitHub, so the only
+    # required knobs are the token and GITHUB_USER (your login) — no repo list to
+    # maintain. github_repos is retained only for the `github_search` chat tool /
+    # backward compat and is not used by the execution sync.
     github_token: str = ""  # personal access token (repo / contents:read)
-    github_repos: str = ""  # comma-separated owner/repo, e.g. ajmalrasi/life_os
-    github_user: str = ""   # optional commit author login/email filter
+    github_user: str = ""   # your GitHub login — scopes the author search
+    github_repos: str = ""  # deprecated for sync; comma-separated owner/repo
 
     # Expense tracking — reads bank/UPI/statement emails via the `gog` CLI
     # (Google Workspace), baked into the API image. Auth is a shared, read-only
@@ -94,7 +98,7 @@ class Settings(BaseSettings):
 
     @property
     def github_enabled(self) -> bool:
-        return bool(self.github_token.strip()) and bool(self.github_repos_list)
+        return bool(self.github_token.strip()) and bool(self.github_user.strip())
 
     @property
     def gmail_expenses_enabled(self) -> bool:

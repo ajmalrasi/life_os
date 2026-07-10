@@ -39,8 +39,7 @@ def sync_github_execution(days: int = 14, db: Session = Depends(get_db)) -> Exec
     report = GitHubApiCollector(
         db,
         token=settings.github_token,
-        repos=settings.github_repos_list,
-        author=settings.github_user or None,
+        user=settings.github_user or None,
     ).sync(days=days)
     return ExecutionSyncResult(
         days_updated=report.days_updated,

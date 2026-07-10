@@ -1,171 +1,162 @@
-"""Tests for the GitHub MCP execution collector and SHA-based dedup."""
+"""Tests for the GitHub author-search execution collector and SHA-based dedup."""
 
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from app.services.execution_collector import rollup_commit_events
-from app.services.github_api_collector import collect_github_commit_events, collect_github_pr_issue_events
+from app.services.github_api_collector import (
+    collect_commit_events,
+    collect_pr_issue_events,
+)
 
 
 def _ts(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat()
 
 
-def _mock_client(tool_responses: dict) -> MagicMock:
-    """Build a GitHubMcpClient mock that returns canned responses per tool+args."""
+def _search_result(items: list[dict]) -> dict:
+    return {"total_count": len(items), "incomplete_results": False, "items": items}
+
+
+def _commit_item(sha: str, when: datetime, repo: str) -> dict:
+    return {
+        "sha": sha,
+        "commit": {"author": {"date": _ts(when)}},
+        "repository": {"full_name": repo},
+    }
+
+
+def _mock_client(handlers: dict) -> MagicMock:
+    """Build a GitHubMcpClient mock dispatching on (tool, query-substring)."""
     client = MagicMock()
 
     def call_tool(tool_name, arguments=None):
         args = arguments or {}
-        key = (tool_name, args.get("owner"), args.get("repo"), args.get("sha"))
-        return tool_responses.get(key) or tool_responses.get(tool_name)
+        if tool_name == "get_commit":
+            key = ("get_commit", args.get("sha"))
+            return handlers.get(key, {"stats": {"additions": 0, "deletions": 0}})
+        query = args.get("query", "")
+        for (t, needle), value in handlers.items():
+            if t == tool_name and needle in query:
+                return value
+        return _search_result([])
 
     client.call_tool.side_effect = call_tool
     return client
 
 
-def test_collect_parses_commits_and_stats():
-    day = date(2026, 6, 14)
-    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+def test_search_finds_commits_across_all_repos():
+    """A single author search returns commits in repos with no static config."""
+    day = date(2026, 7, 8)
+    noon = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
 
     client = _mock_client({
-        ("list_commits", "me", "proj", None): [
-            {"sha": "aaa", "commit": {"author": {"date": _ts(noon)}}},
-            {"sha": "bbb", "commit": {"author": {"date": _ts(noon)}}},
-        ],
-        ("get_commit", "me", "proj", "aaa"): {"stats": {"additions": 10, "deletions": 2}},
-        ("get_commit", "me", "proj", "bbb"): {"stats": {"additions": 5, "deletions": 1}},
+        ("search_commits", "author:me"): _search_result([
+            _commit_item("aaa", noon, "me/brand-new-repo"),
+            _commit_item("bbb", noon, "me/another-new-one"),
+        ]),
+        ("get_commit", "aaa"): {"stats": {"additions": 10, "deletions": 2}},
+        ("get_commit", "bbb"): {"stats": {"additions": 5, "deletions": 1}},
     })
 
-    events = collect_github_commit_events(["me/proj"], None, day, day, client=client)
+    events = collect_commit_events("me", day, day, client=client)
 
     assert {e.sha for e in events} == {"aaa", "bbb"}
-    assert all(e.repo == "github:me/proj" for e in events)
+    assert {e.repo for e in events} == {"github:me/brand-new-repo", "github:me/another-new-one"}
 
     rollups = rollup_commit_events(events)
     assert rollups[day].commits == 2
-    assert rollups[day].active_repos == 1
+    assert rollups[day].active_repos == 2
     assert rollups[day].additions == 15
     assert rollups[day].deletions == 3
 
 
-def test_collect_deduplicates_within_repo():
-    day = date(2026, 6, 14)
-    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+def test_search_deduplicates_by_sha():
+    day = date(2026, 7, 8)
+    noon = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
 
-    # Same SHA returned on two pages → must appear only once.
-    pages = [
-        [{"sha": "dup", "commit": {"author": {"date": _ts(noon)}}}],
-        [{"sha": "dup", "commit": {"author": {"date": _ts(noon)}}}],
-    ]
-    call_count = {"n": 0}
+    client = _mock_client({
+        ("search_commits", "author:me"): _search_result([
+            _commit_item("dup", noon, "me/proj"),
+            _commit_item("dup", noon, "me/proj"),
+        ]),
+    })
 
-    client = MagicMock()
-    def call_tool(tool_name, arguments=None):
-        args = arguments or {}
-        if tool_name == "list_commits":
-            idx = call_count["n"]
-            call_count["n"] += 1
-            return pages[idx] if idx < len(pages) else []
-        return {"stats": {"additions": 1, "deletions": 0}}
-    client.call_tool.side_effect = call_tool
-
-    events = collect_github_commit_events(["me/proj"], None, day, day, client=client)
+    events = collect_commit_events("me", day, day, client=client)
     assert len(events) == 1
 
 
-def test_collect_stops_on_empty_page():
-    day = date(2026, 6, 14)
-    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
-
-    client = _mock_client({
-        ("list_commits", "me", "proj", None): [],
-    })
-
-    events = collect_github_commit_events(["me/proj"], None, day, day, client=client)
-    assert events == []
+def test_search_empty_result():
+    day = date(2026, 7, 8)
+    client = _mock_client({("search_commits", "author:me"): _search_result([])})
+    assert collect_commit_events("me", day, day, client=client) == []
 
 
-def test_collect_swallows_mcp_errors():
-    day = date(2026, 6, 14)
+def test_search_no_user_is_noop():
+    day = date(2026, 7, 8)
+    client = MagicMock()
+    assert collect_commit_events("", day, day, client=client) == []
+    assert collect_pr_issue_events("", day, day, client=client) == []
+    client.call_tool.assert_not_called()
 
+
+def test_search_swallows_mcp_errors():
+    day = date(2026, 7, 8)
     client = MagicMock()
     client.call_tool.side_effect = Exception("MCP server down")
-
-    events = collect_github_commit_events(["me/proj"], None, day, day, client=client)
-    assert events == []
+    assert collect_commit_events("me", day, day, client=client) == []
 
 
-def test_collect_mcp_none_response():
-    day = date(2026, 6, 14)
+def test_search_pagination_stops_on_short_page():
+    day = date(2026, 7, 8)
+    noon = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    client = _mock_client({
+        ("search_commits", "author:me"): {
+            "total_count": 1,
+            "items": [_commit_item("only", noon, "me/proj")],
+        },
+    })
+    events = collect_commit_events("me", day, day, client=client)
+    assert len(events) == 1
+    # search_commits called once (short page ends pagination), plus one get_commit.
+    search_calls = [c for c in client.call_tool.call_args_list if c.args[0] == "search_commits"]
+    assert len(search_calls) == 1
 
-    # MCP client returns None (server unreachable) rather than raising.
-    client = _mock_client({"list_commits": None})
 
-    events = collect_github_commit_events(["me/proj"], None, day, day, client=client)
-    assert events == []
-
-
-def test_collect_pr_events_opened_and_merged():
-    day = date(2026, 6, 14)
-    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+def test_search_pr_and_issue_events():
+    day = date(2026, 7, 8)
+    noon = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    repo_url = "https://api.github.com/repos/me/proj"
 
     client = _mock_client({
-        ("list_pull_requests", "me", "proj", None): [
+        ("search_issues", "type:pr author:me created"): _search_result([
+            {"number": 5, "created_at": _ts(noon), "repository_url": repo_url},
+        ]),
+        ("search_issues", "type:pr author:me merged"): _search_result([
             {
                 "number": 5,
-                "updated_at": _ts(noon),
-                "created_at": _ts(noon),
-                "merged_at": _ts(noon),
+                "closed_at": _ts(noon),
+                "pull_request": {"merged_at": _ts(noon)},
+                "repository_url": repo_url,
             },
-        ],
+        ]),
+        ("search_issues", "type:issue author:me created"): _search_result([
+            {"number": 7, "created_at": _ts(noon), "repository_url": repo_url},
+        ]),
+        ("search_issues", "type:issue author:me closed"): _search_result([
+            {"number": 7, "closed_at": _ts(noon), "repository_url": repo_url},
+        ]),
     })
 
-    events = collect_github_pr_issue_events(["me/proj"], day, day, client=client)
-    kinds = {(e.kind, e.number) for e in events if e.repo == "github:me/proj"}
-    assert ("pr_opened", 5) in kinds
-    assert ("pr_merged", 5) in kinds
-
-
-def test_collect_pr_events_stops_pagination_before_window():
-    day = date(2026, 6, 14)
-    in_window = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
-    before_window = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
-
-    client = MagicMock()
-
-    def call_tool(tool_name, arguments=None):
-        if tool_name == "list_pull_requests":
-            return [
-                {"number": 2, "updated_at": _ts(in_window), "created_at": _ts(in_window)},
-                {"number": 1, "updated_at": _ts(before_window), "created_at": _ts(before_window)},
-            ]
-        return None
-
-    client.call_tool.side_effect = call_tool
-
-    events = collect_github_pr_issue_events(["me/proj"], day, day, client=client)
-    assert {e.number for e in events} == {2}
-
-
-def test_collect_issue_events_opened_and_closed_excludes_prs():
-    day = date(2026, 6, 14)
-    noon = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
-
-    client = _mock_client({
-        "list_pull_requests": [],
-        "list_issues": [
-            {"number": 7, "created_at": _ts(noon), "closed_at": _ts(noon)},
-            {"number": 8, "created_at": _ts(noon), "pull_request": {"url": "x"}},
-        ],
-    })
-
-    events = collect_github_pr_issue_events(["me/proj"], day, day, client=client)
+    events = collect_pr_issue_events("me", day, day, client=client)
     kinds = {(e.kind, e.number) for e in events}
-    assert ("issue_opened", 7) in kinds
-    assert ("issue_closed", 7) in kinds
-    assert not any(number == 8 for _, number in kinds)
+    assert kinds == {
+        ("pr_opened", 5),
+        ("pr_merged", 5),
+        ("issue_opened", 7),
+        ("issue_closed", 7),
+    }
+    assert all(e.repo == "github:me/proj" for e in events)
+    assert all(e.day == day for e in events)
