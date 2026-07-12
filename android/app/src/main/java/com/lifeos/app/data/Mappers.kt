@@ -38,6 +38,7 @@ import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.SynthesizedInsight
 import com.lifeos.app.domain.model.Transaction
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 
 // --- Health ---
@@ -113,11 +114,12 @@ fun ChatTurn.toDto() = ChatMessageDto(role, content)
 
 // --- Money: transactions ---
 fun TransactionDto.toEntity() = TransactionEntity(
-    id, txnDate, amount, currency, direction, counterparty, category, spendCategory, account, source, reference,
+    id, txnDate, txnAt, amount, currency, direction, counterparty, category, spendCategory, account, source, reference,
 )
 fun TransactionEntity.toDomain() = Transaction(
     id = id,
     txnDate = LocalDate.parse(txnDate),
+    txnAt = txnAt?.let { Instant.parse(it) },
     amount = BigDecimal(amount),
     currency = currency,
     direction = direction,

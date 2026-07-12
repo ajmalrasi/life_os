@@ -58,6 +58,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
@@ -730,8 +731,15 @@ private fun TransactionRow(txn: Transaction) {
                 color = LifeOsColors.OnBackground,
                 maxLines = 1,
             )
+            val datePart = txn.txnDate.format(DateTimeFormatter.ofPattern("dd MMM"))
+            // Show the time only when we actually know it; otherwise stay
+            // date-only rather than render a placeholder.
+            val timePart = txn.txnAt
+                ?.atZone(ZoneId.systemDefault())
+                ?.format(DateTimeFormatter.ofPattern("h:mm a"))
+            val whenText = if (timePart != null) "$datePart, $timePart" else datePart
             Text(
-                "${txn.txnDate.format(DateTimeFormatter.ofPattern("dd MMM"))} · ${txn.account ?: txn.source}",
+                "$whenText · ${txn.account ?: txn.source}",
                 style = MaterialTheme.typography.labelSmall,
                 color = LifeOsColors.OnSurfaceMuted,
                 maxLines = 1,

@@ -58,6 +58,7 @@ data class SynthesizedInsightEntity(
 data class TransactionEntity(
     @PrimaryKey val id: Int,
     val txnDate: String,
+    val txnAt: String?, // ISO-8601 instant; null when the txn has no known time
     val amount: String, // BigDecimal-precision string, parsed on read
     val currency: String,
     val direction: String,

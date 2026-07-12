@@ -11,6 +11,9 @@ class TransactionOut(BaseModel):
 
     id: int
     txn_date: date
+    # Instant the transaction happened (bank's stated time, else alert arrival
+    # time). Null for rows predating the feature — clients render date-only.
+    txn_at: datetime | None = None
     amount: Decimal
     currency: str
     direction: str

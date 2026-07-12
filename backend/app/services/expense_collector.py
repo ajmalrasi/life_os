@@ -13,18 +13,39 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
 from app.services.expense_parsers import ParsedTxn, Parser, ParserUnavailable, get_parsers
+from app.services.expense_parsers.base import BankEmail
+from app.services.expense_parsers.txn_time import extract_clock_time
 from app.services.gmail_client import GmailClient
+from app.services.openclaw import OpenClawClient
 
 logger = logging.getLogger(__name__)
 
 _MAX_PER_PARSER = 100  # safety cap on emails fetched per parser per run
+
+# Bank alert bodies state local clock times in IST; combine them with the
+# transaction date in this zone to get the correct absolute instant.
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _email_arrival(email: BankEmail) -> datetime | None:
+    """The alert email's arrival instant (UTC), or None if unknown."""
+    if email.internal_date_ms:
+        return datetime.fromtimestamp(email.internal_date_ms / 1000, tz=timezone.utc)
+    return None
+
+
+def _combine_ist(txn_date: date, clock: time) -> datetime:
+    """A body clock time on the transaction's date, as a UTC instant."""
+    return datetime.combine(txn_date, clock, tzinfo=_IST).astimezone(timezone.utc)
 
 
 @dataclass
@@ -65,12 +86,23 @@ class ExpenseCollector:
         parsers: list[Parser] | None = None,
         since_date: date | None = None,
         max_per_parser: int = _MAX_PER_PARSER,
+        openclaw: OpenClawClient | None = None,
+        txn_time_enabled: bool | None = None,
     ) -> None:
         self.db = db
         self.client = client
         self.backfill_days = backfill_days
         self.full = full
         self.repo = ExpenseRepository(db)
+        # Best-effort clock-time extraction. The client is built lazily on first
+        # use so a run that fetches no emails never touches OpenClaw. Passing one
+        # in (tests) or disabling the feature short-circuits that.
+        self._openclaw = openclaw
+        self._txn_time_enabled = (
+            get_settings().expense_txn_time_llm_enabled
+            if txn_time_enabled is None
+            else txn_time_enabled
+        )
         # Overriding ``parsers`` scopes a run to specific sources (e.g. a
         # one-off historical rebuild through only the LLM catch-all parser,
         # bypassing the regex ones). ``since_date`` overrides the normal
@@ -84,6 +116,22 @@ class ExpenseCollector:
     @property
     def _cursor_key(self) -> str:
         return f"gmail_expenses:{self.client.account}"
+
+    def _stamp_txn_time(self, email: BankEmail, parsed: list[ParsedTxn]) -> None:
+        """Set ``txn_at`` on each parsed txn: the body's stated clock time when
+        the LLM finds one, else the email's arrival instant. One LLM call per
+        transaction-bearing email; failures fall back silently (time is
+        cosmetic and must never block or defer the transaction)."""
+        if not parsed:
+            return
+        clock: time | None = None
+        if self._txn_time_enabled:
+            if self._openclaw is None:
+                self._openclaw = OpenClawClient()
+            clock = extract_clock_time(email.text, self._openclaw)
+        arrival = _email_arrival(email)
+        for txn in parsed:
+            txn.txn_at = _combine_ist(txn.txn_date, clock) if clock else arrival
 
     def sync(self) -> ExpenseSyncReport:
         parsers = self.parsers if self.parsers is not None else get_parsers()
@@ -144,6 +192,7 @@ class ExpenseCollector:
                     continue
                 scanned += 1
                 max_internal_ms = max(max_internal_ms, email.internal_date_ms)
+                self._stamp_txn_time(email, parsed)
                 for txn in parsed:
                     # Guards a backfill/late-add scenario: a live parser added
                     # (or backfilled) after its statement period was already
