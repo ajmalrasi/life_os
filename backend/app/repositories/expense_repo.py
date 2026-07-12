@@ -132,6 +132,7 @@ class ExpenseRepository:
             return None
         obj = Transaction(
             txn_date=txn.txn_date,
+            txn_at=txn.txn_at,
             amount=txn.amount,
             currency=txn.currency,
             direction=txn.direction,

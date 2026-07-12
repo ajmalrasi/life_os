@@ -99,7 +99,9 @@ def _run_sync(gmail):
     from app.database import SessionLocal
 
     with SessionLocal() as db:
-        return ExpenseCollector(db, gmail, backfill_days=90).sync()
+        # txn_time extraction is exercised separately (test_txn_time.py); keep
+        # these pipeline tests hermetic — no OpenClaw calls.
+        return ExpenseCollector(db, gmail, backfill_days=90, txn_time_enabled=False).sync()
 
 
 def test_collector_persists_and_is_idempotent(client):
@@ -166,7 +168,7 @@ def test_deferred_email_holds_cursor_and_is_recovered_next_run(client):
     gmail = _FakeGmail([ok, late])
     with SessionLocal() as db:
         report = ExpenseCollector(
-            db, gmail, parsers=[_FlakyParser("m_defer", down=True)]
+            db, gmail, parsers=[_FlakyParser("m_defer", down=True)], txn_time_enabled=False
         ).sync()
 
     assert report.transactions_new == 1  # only the healthy email
@@ -180,7 +182,7 @@ def test_deferred_email_holds_cursor_and_is_recovered_next_run(client):
     gmail2 = _FakeGmail([ok, late])
     with SessionLocal() as db:
         report2 = ExpenseCollector(
-            db, gmail2, parsers=[_FlakyParser("m_defer", down=False)]
+            db, gmail2, parsers=[_FlakyParser("m_defer", down=False)], txn_time_enabled=False
         ).sync()
 
     assert "after:1800000099" in gmail2.queries[0]

@@ -9,7 +9,7 @@ registering it in ``__init__`` — nothing else in the pipeline changes.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
@@ -54,6 +54,10 @@ class ParsedTxn:
     category: str | None = None
     currency: str = "INR"
     raw_snippet: str | None = None
+    # When the transaction happened, as a tz-aware instant. Stamped by the
+    # collector (from the alert email's body time or arrival time), not by
+    # individual parsers. See app/models/transaction.py::txn_at.
+    txn_at: datetime | None = None
     # A parser may set a stable key itself; otherwise the collector derives one
     # (from the reference number, or a hash of the salient fields).
     dedup_key: str | None = None

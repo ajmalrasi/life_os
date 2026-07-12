@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # Registers the LLM catch-all bank-email parser (llm_bank_parser.py)
     # alongside the regex parsers.
     llm_bank_parser_enabled: bool = True
+    # Ask the LLM to extract each transaction's clock time from the alert email
+    # (best-effort; one call per transaction-bearing email). When disabled, or
+    # when the model finds no time / is unreachable, the collector falls back to
+    # the email's arrival timestamp.
+    expense_txn_time_llm_enabled: bool = True
 
     @property
     def github_repos_list(self) -> list[str]:

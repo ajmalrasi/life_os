@@ -137,6 +137,8 @@ data class ExecutionSyncReport(
 data class Transaction(
     val id: Int,
     val txnDate: LocalDate,
+    /** When the transaction happened; null when no time is known (date-only). */
+    val txnAt: Instant?,
     val amount: BigDecimal,
     val currency: String,
     val direction: String, // "debit" | "credit"

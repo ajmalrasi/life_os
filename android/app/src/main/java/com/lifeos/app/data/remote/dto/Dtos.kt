@@ -155,6 +155,9 @@ data class SuggestionsResponseDto(
 data class TransactionDto(
     val id: Int,
     @SerialName("txn_date") val txnDate: String,
+    /** ISO-8601 instant the transaction happened; null for rows without a
+     * known time (rendered date-only). */
+    @SerialName("txn_at") val txnAt: String? = null,
     val amount: String,
     val currency: String = "INR",
     val direction: String,

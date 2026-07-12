@@ -28,6 +28,13 @@ class Transaction(Base):
     currency: Mapped[str] = mapped_column(String(3), default="INR")
     direction: Mapped[str] = mapped_column(String(6))  # "debit" | "credit"
 
+    # When the transaction actually happened. The bank's stated clock time when
+    # the alert email carries one (combined with txn_date in IST), else the
+    # alert email's arrival instant as a to-the-second proxy. Nullable: rows
+    # predating this column — and any where neither source is available — have
+    # no time and render date-only.
+    txn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
     counterparty: Mapped[str | None] = mapped_column(String(256), default=None)
     category: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
     account: Mapped[str | None] = mapped_column(String(64), default=None)  # e.g. "HDFC RuPay CC ..5473"
