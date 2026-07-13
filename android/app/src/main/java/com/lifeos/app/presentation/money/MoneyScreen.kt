@@ -75,6 +75,24 @@ private fun BigDecimal.rupees(): String {
     return (if (negative) "-₹" else "₹") + grouped
 }
 
+private val CURRENCY_SYMBOLS = mapOf("INR" to "₹", "USD" to "$", "EUR" to "€", "GBP" to "£")
+
+/** Amount rendered in its own currency. INR keeps the Indian lakh/crore
+ * grouping (₹12,34,567); every other currency uses plain thousands grouping
+ * with its symbol where we know one, else the ISO code as a suffix ("23 AED")
+ * — so a foreign-currency alert never gets mislabeled as rupees. */
+private fun BigDecimal.money(currency: String): String {
+    if (currency == "INR") return rupees()
+    val plain = this.setScale(0, RoundingMode.HALF_UP).toPlainString()
+    val negative = plain.startsWith("-")
+    val digits = if (negative) plain.drop(1) else plain
+    val grouped = if (digits.length <= 3) digits
+        else digits.reversed().chunked(3).joinToString(",").reversed()
+    val sign = if (negative) "-" else ""
+    val symbol = CURRENCY_SYMBOLS[currency]
+    return if (symbol != null) "$sign$symbol$grouped" else "$sign$grouped $currency"
+}
+
 /** One category's identity color — distinct hues, desaturated for the warm
  * ivory canvas, consistent everywhere. */
 private fun categoryColor(category: String): Color = when (category.lowercase()) {
@@ -747,7 +765,7 @@ private fun TransactionRow(txn: Transaction) {
         }
         Spacer(Modifier.width(12.dp))
         Text(
-            (if (isCredit) "+" else "") + txn.amount.rupees(),
+            (if (isCredit) "+" else "") + txn.amount.money(txn.currency),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = amountColor,
