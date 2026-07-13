@@ -17,7 +17,11 @@ import pytest
 
 from app.services.expense_parsers import get_parsers
 from app.services.expense_parsers.base import BankEmail, ParserUnavailable
-from app.services.expense_parsers.llm_bank_parser import LlmBankParser
+from app.services.expense_parsers.llm_bank_parser import (
+    _MAX_PROMPT_CHARS,
+    LlmBankParser,
+    _prepare_email_text,
+)
 from app.services.openclaw import OpenClawUnavailable
 
 
@@ -61,6 +65,7 @@ def _fields(**overrides) -> str:
         "direction": "debit",
         "bank": "HDFC",
         "amount": 110.0,
+        "currency": "INR",
         "counterparty_name": "RAFEEQUE PATTATH",
         "counterparty_vpa": "paytm.s1hzt87@pty",
         "is_card": False,
@@ -110,6 +115,26 @@ def test_transaction_email_extracts_upi_debit():
     assert txn.counterparty == "RAFEEQUE PATTATH (paytm.s1hzt87@pty)"
     assert txn.reference == "125721524336"
     assert txn.txn_date == date(2026, 7, 3)
+    assert txn.currency == "INR"
+
+
+def test_foreign_currency_is_preserved_not_defaulted_to_inr():
+    """Regression: a ~USD 23 card alert was stored (and shown) as INR because the
+    parser never extracted currency and ParsedTxn defaults to INR. The stated
+    currency must ride through instead of everything being assumed rupee."""
+    client = _FakeClient([_YES_GATE, _fields(amount=23.0, currency="USD", is_card=True, is_upi=False, last4="6116")])
+    (txn,) = LlmBankParser(client=client).parse(_email("USD 23.00 spent on your card ..6116"))
+    assert txn.amount == Decimal("23.0")
+    assert txn.currency == "USD"
+
+
+def test_currency_symbol_or_word_is_normalized_to_iso_code():
+    """The schema asks for an ISO code but the model sometimes echoes the raw
+    symbol/word — normalize it rather than persist "$" or "dollars"."""
+    for raw, iso in [("$", "USD"), ("Rs.", "INR"), ("₹", "INR"), ("dollars", "USD"), ("", "INR"), ("garbage", "INR")]:
+        client = _FakeClient([_YES_GATE, _fields(currency=raw)])
+        (txn,) = LlmBankParser(client=client).parse(_email("txn"))
+        assert txn.currency == iso, f"{raw!r} -> {txn.currency!r}"
 
 
 def test_counterparty_is_built_in_code_not_trusted_from_model_formatting():
@@ -279,3 +304,27 @@ def test_gmail_query_can_be_scoped_to_one_bank_domain():
     query = LlmBankParser(domains=["hdfcbank.bank.in"]).gmail_query
     assert "hdfcbank.bank.in" in query
     assert "axis.bank.in" not in query
+
+
+# --- prompt preparation (fit the small model's context window) ------------------
+
+
+def test_prepare_email_text_strips_tracking_urls():
+    """Bank alerts pad the body with long opaque tracking/redirect URLs that
+    tokenize terribly and blew past the model's 2048-token window (-> HTTP 400,
+    email deferred forever). They carry no transaction signal, so they're removed
+    while the real text — amount, party, date — is kept."""
+    body = (
+        "Rs.150.00 is debited from your account ending 7672 towards VPA "
+        "8593060686@fam (Mohammed Shereen K) on 10-07-26. "
+        "View: https://t13.mailers.hdfcbank.bank.in/r/?id=t2823b532-824a&e=" + ("A" * 400)
+    )
+    out = _prepare_email_text(body)
+    assert "https://" not in out
+    assert "Rs.150.00 is debited" in out
+    assert "8593060686@fam" in out  # the VPA is plain text, not a URL — must survive
+
+
+def test_prepare_email_text_caps_length():
+    out = _prepare_email_text("word " * 5000)
+    assert len(out) <= _MAX_PROMPT_CHARS

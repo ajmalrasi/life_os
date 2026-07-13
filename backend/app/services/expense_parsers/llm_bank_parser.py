@@ -50,6 +50,26 @@ settings = get_settings()
 
 _TIMEOUT_SECONDS = 30.0
 
+# The shared OpenClaw model has a small (2048-token) context window, and bank
+# alert emails are padded with long opaque tracking/redirect URLs
+# (https://…/r/?id=…&e=<base64>&s=<hash>, hundreds of chars each) that carry no
+# transaction signal but tokenize terribly — a single real alert measured 2398
+# prompt tokens (over the limit → HTTP 400, the email deferred forever) of which
+# ~2000 were these URLs. Stripping them first makes the prompt both small enough
+# to fit and cleaner for extraction. ``_MAX_PROMPT_CHARS`` then caps what's left
+# so even a URL-free but very long body (plus the schema prompt and a corrective
+# retry) still fits the window with headroom.
+_MAX_PROMPT_CHARS = 2500
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _prepare_email_text(text: str) -> str:
+    """Strip tracking URLs and cap length so the prompt fits the model window."""
+    t = _URL_RE.sub(" ", text or "")
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\s*\n\s*", "\n", t)
+    return t.strip()[:_MAX_PROMPT_CHARS]
+
 _GATE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -75,6 +95,7 @@ _FIELDS_SCHEMA = {
         "direction": {"type": "string", "enum": ["debit", "credit"]},
         "bank": {"type": "string"},
         "amount": {"type": "number"},
+        "currency": {"type": "string"},
         "counterparty_name": {"type": "string"},
         "counterparty_vpa": {"type": "string"},
         "is_card": {"type": "boolean"},
@@ -85,8 +106,9 @@ _FIELDS_SCHEMA = {
         "reference": {"type": "string"},
     },
     "required": [
-        "direction", "bank", "amount", "counterparty_name", "counterparty_vpa",
-        "is_card", "is_upi", "is_rupay_upi", "last4", "txn_date", "reference",
+        "direction", "bank", "amount", "currency", "counterparty_name",
+        "counterparty_vpa", "is_card", "is_upi", "is_rupay_upi", "last4",
+        "txn_date", "reference",
     ],
     "additionalProperties": False,
 }
@@ -100,6 +122,12 @@ _FIELDS_PROMPT = (
     "- amount: the specific transaction amount — never an available balance, "
     "credit limit, minimum due, or total outstanding mentioned elsewhere in "
     "the same email.\n"
+    "- currency: the ISO 4217 code for the currency the amount is in, matching "
+    'the symbol/word next to the amount — "INR" for Rs./₹/INR, "USD" for $/USD, '
+    '"AED" for Dhs/AED, "EUR" for €/EUR, "GBP" for £/GBP, and so on. Most alerts '
+    'are Indian-rupee — use "INR" when the amount carries Rs./₹ or no symbol at '
+    "all. Read the symbol on the transaction amount itself, not any INR "
+    "equivalent shown in brackets alongside it.\n"
     "- counterparty_name: ONLY the other party's name (sender for a credit, "
     'payee for a debit) — e.g. "MEHBOOBA PARAMBIL" or "NESTO HYPERMARKET". '
     'Never include the VPA/handle here. "" if no name is given.\n'
@@ -115,7 +143,7 @@ _FIELDS_PROMPT = (
     "- reference: the UPI reference number / transaction ID if present, else "
     '"".\n\n'
     "Return ONLY a JSON object with exactly these keys: direction, bank, "
-    "amount, counterparty_name, counterparty_vpa, is_card, is_upi, "
+    "amount, currency, counterparty_name, counterparty_vpa, is_card, is_upi, "
     "is_rupay_upi, last4, txn_date, reference."
 )
 
@@ -151,6 +179,7 @@ class _ExtractedFields:
     direction: str
     bank: str
     amount: Decimal
+    currency: str
     counterparty_name: str
     counterparty_vpa: str
     is_card: bool
@@ -201,7 +230,7 @@ def _is_transaction(text: str, client: OpenClawClient) -> bool | None:
     email is deferred rather than skipped."""
     messages = [
         {"role": "system", "content": _GATE_PROMPT},
-        {"role": "user", "content": "EMAIL:\n" + text[:4000]},
+        {"role": "user", "content": "EMAIL:\n" + text},
     ]
     raw = client.chat_structured(messages, schema=_GATE_SCHEMA, schema_name="is_transaction")
     try:
@@ -214,7 +243,7 @@ def _is_transaction(text: str, client: OpenClawClient) -> bool | None:
 def _extract_fields(text: str, client: OpenClawClient) -> _ExtractedFields | None:
     messages = [
         {"role": "system", "content": _FIELDS_PROMPT},
-        {"role": "user", "content": "EMAIL:\n" + text[:4000]},
+        {"role": "user", "content": "EMAIL:\n" + text},
     ]
     # OpenClawUnavailable is left to propagate (transient failure -> defer the
     # email in parse()); only a parseable-but-wrong response is swallowed here.
@@ -231,6 +260,7 @@ def _extract_fields(text: str, client: OpenClawClient) -> _ExtractedFields | Non
             direction=str(data["direction"]),
             bank=_canonical_bank(str(data["bank"])),
             amount=amount,
+            currency=_normalize_currency(str(data.get("currency", ""))),
             counterparty_name=str(data["counterparty_name"]).strip(),
             counterparty_vpa=str(data["counterparty_vpa"]).strip(),
             is_card=bool(data["is_card"]),
@@ -243,6 +273,34 @@ def _extract_fields(text: str, client: OpenClawClient) -> _ExtractedFields | Non
     except (KeyError, ValueError, TypeError, InvalidOperation):
         logger.info("llm_bank_parser extraction skipped (unparseable response): %r", raw)
         return None
+
+
+# The schema asks for an ISO 4217 code, but a JSON schema can't enforce that
+# shape, and in testing the model sometimes echoes the raw symbol ("$", "Rs.")
+# or a word ("dollars") instead. Map the common symbols/words back to a code,
+# and fall back to INR for anything unrecognized — the overwhelming majority of
+# these alerts are rupee, and a wrong-but-plausible foreign code would be worse
+# than the safe default (it's what every row got before this field existed).
+_CURRENCY_ALIASES = {
+    "₹": "INR", "RS": "INR", "RS.": "INR", "INR": "INR", "RUPEE": "INR", "RUPEES": "INR",
+    "$": "USD", "US$": "USD", "USD": "USD", "DOLLAR": "USD", "DOLLARS": "USD",
+    "€": "EUR", "EUR": "EUR", "EURO": "EUR", "EUROS": "EUR",
+    "£": "GBP", "GBP": "GBP", "POUND": "GBP", "POUNDS": "GBP",
+    "AED": "AED", "DHS": "AED", "DHS.": "AED", "DIRHAM": "AED", "DIRHAMS": "AED",
+}
+
+
+def _normalize_currency(raw: str) -> str:
+    token = (raw or "").strip().upper()
+    if not token:
+        return "INR"
+    if token in _CURRENCY_ALIASES:
+        return _CURRENCY_ALIASES[token]
+    # A clean 3-letter ISO code the model returned that we don't alias (e.g.
+    # SGD, CAD) — trust it. Anything else is noise; default to INR.
+    if re.fullmatch(r"[A-Z]{3}", token):
+        return token
+    return "INR"
 
 
 def _canonical_bank(bank: str) -> str:
@@ -309,10 +367,11 @@ class LlmBankParser:
             return []
 
         client = self._get_client()
+        text = _prepare_email_text(email.text)
         try:
-            if not _is_transaction(email.text, client):
+            if not _is_transaction(text, client):
                 return []
-            fields = _extract_fields(email.text, client)
+            fields = _extract_fields(text, client)
         except OpenClawUnavailable as exc:
             # Transient: the LLM backend is down / OOM, so we can't tell whether
             # this email is a transaction. Signal the collector to defer it
@@ -328,6 +387,7 @@ class LlmBankParser:
             ParsedTxn(
                 txn_date=fields.txn_date,
                 amount=fields.amount,
+                currency=fields.currency,
                 direction=fields.direction,
                 source=_source(fields),
                 account=_account_label(fields),
