@@ -205,10 +205,16 @@ def spend_trends(months: int = 6, db: Session = Depends(get_db)) -> SpendTrends:
 def spend_analysis(days: int = 45, db: Session = Depends(get_db)) -> SpendAnalysis:
     """Month-at-a-glance: dues across every card (latest statement per card)
     plus category/merchant breakdown over the combined transaction feed."""
-    cards = StatementRepository(db).latest_per_card()
+    today = date.today()
+    # Drop cards whose due date has already passed — a lapsed bill is not an
+    # upcoming due and must not keep accumulating into the totals.
+    cards = [
+        c
+        for c in StatementRepository(db).latest_per_card()
+        if not (c.due_date and c.due_date < today)
+    ]
     total_due = sum((c.total_due or Decimal(0)) for c in cards)
     min_due = sum((c.min_due or Decimal(0)) for c in cards)
-    today = date.today()
     upcoming = [c.due_date for c in cards if c.due_date and c.due_date >= today]
     next_due = min(upcoming) if upcoming else None
 

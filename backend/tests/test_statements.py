@@ -410,3 +410,42 @@ def test_reconcile_returns_ignores_institutional_descriptors(client):
     # Both remain real (uncategorized) transactions; the debit counts as spend.
     trends = client.get("/statements/trends?months=3").json()
     assert float(trends["aggregate_debits"]) == 53000.00
+
+
+def test_analysis_drops_cards_whose_due_date_has_passed(client):
+    """Upcoming card dues must exclude cards whose due date is already over —
+    a lapsed bill should not keep accumulating into total/min due or the list."""
+    from datetime import date, timedelta
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.repositories.statement_repo import StatementRepository
+    from app.services.statement_parsers.base import ParsedStatement
+
+    today = date.today()
+
+    def stmt(bank, last4, due, total, mn):
+        return ParsedStatement(
+            bank=bank, card_label=f"{bank} {last4}", card_last4=last4,
+            statement_date=due - timedelta(days=20) if due else today,
+            period_start=None, period_end=None,
+            total_due=Decimal(total), min_due=Decimal(mn),
+            due_date=due, total_spend=None,
+        )
+
+    with SessionLocal() as db:
+        repo = StatementRepository(db)
+        # Upcoming — counts.
+        repo.add_statement(stmt("hdfc", "1111", today + timedelta(days=5), "1000", "100"), "m1")
+        # Due today — the boundary still counts.
+        repo.add_statement(stmt("axis", "2222", today, "2000", "200"), "m2")
+        # Lapsed — must be dropped.
+        repo.add_statement(stmt("icici", "3333", today - timedelta(days=3), "9999", "999"), "m3")
+        db.commit()
+
+    data = client.get("/statements/analysis").json()
+    assert float(data["total_due_all_cards"]) == 3000.00  # 1000 + 2000, not 12999
+    assert float(data["min_due_all_cards"]) == 300.00
+    assert data["next_due_date"] == today.isoformat()
+    last4s = {c["card_last4"] for c in data["cards"]}
+    assert last4s == {"1111", "2222"}
