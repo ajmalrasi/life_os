@@ -35,14 +35,14 @@ def test_chat_caps_generation_tokens(monkeypatch):
             return _Response()
 
     monkeypatch.setattr(openclaw.httpx, "Client", FakeHttpClient)
-    monkeypatch.setattr(openclaw.settings, "openclaw_max_tokens", 384)
+    monkeypatch.setattr(openclaw.settings, "openclaw_max_tokens", 512)
 
     result = OpenClawClient(base_url="http://model").chat(
         [{"role": "user", "content": "hello"}], timeout=12.0
     )
     assert result == "ok"
     assert captured["timeout"] == 12.0
-    assert captured["payload"]["max_tokens"] == 384
+    assert captured["payload"]["max_tokens"] == 512
 
 
 def test_timeout_is_distinguished_from_unreachable(monkeypatch):

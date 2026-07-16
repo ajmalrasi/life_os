@@ -190,7 +190,7 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   suggestion chips. A timed-out `httpx` call was silently mislabeled "OpenClaw is
   unreachable." Fix: suggestions are deterministic (no model request), context
   JSON is compact, history is capped at 6 turns, tool rounds at 2, generation at
-  384 tokens, per-call timeout at 90s, and the whole Ask agent at 135s (below
+  512 tokens (with a 220-word prompt limit), per-call timeout at 90s, and the whole Ask agent at 135s (below
   Android's 150s read timeout). `OpenClawTimeout` is logged and the UI now says
   "The local model timed out"; true connection failures say it could not be
   reached. Keep these budgets aligned if changing the Android network timeout.
