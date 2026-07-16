@@ -208,6 +208,103 @@ def test_sync_endpoint_disabled_without_account(client):
     assert resp.json()["transactions_new"] == 0
 
 
+def _insert_repayment_rows(*, credit_amount: str = "5000.00") -> tuple[int, int]:
+    from app.database import SessionLocal
+    from app.models.transaction import Transaction
+
+    with SessionLocal() as db:
+        debit = Transaction(
+            txn_date=date(2026, 7, 15),
+            amount=Decimal("5000.00"),
+            currency="INR",
+            direction="debit",
+            counterparty="SHAJAHAN K (shajahan.zen-4@oksbi)",
+            account="HDFC Savings ..7672",
+            source="upi",
+            gmail_message_id="repay-debit",
+            dedup_key="upi:test:repay-debit",
+        )
+        credit = Transaction(
+            txn_date=date(2026, 7, 16),
+            amount=Decimal(credit_amount),
+            currency="INR",
+            direction="credit",
+            counterparty="SHAJAHAN K (shajahan.zen-2@okicici)",
+            account="HDFC Savings ..7672",
+            source="upi",
+            gmail_message_id="repay-credit",
+            dedup_key="upi:test:repay-credit",
+        )
+        db.add_all((debit, credit))
+        db.commit()
+        return debit.id, credit.id
+
+
+def test_manual_repayment_candidates_pair_and_undo(client):
+    from app.database import SessionLocal
+    from app.models.transaction import Transaction
+    from app.models.transaction_reconciliation import TransactionReconciliation
+
+    debit_id, credit_id = _insert_repayment_rows()
+
+    candidate_response = client.get(f"/expenses/{debit_id}/repayment-candidates")
+    assert candidate_response.status_code == 200
+    candidates = candidate_response.json()
+    assert [candidate["transaction"]["id"] for candidate in candidates] == [credit_id]
+    assert candidates[0]["match_score"] == 100
+    assert "same person" in candidates[0]["reason"]
+
+    create_response = client.post(
+        "/expenses/repayments",
+        json={"debit_transaction_id": debit_id, "credit_transaction_id": credit_id},
+    )
+    assert create_response.status_code == 201
+    repayment = create_response.json()
+    assert repayment["debit"]["category"] == "lent_returned"
+    assert repayment["credit"]["category"] == "lend_return"
+    assert repayment["debit"]["spend_category"] is None
+    assert repayment["credit"]["spend_category"] is None
+
+    duplicate_response = client.post(
+        "/expenses/repayments",
+        json={"debit_transaction_id": debit_id, "credit_transaction_id": credit_id},
+    )
+    assert duplicate_response.status_code == 409
+
+    # A destructive email rebuild must preserve audited pairs instead of
+    # deleting their source rows and losing the user's decision.
+    from app.repositories.expense_repo import ExpenseRepository
+
+    with SessionLocal() as db:
+        deleted = ExpenseRepository(db).delete_since(date(2026, 7, 1), sources=("upi",))
+        db.commit()
+        assert deleted == 0
+        assert db.get(Transaction, debit_id) is not None
+        assert db.get(Transaction, credit_id) is not None
+
+    undo_response = client.delete(f"/expenses/repayments/{repayment['id']}")
+    assert undo_response.status_code == 200
+    assert undo_response.json()["undone_at"] is not None
+    assert undo_response.json()["debit"]["category"] is None
+    assert undo_response.json()["credit"]["category"] is None
+
+    with SessionLocal() as db:
+        assert db.get(Transaction, debit_id).category is None
+        assert db.get(Transaction, credit_id).category is None
+        audit = db.get(TransactionReconciliation, repayment["id"])
+        assert audit is not None and audit.undone_at is not None
+
+
+def test_manual_repayment_rejects_different_amounts(client):
+    debit_id, credit_id = _insert_repayment_rows(credit_amount="4999.00")
+    response = client.post(
+        "/expenses/repayments",
+        json={"debit_transaction_id": debit_id, "credit_transaction_id": credit_id},
+    )
+    assert response.status_code == 422
+    assert "same amount" in response.json()["detail"]
+
+
 # Real HDFC Diners "A payment was made" alert body (HTML), trimmed.
 _HDFC_DINERS_HTML = """
 <html><body>

@@ -1,8 +1,14 @@
 package com.lifeos.app.presentation.money
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,11 +18,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,16 +35,24 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,11 +61,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.ScreenHeader
@@ -182,6 +202,7 @@ private data class CategoryTotal(val category: String, val total: BigDecimal, va
 fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showRangePicker by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val slice = remember(state.period, state.anchor, state.customStart, state.customEnd) {
         sliceFor(state.period, state.anchor, state.customStart, state.customEnd)
@@ -232,13 +253,40 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
         )
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LifeOsColors.Background)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    state.repaymentDebit?.let { debit ->
+        RepaymentDialog(
+            debit = debit,
+            candidates = state.repaymentCandidates,
+            selectedCreditId = state.selectedRepaymentCreditId,
+            loading = state.repaymentLoading,
+            saving = state.repaymentSaving,
+            error = state.repaymentError,
+            onSelectCredit = viewModel::selectRepaymentCredit,
+            onConfirm = viewModel::confirmRepayment,
+            onDismiss = viewModel::dismissRepayment,
+        )
+    }
+
+    LaunchedEffect(state.completedRepayment?.id) {
+        val repayment = state.completedRepayment ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "Repayment saved. Both transactions are excluded from totals.",
+            actionLabel = "Undo",
+            withDismissAction = true,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            viewModel.undoRepayment(repayment.id)
+        }
+        viewModel.consumeCompletedRepayment()
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -333,6 +381,7 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
                     total = catTotal,
                     txns = drillDownRows,
                     onBack = { viewModel.selectCategory(null) },
+                    onMarkAsRepaid = viewModel::beginRepayment,
                 )
             }
         }
@@ -343,6 +392,11 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
         }
 
         item { Spacer(Modifier.height(24.dp)) }
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+        )
     }
 }
 
@@ -641,15 +695,27 @@ private fun DrillDownCard(
     total: BigDecimal,
     txns: List<Transaction>,
     onBack: () -> Unit,
+    onMarkAsRepaid: (Transaction) -> Unit,
 ) {
     var sortKey by remember { mutableStateOf(TxnSortKey.DATE) }
     var descending by remember { mutableStateOf(true) }
+    var selectedTxn by remember { mutableStateOf<Transaction?>(null) }
     val sorted = remember(txns, sortKey, descending) {
         val base = when (sortKey) {
             TxnSortKey.DATE -> txns.sortedBy { it.txnDate }
             TxnSortKey.AMOUNT -> txns.sortedBy { it.amount }
         }
         if (descending) base.reversed() else base
+    }
+    selectedTxn?.let { txn ->
+        TransactionDetailDialog(
+            transaction = txn,
+            onDismiss = { selectedTxn = null },
+            onMarkAsRepaid = {
+                selectedTxn = null
+                onMarkAsRepaid(txn)
+            },
+        )
     }
     LifeOsCard(modifier = Modifier.fillMaxWidth(), accent = categoryColor(category)) {
         Column {
@@ -704,7 +770,9 @@ private fun DrillDownCard(
             if (sorted.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    sorted.forEach { txn -> TransactionRow(txn) }
+                    sorted.forEach { txn ->
+                        TransactionRow(txn, onClick = { selectedTxn = txn })
+                    }
                 }
             }
         }
@@ -733,11 +801,14 @@ private fun SortChip(
 }
 
 @Composable
-private fun TransactionRow(txn: Transaction) {
+private fun TransactionRow(txn: Transaction, onClick: (() -> Unit)? = null) {
     val isCredit = txn.direction == "credit"
     val amountColor = if (isCredit) LifeOsColors.Positive else LifeOsColors.OnBackground
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -770,6 +841,230 @@ private fun TransactionRow(txn: Transaction) {
             fontWeight = FontWeight.SemiBold,
             color = amountColor,
         )
+        if (onClick != null) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = "Transaction details",
+                tint = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TransactionDetailDialog(
+    transaction: Transaction,
+    onDismiss: () -> Unit,
+    onMarkAsRepaid: () -> Unit,
+) {
+    val whenText = transaction.txnAt
+        ?.atZone(ZoneId.systemDefault())
+        ?.format(DateTimeFormatter.ofPattern("dd MMM yyyy, h:mm a"))
+        ?: transaction.txnDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy"))
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Transaction details") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    transaction.counterparty?.takeIf { it.isNotBlank() } ?: transaction.source,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    transaction.amount.money(transaction.currency),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = LifeOsColors.OnBackground,
+                )
+                Text(
+                    "$whenText · ${transaction.account ?: transaction.source}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                Text(
+                    "If this money was returned, pair it with the incoming payment. The bank records will be kept.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onMarkAsRepaid) { Text("Mark as repaid") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun RepaymentDialog(
+    debit: Transaction,
+    candidates: List<RepaymentCandidate>,
+    selectedCreditId: Int?,
+    loading: Boolean,
+    saving: Boolean,
+    error: String?,
+    onSelectCredit: (Int) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose the returned payment") },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "Sent ${debit.amount.money(debit.currency)} to " +
+                        (debit.counterparty?.takeIf { it.isNotBlank() } ?: "this person"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Select the credit that returned this money. Both records will remain in the database but will stop affecting totals.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                when {
+                    loading -> Box(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                    candidates.isEmpty() -> Text(
+                        "No matching incoming payment was found. Sync Money and try again after the return is received.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                    else -> candidates.forEachIndexed { index, candidate ->
+                        val credit = candidate.transaction
+                        val selected = credit.id == selectedCreditId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (selected) LifeOsColors.PrimarySoft else LifeOsColors.SurfaceMuted
+                                )
+                                .border(
+                                    1.dp,
+                                    if (selected) LifeOsColors.Primary else Color.Transparent,
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .clickable { onSelectCredit(credit.id) }
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = { onSelectCredit(credit.id) },
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    credit.counterparty?.takeIf { it.isNotBlank() } ?: credit.source,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    (if (index == 0 && candidate.matchScore >= 85) "Likely match · " else "") +
+                                        candidate.reason + " · " +
+                                        credit.txnDate.format(DateTimeFormatter.ofPattern("dd MMM")),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = LifeOsColors.OnSurfaceMuted,
+                                )
+                            }
+                            Text(
+                                "+" + credit.amount.money(credit.currency),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = LifeOsColors.Positive,
+                            )
+                        }
+                    }
+                }
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.Warning)
+                }
+            }
+        },
+        confirmButton = {
+            HoldToConfirmButton(
+                enabled = selectedCreditId != null && !loading,
+                saving = saving,
+                onConfirm = onConfirm,
+            )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun HoldToConfirmButton(
+    enabled: Boolean,
+    saving: Boolean,
+    onConfirm: () -> Unit,
+) {
+    var holding by remember { mutableStateOf(false) }
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(holding, enabled, saving) {
+        if (holding && enabled && !saving) {
+            progress.snapTo(0f)
+            progress.animateTo(1f, animationSpec = tween(1_500, easing = LinearEasing))
+            if (holding) {
+                holding = false
+                onConfirm()
+            }
+        } else {
+            progress.snapTo(0f)
+        }
+    }
+
+    val canConfirm = enabled && !saving
+    Surface(
+        modifier = Modifier
+            .width(190.dp)
+            .height(48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .semantics {
+                onLongClick(label = "Confirm repayment") {
+                    if (canConfirm) onConfirm()
+                    canConfirm
+                }
+            }
+            .pointerInput(canConfirm) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    if (canConfirm) holding = true
+                    waitForUpOrCancellation()
+                    holding = false
+                }
+            },
+        color = if (canConfirm) LifeOsColors.Primary else LifeOsColors.SurfaceMuted,
+        contentColor = if (canConfirm) Color.White else LifeOsColors.OnSurfaceMuted,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (holding) {
+                LinearProgressIndicator(
+                    progress = { progress.value },
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color.White.copy(alpha = 0.28f),
+                    trackColor = Color.Transparent,
+                )
+            }
+            Text(
+                if (saving) "Saving…" else if (holding) "Keep holding…" else "Hold to confirm",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 

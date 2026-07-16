@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.Transaction
+import com.lifeos.app.domain.model.Repayment
+import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.repository.MoneyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +42,14 @@ data class MoneyUiState(
     val nextDueDate: LocalDate? = null,
     /** Per-card statements with an outstanding due, soonest due date first. */
     val cardDues: List<CardStatement> = emptyList(),
+    val repaymentDebit: Transaction? = null,
+    val repaymentCandidates: List<RepaymentCandidate> = emptyList(),
+    val selectedRepaymentCreditId: Int? = null,
+    val repaymentLoading: Boolean = false,
+    val repaymentSaving: Boolean = false,
+    val repaymentError: String? = null,
+    /** One-shot event consumed after its Undo snackbar is handled. */
+    val completedRepayment: Repayment? = null,
 )
 
 @HiltViewModel
@@ -133,6 +143,99 @@ class MoneyViewModel @Inject constructor(
 
     fun selectCategory(category: String?) {
         _state.update { it.copy(selectedCategory = category) }
+    }
+
+    fun beginRepayment(debit: Transaction) {
+        if (debit.direction != "debit") return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    repaymentDebit = debit,
+                    repaymentCandidates = emptyList(),
+                    selectedRepaymentCreditId = null,
+                    repaymentLoading = true,
+                    repaymentSaving = false,
+                    repaymentError = null,
+                )
+            }
+            val result = runCatching { repository.repaymentCandidates(debit.id) }
+            _state.update {
+                val candidates = result.getOrDefault(emptyList())
+                it.copy(
+                    repaymentCandidates = candidates,
+                    selectedRepaymentCreditId = candidates.firstOrNull()?.transaction?.id,
+                    repaymentLoading = false,
+                    repaymentError = result.exceptionOrNull()?.let { error ->
+                        error.message ?: "Couldn't load repayment options"
+                    },
+                )
+            }
+        }
+    }
+
+    fun selectRepaymentCredit(id: Int) {
+        _state.update { it.copy(selectedRepaymentCreditId = id, repaymentError = null) }
+    }
+
+    fun dismissRepayment() {
+        if (_state.value.repaymentSaving) return
+        _state.update {
+            it.copy(
+                repaymentDebit = null,
+                repaymentCandidates = emptyList(),
+                selectedRepaymentCreditId = null,
+                repaymentLoading = false,
+                repaymentError = null,
+            )
+        }
+    }
+
+    fun confirmRepayment() {
+        val snapshot = _state.value
+        val debitId = snapshot.repaymentDebit?.id ?: return
+        val creditId = snapshot.selectedRepaymentCreditId ?: return
+        if (snapshot.repaymentSaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(repaymentSaving = true, repaymentError = null) }
+            val result = runCatching { repository.markAsRepaid(debitId, creditId) }
+            if (result.isSuccess) {
+                val repayment = result.getOrThrow()
+                runCatching { repository.refresh(transactionDays = TRANSACTION_WINDOW_DAYS) }
+                _state.update {
+                    it.copy(
+                        repaymentDebit = null,
+                        repaymentCandidates = emptyList(),
+                        selectedRepaymentCreditId = null,
+                        repaymentSaving = false,
+                        completedRepayment = repayment,
+                    )
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        repaymentSaving = false,
+                        repaymentError = result.exceptionOrNull()?.message ?: "Couldn't mark this as repaid",
+                    )
+                }
+            }
+        }
+    }
+
+    fun undoRepayment(repaymentId: Int) {
+        viewModelScope.launch {
+            val result = runCatching { repository.undoRepayment(repaymentId) }
+            if (result.isSuccess) {
+                runCatching { repository.refresh(transactionDays = TRANSACTION_WINDOW_DAYS) }
+            } else {
+                _state.update {
+                    it.copy(error = result.exceptionOrNull()?.message ?: "Couldn't undo repayment")
+                }
+            }
+        }
+    }
+
+    fun consumeCompletedRepayment() {
+        _state.update { it.copy(completedRepayment = null) }
     }
 
     private fun shift(anchor: LocalDate, period: SpendPeriod, steps: Long): LocalDate = when (period) {

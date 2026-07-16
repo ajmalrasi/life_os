@@ -152,6 +152,18 @@ data class Transaction(
     val reference: String?,
 )
 
+data class RepaymentCandidate(
+    val transaction: Transaction,
+    val matchScore: Int,
+    val reason: String,
+)
+
+data class Repayment(
+    val id: Int,
+    val debit: Transaction,
+    val credit: Transaction,
+)
+
 /** One monthly credit-card statement summary. */
 data class CardStatement(
     val id: Int,

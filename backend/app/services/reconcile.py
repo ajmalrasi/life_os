@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models.transaction import Transaction
+from app.models.transaction_reconciliation import TransactionReconciliation
 
 # Categories that must never count as spend.
 EXCLUDED_FROM_SPEND = {"transfer", "lent_returned", "lend_return", "reversed_debit", "reversal_credit"}
@@ -183,6 +184,17 @@ def reconcile_returns(db: Session, window_days: int = 60) -> int:
     debits = [t for t in rows if t.direction == "debit"]
     credits = [t for t in rows if t.direction == "credit"]
     used: set[int] = set()
+    # If the user undoes a suggested pair, do not silently recreate that exact
+    # pair during the next email sync. They may still pair either side with a
+    # different transaction manually.
+    blocked_pairs = set(
+        db.execute(
+            select(
+                TransactionReconciliation.debit_transaction_id,
+                TransactionReconciliation.credit_transaction_id,
+            ).where(TransactionReconciliation.undone_at.is_not(None))
+        ).all()
+    )
     pairs = 0
     for d in debits:
         if _INSTITUTIONAL_PAT.search(d.counterparty or "") or _INSTITUTIONAL_PAT.search(d.raw_snippet or ""):
@@ -192,6 +204,8 @@ def reconcile_returns(db: Session, window_days: int = 60) -> int:
             continue
         for c in credits:
             if c.id in used or c.amount != d.amount:
+                continue
+            if (d.id, c.id) in blocked_pairs:
                 continue
             if c.txn_date < d.txn_date or c.txn_date > d.txn_date + timedelta(days=window_days):
                 continue
@@ -203,6 +217,16 @@ def reconcile_returns(db: Session, window_days: int = 60) -> int:
             if cn == dn or cn in dn or dn in cn:
                 d.category = "lent_returned"
                 c.category = "lend_return"
+                db.add(
+                    TransactionReconciliation(
+                        kind="friend_repayment",
+                        source="automatic",
+                        debit_transaction_id=d.id,
+                        credit_transaction_id=c.id,
+                        previous_debit_category=None,
+                        previous_credit_category=None,
+                    )
+                )
                 used.add(c.id)
                 pairs += 1
                 break

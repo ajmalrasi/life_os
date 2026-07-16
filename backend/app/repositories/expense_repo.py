@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.account_identity import normalize_account
 from app.models.sync_state import CollectorState
 from app.models.transaction import Transaction
+from app.models.transaction_reconciliation import TransactionReconciliation
 from app.services.expense_parsers.base import ParsedTxn
 
 # Mirrors services.reconcile._norm — duplicated rather than imported to keep
@@ -167,6 +168,14 @@ class ExpenseRepository:
         conditions = [Transaction.txn_date >= since, Transaction.source.in_(sources)]
         if account_prefix:
             conditions.append(Transaction.account.like(f"{account_prefix}%"))
+        # Rebuilds must not erase an audited repayment (or fail halfway on its
+        # RESTRICT foreign keys). Keeping linked source rows is safe: their
+        # existing dedup keys make the re-ingest skip them, while every
+        # unlinked row in the requested scope is still rebuilt normally.
+        linked_ids = select(TransactionReconciliation.debit_transaction_id).union(
+            select(TransactionReconciliation.credit_transaction_id)
+        )
+        conditions.append(Transaction.id.notin_(linked_ids))
         result = self.db.execute(delete(Transaction).where(*conditions))
         return result.rowcount or 0
 

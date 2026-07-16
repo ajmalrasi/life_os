@@ -18,6 +18,8 @@ import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.MonthTrendDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
+import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
+import com.lifeos.app.data.remote.dto.RepaymentDto
 import com.lifeos.app.data.remote.dto.SpendAnalysisDto
 import com.lifeos.app.data.remote.dto.SpendTrendsDto
 import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
@@ -33,6 +35,8 @@ import com.lifeos.app.domain.model.HealthSample
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MonthSpend
 import com.lifeos.app.domain.model.MoodCheckin
+import com.lifeos.app.domain.model.Repayment
+import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.SynthesizedInsight
@@ -129,6 +133,17 @@ fun TransactionEntity.toDomain() = Transaction(
     account = account,
     source = source,
     reference = reference,
+)
+fun TransactionDto.toDomain() = toEntity().toDomain()
+fun RepaymentCandidateDto.toDomain() = RepaymentCandidate(
+    transaction = transaction.toDomain(),
+    matchScore = matchScore,
+    reason = reason,
+)
+fun RepaymentDto.toDomain() = Repayment(
+    id = id,
+    debit = debit.toDomain(),
+    credit = credit.toDomain(),
 )
 
 // --- Money: card statements ---

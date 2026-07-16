@@ -3,12 +3,15 @@ package com.lifeos.app.data.repository
 import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.TransactionDao
 import com.lifeos.app.data.remote.LifeOsApi
+import com.lifeos.app.data.remote.dto.RepaymentCreateDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.Transaction
+import com.lifeos.app.domain.model.Repayment
+import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.repository.MoneyRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -53,4 +56,13 @@ class MoneyRepositoryImpl @Inject constructor(
         api.syncStatements()
         refresh()
     }
+
+    override suspend fun repaymentCandidates(debitId: Int): List<RepaymentCandidate> =
+        api.repaymentCandidates(debitId).map { it.toDomain() }
+
+    override suspend fun markAsRepaid(debitId: Int, creditId: Int): Repayment =
+        api.markAsRepaid(RepaymentCreateDto(debitId, creditId)).toDomain()
+
+    override suspend fun undoRepayment(repaymentId: Int): Repayment =
+        api.undoRepayment(repaymentId).toDomain()
 }

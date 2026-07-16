@@ -310,6 +310,19 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   complete source; enable **Workouts** in the automation if workout data is wanted
   (HC's old workouts were deleted). Activity is additive so multiple intra-day HAE
   points sum correctly.
+- ✅ **Manual “Mark as repaid” flow (2026-07-16).** Money transaction rows now
+  open a details dialog with a deliberately guarded repayment action: the backend
+  ranks later same-amount credits (human display names are compared separately
+  from drifting UPI handles), the user explicitly selects the return, and Android
+  requires a **1.5-second press-and-hold** before saving. The original bank rows
+  are never deleted: the debit is tagged `lent_returned`, the credit `lend_return`,
+  and both disappear from spending/income totals. Every pairing is audited in
+  `transaction_reconciliations`; the success snackbar provides Undo, which restores
+  both prior categories and leaves an `undone_at` audit record. API:
+  `GET /expenses/{id}/repayment-candidates`, `POST /expenses/repayments`, and
+  `DELETE /expenses/repayments/{id}`. Rebuild deletion deliberately preserves any
+  transaction referenced by an audit record, so a Gmail reparse cannot erase a
+  user decision. Backend full suite and Android `assembleDebug` + unit tests pass.
 
 ## 7. Open items / next steps
 
@@ -356,7 +369,9 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 backend/app/api/routes/expenses.py       # /expenses (list), /expenses/new (poll), /expenses/sync
 backend/app/services/expense_collector.py # incremental cursor sync (only-new emails)
 backend/app/services/expense_parsers/     # per-source parsers (registry); add a bank = add a file
+backend/app/services/repayments.py         # repayment candidates, validation, pair + Undo
 backend/app/models/transaction.py         # transactions table (idempotent on dedup_key)
+backend/app/models/transaction_reconciliation.py # audited repayment pairs + Undo state
 backend/app/api/routes/health_data.py    # /health/batch + /health/auto-export
 backend/app/api/routes/analytics.py      # /analytics/recompute (bg github scan), scores, state
 backend/app/services/apple_ingest.py     # Health Auto Export JSON -> records

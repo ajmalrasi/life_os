@@ -17,6 +17,9 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.RecomputeResultDto
+import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
+import com.lifeos.app.data.remote.dto.RepaymentCreateDto
+import com.lifeos.app.data.remote.dto.RepaymentDto
 import com.lifeos.app.data.remote.dto.SpendAnalysisDto
 import com.lifeos.app.data.remote.dto.SpendTrendsDto
 import com.lifeos.app.data.remote.dto.StatementSyncResultDto
@@ -24,7 +27,9 @@ import com.lifeos.app.data.remote.dto.SuggestionsResponseDto
 import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Query
 
@@ -77,6 +82,17 @@ interface LifeOsApi {
 
     @POST("expenses/sync")
     suspend fun syncExpenses(): ExpenseSyncResultDto
+
+    @GET("expenses/{transactionId}/repayment-candidates")
+    suspend fun repaymentCandidates(
+        @Path("transactionId") transactionId: Int,
+    ): List<RepaymentCandidateDto>
+
+    @POST("expenses/repayments")
+    suspend fun markAsRepaid(@Body body: RepaymentCreateDto): RepaymentDto
+
+    @DELETE("expenses/repayments/{repaymentId}")
+    suspend fun undoRepayment(@Path("repaymentId") repaymentId: Int): RepaymentDto
 
     @GET("statements")
     suspend fun listStatements(@Query("months") months: Int): List<CardStatementDto>

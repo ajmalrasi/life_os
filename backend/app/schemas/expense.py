@@ -29,6 +29,27 @@ class TransactionOut(BaseModel):
     created_at: datetime
 
 
+class RepaymentCandidateOut(BaseModel):
+    transaction: TransactionOut
+    match_score: int
+    reason: str
+
+
+class RepaymentCreate(BaseModel):
+    debit_transaction_id: int
+    credit_transaction_id: int
+
+
+class RepaymentOut(BaseModel):
+    id: int
+    kind: str
+    source: str
+    debit: TransactionOut
+    credit: TransactionOut
+    created_at: datetime
+    undone_at: datetime | None = None
+
+
 class ExpenseSyncResult(BaseModel):
     parsers_run: int
     emails_scanned: int

@@ -11,6 +11,8 @@ import com.lifeos.app.domain.model.HealthSample
 import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
+import com.lifeos.app.domain.model.Repayment
+import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.SynthesizedInsight
@@ -85,6 +87,16 @@ interface MoneyRepository {
      * Jetson cron already runs this periodically, so this is a user-initiated
      * "check now" rather than the primary ingestion path. */
     suspend fun syncNow()
+
+    /** Later credits with matching amount/currency, ranked as possible returns
+     * of the selected debit. Suggestions never mutate data. */
+    suspend fun repaymentCandidates(debitId: Int): List<RepaymentCandidate>
+
+    /** Reversibly exclude a lent debit and its returned credit from totals. */
+    suspend fun markAsRepaid(debitId: Int, creditId: Int): Repayment
+
+    /** Restore both transactions to their previous classifications. */
+    suspend fun undoRepayment(repaymentId: Int): Repayment
 }
 
 interface SettingsRepository {

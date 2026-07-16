@@ -170,6 +170,26 @@ data class TransactionDto(
 )
 
 @Serializable
+data class RepaymentCandidateDto(
+    val transaction: TransactionDto,
+    @SerialName("match_score") val matchScore: Int,
+    val reason: String,
+)
+
+@Serializable
+data class RepaymentCreateDto(
+    @SerialName("debit_transaction_id") val debitTransactionId: Int,
+    @SerialName("credit_transaction_id") val creditTransactionId: Int,
+)
+
+@Serializable
+data class RepaymentDto(
+    val id: Int,
+    val debit: TransactionDto,
+    val credit: TransactionDto,
+)
+
+@Serializable
 data class ExpenseSyncResultDto(
     @SerialName("parsers_run") val parsersRun: Int = 0,
     @SerialName("emails_scanned") val emailsScanned: Int = 0,

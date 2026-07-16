@@ -17,12 +17,16 @@ from app.schemas.expense import (
     RawEmailFinalizeResult,
     RawEmailProcessResult,
     TransactionOut,
+    RepaymentCandidateOut,
+    RepaymentCreate,
+    RepaymentOut,
 )
 from app.services.expense_collector import ExpenseCollector
 from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankParser
 from app.services.gmail_client import GmailClient
 from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
 from app.services.reconcile import EXCLUDED_FROM_SPEND
+from app.services.repayments import RepaymentError, RepaymentService
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -51,6 +55,24 @@ def _gmail_client(settings: Settings) -> GmailClient:
     )
 
 
+def _repayment_out(reconciliation, db: Session) -> RepaymentOut:
+    service = RepaymentService(db)
+    debit, credit = service.transactions_for(reconciliation)
+    return RepaymentOut(
+        id=reconciliation.id,
+        kind=reconciliation.kind,
+        source=reconciliation.source,
+        debit=_to_out([debit], db)[0],
+        credit=_to_out([credit], db)[0],
+        created_at=reconciliation.created_at,
+        undone_at=reconciliation.undone_at,
+    )
+
+
+def _repayment_http_error(exc: RepaymentError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
 @router.get("", response_model=list[TransactionOut])
 def list_transactions(
     days: int = 30,
@@ -70,6 +92,57 @@ def new_since(after_id: int = 0, limit: int = 500, db: Session = Depends(get_db)
     last id it has seen and polls for only the new ones (oldest-first)."""
     rows = ExpenseRepository(db).since_id(after_id, limit=limit)
     return _to_out(rows, db)
+
+
+@router.get("/{transaction_id}/repayment-candidates", response_model=list[RepaymentCandidateOut])
+def repayment_candidates(
+    transaction_id: int,
+    window_days: int = 120,
+    db: Session = Depends(get_db),
+) -> list[RepaymentCandidateOut]:
+    """Rank later credits that could be the return of a selected debit.
+
+    Matching is deliberately advisory: drifting UPI handles make fuzzy identity
+    useful, but only the user-confirmed POST below changes financial totals.
+    """
+    if not 1 <= window_days <= 365:
+        raise HTTPException(status_code=422, detail="window_days must be between 1 and 365")
+    try:
+        candidates = RepaymentService(db).candidates(transaction_id, window_days)
+    except RepaymentError as exc:
+        raise _repayment_http_error(exc) from exc
+    return [
+        RepaymentCandidateOut(
+            transaction=_to_out([candidate.transaction], db)[0],
+            match_score=candidate.match_score,
+            reason=candidate.reason,
+        )
+        for candidate in candidates
+    ]
+
+
+@router.post("/repayments", response_model=RepaymentOut, status_code=201)
+def create_repayment(payload: RepaymentCreate, db: Session = Depends(get_db)) -> RepaymentOut:
+    """Pair a debit with its returned credit and exclude both from totals."""
+    try:
+        reconciliation = RepaymentService(db).create(
+            payload.debit_transaction_id, payload.credit_transaction_id
+        )
+    except RepaymentError as exc:
+        db.rollback()
+        raise _repayment_http_error(exc) from exc
+    return _repayment_out(reconciliation, db)
+
+
+@router.delete("/repayments/{repayment_id}", response_model=RepaymentOut)
+def undo_repayment(repayment_id: int, db: Session = Depends(get_db)) -> RepaymentOut:
+    """Undo a user-confirmed repayment while retaining its audit record."""
+    try:
+        reconciliation = RepaymentService(db).undo(repayment_id)
+    except RepaymentError as exc:
+        db.rollback()
+        raise _repayment_http_error(exc) from exc
+    return _repayment_out(reconciliation, db)
 
 
 @router.post("/sync", response_model=ExpenseSyncResult)
