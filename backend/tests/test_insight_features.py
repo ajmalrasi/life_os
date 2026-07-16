@@ -129,15 +129,20 @@ def test_suggest_returns_defaults_without_data():
     assert client.calls == 0
 
 
-def test_suggest_uses_model_questions_when_available():
-    client = _FakeClient('["Is my sleep helping output?", "Am I recovering enough?"]')
+def test_suggest_is_deterministic_and_never_occupies_the_model():
+    client = _FakeClient('["model should not be called"]')
     out = _svc(client, has_data=True).suggest()
-    assert out == ["Is my sleep helping output?", "Am I recovering enough?"]
+    assert out == DEFAULT_SUGGESTIONS
+    assert client.calls == 0
 
 
 def test_suggest_falls_back_when_model_unavailable():
-    assert _svc(_FakeClient(fail=True), has_data=True).suggest() == DEFAULT_SUGGESTIONS
+    client = _FakeClient(fail=True)
+    assert _svc(client, has_data=True).suggest() == DEFAULT_SUGGESTIONS
+    assert client.calls == 0
 
 
 def test_suggest_falls_back_on_junk_response():
-    assert _svc(_FakeClient("sorry I can't"), has_data=True).suggest() == DEFAULT_SUGGESTIONS
+    client = _FakeClient("sorry I can't")
+    assert _svc(client, has_data=True).suggest() == DEFAULT_SUGGESTIONS
+    assert client.calls == 0

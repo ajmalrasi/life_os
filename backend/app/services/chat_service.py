@@ -9,10 +9,13 @@ conclusion cites supporting metrics" requirement.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
+from time import monotonic
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.repositories.analytics_repo import (
     InsightRepository,
     ScoreRepository,
@@ -25,11 +28,14 @@ from app.repositories.mood_repo import MoodRepository
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import OpenClawClient, OpenClawTimeout, OpenClawUnavailable
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 # Max tool-call round trips before we force a final answer. Keeps the agent loop
 # bounded so a misbehaving model can't spin forever.
-MAX_AGENT_STEPS = 4
+MAX_AGENT_STEPS = 2
 
 # Shown before there's enough data to tailor questions, and whenever the LLM is
 # unreachable. Kept generic but useful.
@@ -39,19 +45,6 @@ DEFAULT_SUGGESTIONS = [
     "Am I moving toward burnout?",
     "What should I focus on today?",
 ]
-
-_SUGGESTION_PROMPT = (
-    "You are LifeOS. Below is a JSON snapshot of one user's recent health, mood, "
-    "fitness and coding-execution data. Propose 4 SHORT questions this specific "
-    "user would find worth asking their data right now.\n\n"
-    "RULES:\n"
-    "- Tailor them to what's actually in the snapshot — reference real signals "
-    "(a current state, a discovered pattern, a notable metric, or a gap worth "
-    "filling). Avoid generic wellness fluff.\n"
-    "- Each question <= 9 words, first person ('my'/'I'), ends with '?'.\n"
-    "- Make them distinct from each other.\n"
-    "- Return ONLY a JSON array of 4 strings. No prose, no keys, no code fences."
-)
 
 SYSTEM_PROMPT = (
     "You are LifeOS, a personal intelligence companion. You analyze one user's own "
@@ -213,14 +206,16 @@ class ChatService:
             )
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for m in req.history[-10:]:
+        # Keep enough continuity for a follow-up without repeatedly feeding the
+        # small 4k-context Jetson model an entire long conversation.
+        for m in req.history[-6:]:
             messages.append({"role": m.role, "content": m.content})
         messages.append(
             {
                 "role": "user",
                 "content": (
                     "DATA CONTEXT (JSON, your only source of truth):\n"
-                    + json.dumps(context, indent=2)
+                    + json.dumps(context, separators=(",", ":"))
                     + f"\n\nQUESTION: {req.message}"
                 ),
             }
@@ -229,18 +224,26 @@ class ChatService:
         try:
             answer = self._run_agent(messages)
             grounded = True
-        except OpenClawUnavailable:
-            answer = self._fallback(context, req.message)
+        except OpenClawTimeout as exc:
+            logger.warning("Ask local-model timeout: %s", exc)
+            answer = self._fallback(
+                context,
+                "The local model timed out before it could finish",
+            )
+            grounded = True
+        except OpenClawUnavailable as exc:
+            logger.warning("Ask local-model unavailable: %s", exc)
+            answer = self._fallback(context, "The local model could not be reached")
             grounded = True
 
         return ChatResponse(answer=answer, citations=self._citations(context), grounded=grounded)
 
     def suggest(self, days: int = 30) -> list[str]:
-        """Propose data-grounded starter questions for the Ask screen.
+        """Propose data-grounded starter questions without invoking the LLM.
 
-        Best-effort and never raises: with no data, or when OpenClaw is
-        unreachable or returns something unparseable, falls back to the static
-        defaults so the UI always has something to show.
+        This endpoint runs when the Ask screen opens. Keeping it deterministic
+        prevents a decorative background request from occupying the Jetson's
+        only model exactly when the user submits a real question.
         """
         context = self.build_context(days)
         has_data = (
@@ -250,20 +253,23 @@ class ChatService:
         if not has_data:
             return DEFAULT_SUGGESTIONS
 
-        messages = [
-            {"role": "system", "content": _SUGGESTION_PROMPT},
-            {
-                "role": "user",
-                "content": "DATA SNAPSHOT (JSON):\n" + json.dumps(context, indent=2),
-            },
-        ]
-        try:
-            raw = self.client.chat(messages, temperature=0.7)
-        except OpenClawUnavailable:
-            return DEFAULT_SUGGESTIONS
-
-        questions = _parse_questions(raw)
-        return questions or DEFAULT_SUGGESTIONS
+        questions: list[str] = []
+        state = context.get("current_state")
+        if state and state.get("state") and state["state"] != "unknown":
+            questions.append(f"Why am I in a {state['state']} state?")
+        averages = context.get("averages") or {}
+        if averages.get("sleep_score") is not None and averages.get("execution_score") is not None:
+            questions.append("How is my sleep affecting execution?")
+        if averages.get("burnout_risk") is not None:
+            questions.append("Is my burnout risk changing?")
+        if context.get("spending"):
+            questions.append("What is driving my recent spending?")
+        if context.get("discovered_patterns"):
+            questions.append("Which habits most affect my performance?")
+        for question in DEFAULT_SUGGESTIONS:
+            if question not in questions:
+                questions.append(question)
+        return questions[:4]
 
     def _run_agent(self, messages: list[dict]) -> str:
         """Agentic loop: let OpenClaw call data tools, then answer.
@@ -275,8 +281,20 @@ class ChatService:
         caller can fall back to a deterministic summary.
         """
         tools = AgentTools(self.db)
+        deadline = monotonic() + settings.openclaw_chat_deadline_seconds
+
+        def remaining_timeout() -> float:
+            remaining = deadline - monotonic()
+            if remaining <= 1.0:
+                raise OpenClawTimeout("Ask request exceeded its overall time budget")
+            return min(getattr(self.client, "timeout", settings.openclaw_timeout_seconds), remaining)
+
         for _ in range(MAX_AGENT_STEPS):
-            message = self.client.chat_with_tools(messages, agent_tools.TOOL_SCHEMAS)
+            message = self.client.chat_with_tools(
+                messages,
+                agent_tools.TOOL_SCHEMAS,
+                timeout=remaining_timeout(),
+            )
             tool_calls = message.get("tool_calls") or []
             if not tool_calls:
                 return message.get("content") or ""
@@ -301,15 +319,15 @@ class ChatService:
                 )
 
         # Hit the step cap — ask once more, without tools, for a closing answer.
-        return self.client.chat(messages)
+        return self.client.chat(messages, timeout=remaining_timeout())
 
-    def _fallback(self, context: dict, question: str) -> str:
-        """Deterministic, data-only answer when the LLM server is unreachable.
+    def _fallback(self, context: dict, reason: str) -> str:
+        """Deterministic, data-only answer when local-model generation fails.
 
         Still grounded — it only restates numbers we actually have.
         """
         avgs = context["averages"]
-        parts = ["OpenClaw is unreachable, so here is a data-only summary:"]
+        parts = [f"{reason}, so here is a data-only summary:"]
         for key, value in avgs.items():
             if value is not None:
                 parts.append(f"- {key.replace('_', ' ')}: {value} (avg over {context['window']['days']}d)")
@@ -323,30 +341,3 @@ class ChatService:
             for p in context["discovered_patterns"][:5]:
                 parts.append(f"- {p['summary']}")
         return "\n".join(parts)
-
-
-def _parse_questions(raw: str) -> list[str]:
-    """Extract up to 4 clean question strings from a model response."""
-    if not raw:
-        return []
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        nl = text.find("\n")
-        if nl != -1:
-            text = text[nl + 1 :]
-    start, end = text.find("["), text.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        text = text[start : end + 1]
-    try:
-        data = json.loads(text)
-    except (ValueError, TypeError):
-        return []
-    if not isinstance(data, list):
-        return []
-    out: list[str] = []
-    for item in data:
-        q = str(item).strip()
-        if q:
-            out.append(q[:120])
-    return out[:4]

@@ -17,7 +17,7 @@ backend** that ingests health, mood, and coding-execution data, scores it
 |---|---|---|
 | Backend API (FastAPI) | **Jetson Orin Nano**, `backend-api-1` container, port 8000 (0.0.0.0) | Reachable on LAN at `http://192.168.3.30:8000` |
 | Postgres 16 | Jetson, `backend-db-1`, port 5432 | db/user/pass all `lifeos` |
-| LLM (Ollama) | Jetson host, port 11434, model `qwen3.5:4b` | user systemd service `lifeos-ollama` |
+| LLM (MLC-LLM) | Jetson host, port 11434, `openclaw-mlc` container, Qwen3 4B | OpenAI-compatible API; LifeOS Ask calls it directly |
 | Android app | `android/` (Kotlin, Compose, Hilt, WorkManager, Room) | reads Health Connect; talks to the backend |
 | Dev machine | the Mac | **no** docker/postgres/python-deps here — backend only runs on the Jetson |
 
@@ -109,12 +109,16 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 - **The Jetson git checkout is reconciled to `origin/main`** — deploy with
   `git pull`. (Historically it lagged and was deployed by rsync; don't go back to
   that.) `backend/.env` is gitignored and survives `git reset --hard` — never clobber it.
-- **Ollama dies on GPU OOM.** The Jetson has ~8GB unified RAM; under memory
-  pressure Ollama returns `cudaMalloc ... out of memory` and the chat **silently
-  falls back** to a deterministic summary ("OpenClaw is unreachable"). A **reboot**
-  fixes it (Ollama is an enabled *user* service with linger on, and containers
-  `restart: unless-stopped`, so everything comes back automatically). Check Ollama
-  with `systemctl --user status lifeos-ollama`, not the system bus.
+- **LifeOS Ask bypasses the OpenClaw gateway (current architecture, verified
+  2026-07-16).** Despite legacy class/message names, the API calls the
+  OpenAI-compatible **MLC-LLM** server directly at
+  `http://host.docker.internal:11434`; the model is the `openclaw-mlc` Docker
+  container (Qwen3 4B). The separately-running `openclaw-gateway` user service on
+  port 18789 is not on the Ask request path. `/chat/health` only checks
+  `/v1/models`, so it proves reachability, not that generation will finish. The
+  model holds ~4.7GB of the Jetson's 7.4GB RAM; on the 2026-07-16 investigation it
+  had zero restarts and was not OOM-killed — observed failures were generation
+  timeouts, not a dead gateway.
 - **Don't make the post-sync recompute slow again.** `/analytics/recompute` runs
   the health/score recompute synchronously (fast) and the **GitHub execution scan
   (44 repos) in a background task** — it used to be synchronous and made syncs take
@@ -180,9 +184,16 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   sparse recent data the big number can be an older day's score; the card now
   mutes it + tags `latest · <date>` when stale (`isStale` in `TrendChart`). Don't
   re-introduce copy that calls the single point "today".
-- **The chat (Ask tab) works but Ollama on the Jetson is slow** — a single grounded
-  answer took ~8 min in testing (qwen3.5:4b on ~8GB unified RAM). It does return a
-  real, cited answer; just don't assume a stuck "Thinking…" means it's broken.
+- **Ask latency is bounded now (2026-07-16).** Previously each model call could
+  run 120s with no output-token limit, the agent could make 4 tool rounds plus a
+  closing call, and merely opening Ask triggered a competing LLM call for
+  suggestion chips. A timed-out `httpx` call was silently mislabeled "OpenClaw is
+  unreachable." Fix: suggestions are deterministic (no model request), context
+  JSON is compact, history is capped at 6 turns, tool rounds at 2, generation at
+  384 tokens, per-call timeout at 90s, and the whole Ask agent at 135s (below
+  Android's 150s read timeout). `OpenClawTimeout` is logged and the UI now says
+  "The local model timed out"; true connection failures say it could not be
+  reached. Keep these budgets aligned if changing the Android network timeout.
 - **Git from the Cowork sandbox can't delete `.git/*.lock` (EPERM).** A commit
   succeeds the first time but its lock-cleanup `unlink` is denied by the mount, so
   `.git/index.lock` + `.git/HEAD.lock` are left behind and **block every later

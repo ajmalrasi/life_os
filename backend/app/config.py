@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     openclaw_base_url: str = "http://localhost:8080"
     openclaw_model: str = "openclaw"
     openclaw_api_key: str = ""  # optional; many local servers ignore it
-    openclaw_timeout_seconds: float = 120.0
+    # One generation must fail before the Android client's overall 150s read
+    # timeout. ChatService also enforces a whole-request deadline across tool
+    # rounds, so several individually-valid calls cannot run forever.
+    openclaw_timeout_seconds: float = 90.0
+    openclaw_chat_deadline_seconds: float = 135.0
+    openclaw_max_tokens: int = 384
 
     # GitHub execution collection via the official github-mcp-server sidecar.
     # The sidecar runs inside docker-compose; GITHUB_TOKEN is its auth credential.

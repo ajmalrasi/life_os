@@ -24,6 +24,12 @@ class OpenClawUnavailable(RuntimeError):
     pass
 
 
+class OpenClawTimeout(OpenClawUnavailable):
+    """The local model was reachable but did not finish in time."""
+
+    pass
+
+
 def _strip_think(text: str) -> str:
     """Drop a leading ``<think>...</think>`` reasoning block, if present.
 
@@ -108,7 +114,12 @@ class OpenClawClient:
             headers["Authorization"] = f"Bearer {settings.openclaw_api_key}"
         return headers
 
-    def chat(self, messages: list[dict[str, str]], temperature: float = 0.2) -> str:
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.2,
+        timeout: float | None = None,
+    ) -> str:
         """Call /v1/chat/completions and return the assistant text."""
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
@@ -116,12 +127,15 @@ class OpenClawClient:
             "messages": messages,
             "temperature": temperature,
             "stream": False,
+            "max_tokens": settings.openclaw_max_tokens,
         }
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            with httpx.Client(timeout=timeout or self.timeout) as client:
                 resp = client.post(url, json=payload, headers=self._headers())
                 resp.raise_for_status()
                 data = resp.json()
+        except httpx.TimeoutException as exc:
+            raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
         except (httpx.HTTPError, ValueError) as exc:  # network error or bad JSON
             raise OpenClawUnavailable(f"OpenClaw request failed: {exc}") from exc
 
@@ -172,6 +186,7 @@ class OpenClawClient:
         messages: list[dict],
         tools: list[dict],
         temperature: float = 0.2,
+        timeout: float | None = None,
     ) -> dict:
         """Call /v1/chat/completions with function tools; return the raw message.
 
@@ -187,12 +202,15 @@ class OpenClawClient:
             "tool_choice": "auto",
             "temperature": temperature,
             "stream": False,
+            "max_tokens": settings.openclaw_max_tokens,
         }
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            with httpx.Client(timeout=timeout or self.timeout) as client:
                 resp = client.post(url, json=payload, headers=self._headers())
                 resp.raise_for_status()
                 data = resp.json()
+        except httpx.TimeoutException as exc:
+            raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise OpenClawUnavailable(f"OpenClaw request failed: {exc}") from exc
 
