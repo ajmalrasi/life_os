@@ -124,6 +124,7 @@ private fun categoryColor(category: String): Color = when (category.lowercase())
     "investments" -> Color(0xFF5F6FAE)   // slate indigo
     "entertainment" -> Color(0xFFC05F86) // rose clay
     "legal_fees" -> Color(0xFF8A8578)    // warm stone
+    "emi" -> Color(0xFFD07B43)           // warm copper
     "emi_fees" -> Color(0xFFC99A3C)      // ochre
     "wallet_load" -> Color(0xFF5FA396)   // sea teal
     "travel" -> Color(0xFF58A3B4)        // lagoon

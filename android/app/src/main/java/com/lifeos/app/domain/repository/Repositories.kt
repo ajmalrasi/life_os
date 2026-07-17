@@ -67,7 +67,7 @@ interface ChatRepository {
 }
 
 interface MoneyRepository {
-    /** Cached transactions in the trailing window (live UPI feed + statement line items). */
+    /** Cached transactions in the trailing window (live alerts + selected statement EMI costs). */
     fun observeTransactions(days: Int): Flow<List<Transaction>>
 
     /** Cached per-card statement summaries. */

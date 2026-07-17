@@ -344,6 +344,10 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   always dropped. Before inserting, `live_coverage_exists` checks bank/card,
   merchant, ±1 day, and a narrow FX tolerance. WHY: statement vs live duplicates
   survived exact date+amount dedup (e.g. OpenAI USD 23.60 settled ₹1.59 lower).
+  Categorization gives whole-word EMI narrations the dedicated `emi` category
+  before shopping/merchant rules (Axis appends text like `DEPT STORES`). The
+  Android Money screen uses calendar periods, not statement cycles: an EMI dated
+  June 30 is under June even when it appears on a June 17–July 15 statement.
 
 ## 7. Open items / next steps
 

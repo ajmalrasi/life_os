@@ -31,6 +31,9 @@ router = APIRouter(prefix="/statements", tags=["statements"])
 # first match wins. Extend freely; unknowns land in "other".
 _CATEGORY_RULES: list[tuple[str, re.Pattern]] = [
     # "petro" catches petrol, petroleum, and "PETRO PARK" style pump names.
+    # EMI must precede merchant categories: Axis descriptions can end in
+    # "DEPT STORES", which otherwise mislabels the installment as shopping.
+    ("emi", re.compile(r"\bemi\b|\binstal+ment\b|\binstallment\b|\bflexipay\b", re.I)),
     ("fuel", re.compile(r"petro|fuel|hpcl|bpcl", re.I)),
     ("wallet_load", re.compile(r"mobikwik|paytm wallet|wallet load", re.I)),
     ("food", re.compile(r"zomato|swiggy|kfc|restaurant|cafe|hotel|bakery|kitchen|chicking|food", re.I)),
@@ -39,7 +42,7 @@ _CATEGORY_RULES: list[tuple[str, re.Pattern]] = [
     ("subscriptions", re.compile(r"anthropic|cursor|apple|youtube|google|netflix|zee|spotify|adobe|prime|jio|airtel", re.I)),
     ("investments", re.compile(r"zerodha|broking|groww|smallcase|mutual\s*fund", re.I)),
     ("entertainment", re.compile(r"bookmyshow|cinema|pvr|inox|movie", re.I)),
-    ("emi_fees", re.compile(r"emi|gst|igst|fee|interest|surcharge|markup", re.I)),
+    ("emi_fees", re.compile(r"gst|igst|fee|interest|surcharge|markup", re.I)),
     ("travel", re.compile(r"bus|irctc|uber|ola|rapido|airline|flight|agoda|makemytrip|goibibo|oyo|redbus", re.I)),
 ]
 

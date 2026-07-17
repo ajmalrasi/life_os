@@ -88,7 +88,9 @@ enter `transactions`; live bank/card alerts remain the source for normal purchas
 Only EMI installments, interest, and processing fees that live alerts commonly
 miss are stored as `source='statement_emi'`. Explicit EMI narrations use audited
 rules; ambiguous merchant-EMI descriptions get one batched local-model review and
-are skipped on timeout/uncertainty. Conversion credits are never imported.
+are skipped on timeout/uncertainty. Conversion credits are never imported. All
+retained EMI rows expose `spend_category='emi'` before merchant-category rules are
+considered, so suffixes such as `DEPT STORES` cannot misclassify them as shopping.
 
 ### `GET /statements` — stored summaries (`months` param, default 3)
 ### `POST /statements/sync` — fetch/parse new statement emails (idempotent)

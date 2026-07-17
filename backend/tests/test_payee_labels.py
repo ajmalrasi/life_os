@@ -69,6 +69,15 @@ def test_label_overrides_builtin_keyword_rule(client):
     assert categorize("ZOMATO ORDER 123") == "office_lunch"
 
 
+def test_emi_precedes_shopping_merchant_keywords(client):
+    """Axis appends 'DEPT STORES' to EMI lines; EMI identity must win."""
+    with SessionLocal() as db:
+        categorize = build_categorizer(db)
+    assert categorize("EMI PRINCIPAL - 1/3, REF# 74708359 DEPT STORES") == "emi"
+    assert categorize("EMI INTEREST - 1/3, REF# 74708359 DEPT STORES") == "emi"
+    assert categorize("ORDINARY DEPT STORE PURCHASE") == "shopping"
+
+
 def test_priority_orders_rules(client):
     _add_label(pattern="rasi", category="broad", match_type="substring", priority=200)
     _add_label(pattern="ajmal rasi", category="specific", match_type="substring", priority=10)

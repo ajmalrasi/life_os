@@ -44,7 +44,7 @@ _MAX_PAYEES_PER_RUN = 20
 
 ALLOWED_CATEGORIES = [
     "fuel", "wallet_load", "food", "groceries", "shopping", "subscriptions",
-    "investments", "entertainment", "emi_fees", "travel", "legal_fees", "other",
+    "investments", "entertainment", "emi", "emi_fees", "travel", "legal_fees", "other",
 ]
 
 _SCHEMA = {
@@ -62,8 +62,8 @@ _SYSTEM_PROMPT = (
     "You categorize a bank/UPI transaction's spend category from its payee "
     "name. Pick exactly one category from the allowed list.\n\n"
     "RULES:\n"
-    '- "emi_fees" is for an actual EMI installment, bank fee, interest charge '
-    'or GST/surcharge line — never just because the payee\'s name coincidentally '
+    '- "emi" is for an actual EMI installment. "emi_fees" is for a standalone '
+    'bank fee, interest charge, or GST/surcharge line — never just because the payee\'s name coincidentally '
     'contains letters like "fee" or "emi" (e.g. a person named "Rafeeque" is '
     "not an EMI).\n"
     '- "legal_fees" is for payments to a lawyer/legal counsel, not a '
