@@ -162,12 +162,71 @@ def test_statement_collector_stores_summary_without_transactions(client, monkeyp
 
         assert report.statements_new == 1
         assert report.line_items_ingested == 0
-        assert "2 parsed line item(s) ignored" in report.message
+        assert "0 EMI item(s) ingested" in report.message
+        assert "2 other line item(s) ignored" in report.message
         assert len(stored) == 1
         assert stored[0].total_due == Decimal("18699.25")
         assert stored[0].line_items_total == 2
         assert stored[0].line_items_ingested == 0
         assert ExpenseRepository(db).range(date(2026, 5, 1), date(2026, 6, 30)) == []
+
+
+def test_statement_emi_selection_uses_rules_then_one_model_review():
+    from app.services.statement_emi import select_emi_items
+    from app.services.statement_parsers.base import StatementTxn
+
+    class ReviewClient:
+        calls = 0
+
+        def chat_structured(self, messages, schema, schema_name, temperature):
+            self.calls += 1
+            assert "EMI DECATHLON" in messages[-1]["content"]
+            return '{"keep_ids":"3","reason":"merchant EMI installment"}'
+
+    items = [
+        StatementTxn(date(2026, 7, 1), "EMI PRINCIPAL - 1/3", Decimal("1000"), "debit"),
+        StatementTxn(date(2026, 7, 1), "ORDINARY PURCHASE", Decimal("500"), "debit"),
+        StatementTxn(date(2026, 7, 1), "EMI DECATHLON SPORTS", Decimal("700"), "debit"),
+        StatementTxn(
+            date(2026, 7, 1), "TRANSACTION CONVERSION INTO EMI", Decimal("5000"), "credit"
+        ),
+    ]
+    review = ReviewClient()
+
+    selected = select_emi_items(items, review)
+
+    assert [item.description for item in selected] == [
+        "EMI PRINCIPAL - 1/3",
+        "EMI DECATHLON SPORTS",
+    ]
+    assert review.calls == 1
+
+
+def test_statement_emi_model_failure_keeps_only_explicit_rows():
+    from app.services.openclaw import OpenClawTimeout
+    from app.services.statement_emi import select_emi_items
+    from app.services.statement_parsers.base import StatementTxn
+
+    class FailedReviewClient:
+        def chat_structured(self, *args, **kwargs):
+            raise OpenClawTimeout("test timeout")
+
+    items = [
+        StatementTxn(date(2026, 7, 1), "INTEREST ON EMI", Decimal("81.54"), "debit"),
+        StatementTxn(date(2026, 7, 1), "EMI SOME MERCHANT", Decimal("999"), "debit"),
+    ]
+
+    selected = select_emi_items(items, FailedReviewClient())
+
+    assert [item.description for item in selected] == ["INTEREST ON EMI"]
+
+
+def test_emi_word_boundaries_do_not_match_chemist_or_remittance():
+    from app.services.statement_emi import is_possible_emi
+
+    assert is_possible_emi("EMI PRINCIPAL - 1/3")
+    assert not is_possible_emi("BROTHERS CHEMIST")
+    assert not is_possible_emi("GLOBAL REMITTANCE")
 
 
 def test_bank_account_parser_balance_delta():

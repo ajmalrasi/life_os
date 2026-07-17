@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -23,6 +24,20 @@ def _norm_counterparty(name: str | None) -> str:
     s = _NOISE.sub("", (name or "").strip())
     s = re.sub(r"[^a-zA-Z@ ]+", " ", s)
     return " ".join(s.lower().split())
+
+
+def _statement_party_norm(name: str | None) -> str:
+    """Normalize an EMI statement narration for comparison with a live alert."""
+    normalized = _norm_counterparty(name)
+    return re.sub(r"^(?:emi|mer emi)\s+", "", normalized).strip()
+
+
+def _account_key(account: str | None) -> tuple[str, str]:
+    """Bank token + trailing card/account digits, tolerant of label wording."""
+    text = account or ""
+    bank = text.split()[0].casefold() if text.split() else ""
+    match = re.search(r"\.\.\s*(\d+)\s*$", text)
+    return bank, match.group(1) if match else ""
 
 
 # Debit categories that are NOT real spending: money moved between the user's
@@ -50,10 +65,9 @@ class ExpenseRepository:
         ).scalar_one()
         return count > 0
 
-    # Legacy statement-derived sources. New statement syncs are summary-only,
-    # but this protects historical databases if a live parser is backfilled
-    # before old statement transaction rows have been cleaned up.
-    STATEMENT_SOURCES = ("cc_statement", "bank_account")
+    # Statement-derived sources. ``cc_statement``/``bank_account`` are legacy;
+    # new syncs retain only selected EMI rows under ``statement_emi``.
+    STATEMENT_SOURCES = ("cc_statement", "bank_account", "statement_emi")
 
     def statement_txn_exists(self, txn_date: date, amount) -> bool:
         count = self.db.execute(
@@ -66,6 +80,38 @@ class ExpenseRepository:
             )
         ).scalar_one()
         return count > 0
+
+    def live_coverage_exists(
+        self, account: str | None, txn_date: date, amount, direction: str, counterparty: str | None
+    ) -> bool:
+        """True when a live alert already covers a proposed statement EMI row.
+
+        Banks can shift the posting date by a day or settle a foreign amount a
+        few rupees differently. Require the same bank/card identity and an
+        overlapping merchant name before applying that narrow tolerance.
+        """
+        account_key = _account_key(account)
+        new_party = _statement_party_norm(counterparty)
+        if not all(account_key) or not new_party:
+            return False
+        candidates = self.db.execute(
+            select(Transaction).where(
+                Transaction.source.in_(self.LIVE_SOURCES),
+                Transaction.direction == direction,
+                Transaction.txn_date >= txn_date - timedelta(days=1),
+                Transaction.txn_date <= txn_date + timedelta(days=1),
+            )
+        ).scalars()
+        amount_tolerance = max(Decimal("5.00"), amount * Decimal("0.01"))
+        for existing in candidates:
+            if _account_key(existing.account) != account_key:
+                continue
+            if abs(existing.amount - amount) > amount_tolerance:
+                continue
+            existing_party = _statement_party_norm(existing.counterparty)
+            if existing_party and (existing_party in new_party or new_party in existing_party):
+                return True
+        return False
 
     def unreferenced_live_txn_exists(
         self, account: str | None, txn_date: date, amount, direction: str, counterparty: str | None

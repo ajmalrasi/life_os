@@ -405,6 +405,40 @@ def test_reference_less_duplicate_transaction_is_skipped(client):
         assert second is None
 
 
+def test_statement_emi_is_skipped_when_live_alert_already_covers_it(client):
+    """Merchant/date/FX-tolerant matching prevents an EMI statement row from
+    recreating a purchase that was already captured by a live card alert."""
+    from app.database import SessionLocal
+    from app.repositories.expense_repo import ExpenseRepository
+    from app.services.expense_parsers.base import ParsedTxn
+
+    with SessionLocal() as db:
+        repo = ExpenseRepository(db)
+        repo.upsert(
+            ParsedTxn(
+                txn_date=date(2026, 7, 4), amount=Decimal("2253.63"), direction="debit",
+                source="card_live", account="Axis Card ..3068", counterparty="DECATHLON SPORTS",
+            ),
+            message_id="live-emi", dedup_key="live-emi",
+        )
+        db.commit()
+
+        assert repo.live_coverage_exists(
+            "Axis Flipkart VISA ..3068",
+            date(2026, 7, 3),
+            Decimal("2252.04"),
+            "debit",
+            "EMI DECATHLON SPORTS INDIA",
+        )
+        assert not repo.live_coverage_exists(
+            "Axis Flipkart VISA ..3068",
+            date(2026, 7, 3),
+            Decimal("2252.04"),
+            "debit",
+            "EMI DIFFERENT MERCHANT",
+        )
+
+
 def test_upsert_canonicalizes_account_label(client):
     """The write choke point collapses label drift to one canonical identity:
     a "SBI Card ..70" (2-digit last4) is persisted as the canonical

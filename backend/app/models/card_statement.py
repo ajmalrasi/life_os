@@ -1,8 +1,8 @@
 """Monthly statement summaries parsed from emailed PDFs.
 
 One row per (bank, card, statement date). Line items are counted for parser
-observability but deliberately never copied into ``transactions``; this table
-powers the "what do I owe this month" view.
+observability; only selected EMI costs are copied into ``transactions``. This
+table powers the "what do I owe this month" view.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class CardStatement(Base):
     total_spend: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
 
     line_items_total: Mapped[int] = mapped_column(Integer, default=0)
-    # Retained for API/schema compatibility; always 0 in summary-only mode.
+    # Count of statement-only EMI items retained in the transaction feed.
     line_items_ingested: Mapped[int] = mapped_column(Integer, default=0)
 
     gmail_message_id: Mapped[str] = mapped_column(String(64), index=True)

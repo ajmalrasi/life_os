@@ -334,15 +334,16 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   `DELETE /expenses/repayments/{id}`. Rebuild deletion deliberately preserves any
   transaction referenced by an audit record, so a Gmail reparse cannot erase a
   user decision. Backend full suite and Android `assembleDebug` + unit tests pass.
-- ✅ **Statements are summary-only (2026-07-17).** Monthly statement PDFs are
-  still fetched/decrypted and populate `card_statements` (total due, minimum due,
-  due date, cycle dates), but their parsed line items no longer enter
-  `transactions`. Live bank/card alerts are the sole transaction source going
-  forward. WHY: the same purchase appeared once from the live alert and again
-  from the statement when the posting date shifted or a foreign-currency charge
-  settled to a slightly different INR amount (e.g. OpenAI USD 23.60). Keep
-  `StatementCollector` in summary-only mode; `line_items_ingested` remains in the
-  API for compatibility and is always 0 for new statements.
+- ✅ **Statements are summary + EMI only (2026-07-17).** Monthly statement PDFs
+  still populate `card_statements` (total/minimum due, due date, cycle dates), but
+  ordinary line items no longer enter `transactions`; live alerts own normal
+  purchases. The only retained rows use `source='statement_emi'`: deterministic
+  principal/interest/processing-fee/loan patterns plus ambiguous whole-word-EMI
+  merchant rows approved by one batched local-model review. Model timeout,
+  malformed output, or uncertainty skips ambiguous rows; conversion credits are
+  always dropped. Before inserting, `live_coverage_exists` checks bank/card,
+  merchant, ±1 day, and a narrow FX tolerance. WHY: statement vs live duplicates
+  survived exact date+amount dedup (e.g. OpenAI USD 23.60 settled ₹1.59 lower).
 
 ## 7. Open items / next steps
 

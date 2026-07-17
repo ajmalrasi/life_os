@@ -112,12 +112,12 @@ def list_statements(months: int = 3, db: Session = Depends(get_db)) -> list[Card
 
 @router.post("/sync", response_model=StatementSyncResult)
 def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> StatementSyncResult:
-    """Fetch statement PDFs and store bill summaries only (idempotent).
+    """Fetch statement PDFs and store bill summaries plus EMI costs (idempotent).
 
     ``window_days`` widens the Gmail search window for one-off backfills (e.g.
     pulling 6 months of history); the default matches routine monthly polling.
-    Statement line items never enter ``transactions``; live alerts are the sole
-    source for individual purchases.
+    Ordinary line items never enter ``transactions``; live alerts cover normal
+    purchases while statement-only EMI installments/fees fill that known gap.
     """
     settings = get_settings()
     report = StatementCollector(

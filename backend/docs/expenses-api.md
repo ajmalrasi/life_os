@@ -82,11 +82,13 @@ curl -s -X POST "http://<jetson>:8000/expenses/sync"
 
 Statement emails from HDFC / Axis / ICICI / SBI are auto-fetched, decrypted
 (passwords derived from owner name + DOB in env; see `app/services/pdf_unlock.py`),
-and parsed in **summary-only mode**. Bill summaries land in `card_statements`,
-preserving total due, minimum due, and due date. Parsed statement line items do
-not enter `transactions`; live bank/card alerts are the sole source for individual
-transactions. This prevents duplicates caused by posting-date shifts and final
-foreign-exchange settlement amounts.
+and parsed in **summary + EMI mode**. Bill summaries land in `card_statements`,
+preserving total due, minimum due, and due date. Ordinary statement lines do not
+enter `transactions`; live bank/card alerts remain the source for normal purchases.
+Only EMI installments, interest, and processing fees that live alerts commonly
+miss are stored as `source='statement_emi'`. Explicit EMI narrations use audited
+rules; ambiguous merchant-EMI descriptions get one batched local-model review and
+are skipped on timeout/uncertainty. Conversion credits are never imported.
 
 ### `GET /statements` — stored summaries (`months` param, default 3)
 ### `POST /statements/sync` — fetch/parse new statement emails (idempotent)
