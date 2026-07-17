@@ -43,6 +43,9 @@ def fetch_raw_emails(db: Session, client: GmailClient, bank: str, since: date) -
     """Search Gmail and save every new matching email's full body — no LLM
     calls, so this is cheap and safe to call repeatedly (already-saved
     message_ids are skipped)."""
+    if not client.is_available():
+        return FetchReport(bank=bank, emails_found=0, emails_saved=0)
+
     repo = RawEmailRepository(db)
     domain = BANK_DOMAINS[bank]
     query = f"from:{domain} after:{since:%Y/%m/%d}"
