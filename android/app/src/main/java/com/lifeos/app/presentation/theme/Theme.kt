@@ -12,28 +12,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Claude-inspired warm palette — ivory canvas, terracotta identity, earthy
-// muted accents. Calm, book-like, never loud. One cohesive design language.
+// Cool navy/blue identity — crisp off-white canvas, deep navigation chrome,
+// and calm ocean accents. Semantic score colors stay distinct.
 object LifeOsColors {
-    val Background = Color(0xFFFAF9F5)     // warm ivory canvas
+    val Background = Color(0xFFF4F7FB)     // cool off-white canvas
     val Surface = Color(0xFFFFFFFF)
     val SurfaceElevated = Color(0xFFFFFFFF)
-    val SurfaceMuted = Color(0xFFF0EEE6)   // pampas / warm paper
-    val SurfaceBorder = Color(0xFFE5E2D9)  // hairline on ivory
+    val SurfaceMuted = Color(0xFFE8EEF5)
+    val SurfaceBorder = Color(0xFFD7E0EA)
 
-    val Primary = Color(0xFFC15F3C)        // terracotta (accessible on white)
-    val PrimarySoft = Color(0xFFF6E3DA)    // terracotta wash
+    val Primary = Color(0xFF175D9C)        // confident ocean blue
+    val PrimarySoft = Color(0xFFDCEBFA)
     val OnPrimary = Color(0xFFFFFFFF)
 
-    val Secondary = Color(0xFF6E7B5E)      // sage
-    val SecondarySoft = Color(0xFFEAEDE2)  // sage wash
+    val Secondary = Color(0xFF2F7EA1)      // blue-teal
+    val SecondarySoft = Color(0xFFDCEEF5)
 
-    val AccentTeal = Color(0xFF5FA396)
-    val AccentCoral = Color(0xFFD97757)    // Claude coral, for soft emphasis
+    val AccentTeal = Color(0xFF2E8B9E)
+    val AccentSky = Color(0xFF4B9BD3)
     val AccentAmber = Color(0xFFC99A3C)
 
-    val OnBackground = Color(0xFF29261F)   // warm ink
-    val OnSurfaceMuted = Color(0xFF6E6A5E) // warm gray
+    val OnBackground = Color(0xFF172B3A)   // navy ink
+    val OnSurfaceMuted = Color(0xFF5D7083)
+
+    val NavigationSurface = Color(0xFF102A43)
+    val NavigationIndicator = Color(0xFF214D75)
+    val NavigationSelected = Color(0xFFF7FBFF)
+    val NavigationUnselected = Color(0xFFA9BDCF)
 
     val ScoreHigh = Color(0xFF6B9B5E)      // moss
     val ScoreMid = Color(0xFFC99A3C)       // ochre
@@ -44,13 +49,13 @@ object LifeOsColors {
     // Per-metric identity colors — distinct hues, desaturated to sit calmly on ivory.
     val MetricSleep = Color(0xFF5B7DB1)     // dusk blue (night/rest)
     val MetricRecovery = Color(0xFF5FA396)  // sea teal
-    val MetricExecution = Color(0xFFC99A3C) // ochre (drive/output)
+    val MetricExecution = Color(0xFF8B78C6) // violet (drive/output)
     val MetricWellness = Color(0xFFC05F86)  // rose clay
     val MetricFitness = Color(0xFF6B9B5E)   // moss
 
     // Charting — gridlines and faint axis text on the trend graph.
-    val ChartGrid = Color(0xFFEAE7DE)
-    val ChartAxisText = Color(0xFF9B968A)
+    val ChartGrid = Color(0xFFE1E8F0)
+    val ChartAxisText = Color(0xFF8191A2)
 }
 
 val LifeOsShapes = androidx.compose.material3.Shapes(

@@ -1,14 +1,16 @@
 package com.lifeos.app
 
 import app.cash.turbine.test
-import com.lifeos.app.domain.model.ChatAnswer
+import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.Citation
 import com.lifeos.app.domain.repository.ChatRepository
 import com.lifeos.app.presentation.chat.ChatViewModel
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,10 +34,13 @@ class ChatViewModelTest {
 
     @Test
     fun `sending a message appends user and assistant turns with citations`() = runTest {
-        coEvery { repository.ask(any(), any(), any()) } returns ChatAnswer(
-            answer = "You sleep ~6h; execution drops on those days.",
-            citations = listOf(Citation("avg_sleep_score_30d", "62")),
-            grounded = true,
+        every { repository.stream(any(), any(), any()) } returns flowOf(
+            ChatStreamEvent.Delta("You sleep ~6h; "),
+            ChatStreamEvent.Delta("execution drops on those days."),
+            ChatStreamEvent.Done(
+                citations = listOf(Citation("avg_sleep_score_30d", "62")),
+                grounded = true,
+            ),
         )
 
         val vm = ChatViewModel(repository)
@@ -65,8 +70,10 @@ class ChatViewModelTest {
     @Test
     fun `history is forwarded to repository`() = runTest {
         val captured = mutableListOf<List<ChatTurn>>()
-        coEvery { repository.ask(any(), capture(captured), any()) } returns
-            ChatAnswer("ok", emptyList(), true)
+        every { repository.stream(any(), capture(captured), any()) } returns flowOf(
+            ChatStreamEvent.Delta("ok"),
+            ChatStreamEvent.Done(emptyList(), true),
+        )
 
         val vm = ChatViewModel(repository)
         vm.send("first")

@@ -121,6 +121,18 @@ def test_chat_without_data_asks_for_more(client):
     assert body["citations"] == []
 
 
+def test_chat_stream_without_data_emits_delta_and_done(client):
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"message": "What should I do today?"},
+    ) as response:
+        events = [line for line in response.iter_lines() if line]
+    assert response.status_code == 200
+    assert '"type":"delta"' in events[1]
+    assert '"type":"done"' in events[-1]
+
+
 def test_notifications_endpoint(client):
     _seed(client, n_days=15)
     client.post("/analytics/recompute?days=20")

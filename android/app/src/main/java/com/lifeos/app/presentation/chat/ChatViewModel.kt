@@ -3,6 +3,7 @@ package com.lifeos.app.presentation.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.ChatTurn
+import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.Citation
 import com.lifeos.app.domain.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -70,19 +71,44 @@ class ChatViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
-            val reply = runCatching {
-                chatRepository.ask(message, history, contextDays = 30)
-            }.getOrElse {
-                return@getOrElse com.lifeos.app.domain.model.ChatAnswer(
-                    answer = "Couldn't reach LifeOS backend. Check the server address in Settings.",
-                    citations = emptyList(),
-                    grounded = false,
-                )
+            runCatching {
+                chatRepository.stream(message, history, contextDays = 30).collect { event ->
+                    when (event) {
+                        is ChatStreamEvent.Delta -> appendAssistantText(event.text)
+                        is ChatStreamEvent.Done -> finishAssistant(event.citations)
+                    }
+                }
+            }.onFailure {
+                if (_state.value.messages.lastOrNull()?.role == "user") {
+                    _state.value = _state.value.copy(
+                        messages = _state.value.messages + ChatMessage(
+                            "assistant",
+                            "Couldn't reach LifeOS backend. Check the server address in Settings.",
+                        ),
+                    )
+                }
             }
-            _state.value = _state.value.copy(
-                messages = _state.value.messages + ChatMessage("assistant", reply.answer, reply.citations),
-                sending = false,
-            )
+            _state.value = _state.value.copy(sending = false)
+        }
+    }
+
+    private fun appendAssistantText(text: String) {
+        val messages = _state.value.messages.toMutableList()
+        val last = messages.lastOrNull()
+        if (last?.role == "assistant") {
+            messages[messages.lastIndex] = last.copy(content = last.content + text)
+        } else {
+            messages += ChatMessage("assistant", text)
+        }
+        _state.value = _state.value.copy(messages = messages)
+    }
+
+    private fun finishAssistant(citations: List<Citation>) {
+        val messages = _state.value.messages.toMutableList()
+        val last = messages.lastOrNull()
+        if (last?.role == "assistant") {
+            messages[messages.lastIndex] = last.copy(citations = citations)
+            _state.value = _state.value.copy(messages = messages)
         }
     }
 }

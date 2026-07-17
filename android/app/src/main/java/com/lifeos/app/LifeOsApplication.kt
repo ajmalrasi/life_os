@@ -46,6 +46,7 @@ class LifeOsApplication : Application(), Configuration.Provider {
 
         // Phase 1 #2: passive nightly health sync (idempotent on every launch).
         workScheduler.ensureHealthSyncScheduled()
+        workScheduler.ensureSpendWidgetScheduled()
 
         // Opening the app quietly refreshes its local caches from the Jetson.
         // Source polling and model-backed recomputation stay behind the one

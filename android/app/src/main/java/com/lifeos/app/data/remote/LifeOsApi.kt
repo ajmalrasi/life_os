@@ -32,6 +32,8 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Streaming
+import okhttp3.ResponseBody
 
 interface LifeOsApi {
 
@@ -70,6 +72,10 @@ interface LifeOsApi {
 
     @POST("chat")
     suspend fun chat(@Body request: ChatRequestDto): ChatResponseDto
+
+    @Streaming
+    @POST("chat/stream")
+    suspend fun streamChat(@Body request: ChatRequestDto): ResponseBody
 
     @GET("chat/suggestions")
     suspend fun chatSuggestions(@Query("days") days: Int): SuggestionsResponseDto

@@ -6,6 +6,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.lifeos.app.widget.SpendWidgetWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Duration
 import java.time.LocalDateTime
@@ -39,6 +40,21 @@ class WorkScheduler @Inject constructor(
 
         workManager.enqueueUniquePeriodicWork(
             HealthSyncWorker.UNIQUE_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Keep the spend widget current even when the app has not been opened. */
+    fun ensureSpendWidgetScheduled() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<SpendWidgetWorker>(Duration.ofHours(6))
+            .setConstraints(constraints)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            SpendWidgetWorker.UNIQUE_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )

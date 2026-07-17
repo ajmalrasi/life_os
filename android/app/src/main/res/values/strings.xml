@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">LifeOS</string>
+    <string name="spend_widget_description">Today and month-to-date spending</string>
 </resources>

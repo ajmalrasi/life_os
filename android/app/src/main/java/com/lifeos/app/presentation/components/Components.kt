@@ -452,7 +452,7 @@ fun LifeScoreHero(
             .clip(shape)
             .background(
                 Brush.linearGradient(
-                    listOf(LifeOsColors.Primary, LifeOsColors.AccentCoral),
+                    listOf(LifeOsColors.Primary, LifeOsColors.AccentSky),
                 ),
             )
             .padding(22.dp),

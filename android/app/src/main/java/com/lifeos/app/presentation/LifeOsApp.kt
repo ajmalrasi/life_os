@@ -89,8 +89,8 @@ fun LifeOsApp(startTab: String? = null) {
                             .fillMaxWidth()
                             .height(64.dp)
                             .clip(RoundedCornerShape(22.dp)),
-                        containerColor = LifeOsColors.Surface,
-                        tonalElevation = 2.dp,
+                        containerColor = LifeOsColors.NavigationSurface,
+                        tonalElevation = 0.dp,
                         windowInsets = WindowInsets(0, 0, 0, 0),
                     ) {
                         primaryDestinations.forEach { dest ->
@@ -108,11 +108,11 @@ fun LifeOsApp(startTab: String? = null) {
                                 icon = { Icon(dest.icon, contentDescription = dest.label, modifier = Modifier.size(22.dp)) },
                                 label = { Text(dest.label) },
                                 colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = LifeOsColors.Primary,
-                                    selectedTextColor = LifeOsColors.Primary,
-                                    indicatorColor = LifeOsColors.PrimarySoft,
-                                    unselectedIconColor = LifeOsColors.OnSurfaceMuted,
-                                    unselectedTextColor = LifeOsColors.OnSurfaceMuted,
+                                    selectedIconColor = LifeOsColors.NavigationSelected,
+                                    selectedTextColor = LifeOsColors.NavigationSelected,
+                                    indicatorColor = LifeOsColors.NavigationIndicator,
+                                    unselectedIconColor = LifeOsColors.NavigationUnselected,
+                                    unselectedTextColor = LifeOsColors.NavigationUnselected,
                                 ),
                             )
                         }

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterator
 from datetime import date, timedelta
 from time import monotonic
 
@@ -293,6 +294,142 @@ class ChatService:
 
         return ChatResponse(answer=answer, citations=self._citations(context), grounded=grounded)
 
+    def stream(self, req: ChatRequest) -> Iterator[dict]:
+        """Yield newline-safe events for the Android streaming chat client."""
+        personal = _is_personal_data_question(req.message, req.history)
+        yield {"type": "start", "grounded": personal}
+
+        if not personal:
+            messages = self._general_messages(req)
+            emitted = False
+            try:
+                for event in self.client.stream_chat(
+                    messages,
+                    timeout=min(
+                        getattr(self.client, "timeout", settings.openclaw_timeout_seconds),
+                        settings.openclaw_chat_deadline_seconds,
+                    ),
+                ):
+                    if event["type"] == "content":
+                        emitted = True
+                        yield {"type": "delta", "text": event["text"]}
+            except OpenClawTimeout as exc:
+                logger.warning("Ask general stream timeout: %s", exc)
+                if not emitted:
+                    yield {"type": "delta", "text": "The local model timed out before it could answer. Please try again."}
+            except OpenClawUnavailable as exc:
+                logger.warning("Ask general stream unavailable: %s", exc)
+                if not emitted:
+                    yield {"type": "delta", "text": "The local model could not be reached. Please try again when the Jetson is available."}
+            yield {"type": "done", "citations": [], "grounded": False}
+            return
+
+        context = self.build_context(req.context_days)
+        has_data = context["totals"]["days_with_scores"] > 0 or context["totals"][
+            "days_with_mood_checkin"
+        ] > 0
+        citations = [c.model_dump() for c in self._citations(context)]
+        if not has_data:
+            yield {
+                "type": "delta",
+                "text": (
+                    "I don't have any personal data yet. Check Health Auto Export, "
+                    "log a Pulse, or sync LifeOS from Settings, then ask me again."
+                ),
+            }
+            yield {"type": "done", "citations": [], "grounded": True}
+            return
+
+        messages = self._personal_messages(req, context)
+        emitted = False
+        try:
+            for text in self._stream_agent(messages):
+                emitted = True
+                yield {"type": "delta", "text": text}
+        except OpenClawTimeout as exc:
+            logger.warning("Ask personal stream timeout: %s", exc)
+            if not emitted:
+                yield {"type": "delta", "text": self._fallback(context, "The local model timed out before it could finish")}
+        except OpenClawUnavailable as exc:
+            logger.warning("Ask personal stream unavailable: %s", exc)
+            if not emitted:
+                yield {"type": "delta", "text": self._fallback(context, "The local model could not be reached")}
+        yield {"type": "done", "citations": citations, "grounded": True}
+
+    def _personal_messages(self, req: ChatRequest, context: dict) -> list[dict]:
+        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages.extend(
+            {"role": m.role, "content": m.content}
+            for m in req.history[-6:]
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "DATA CONTEXT (JSON, your only source of truth):\n"
+                    + json.dumps(context, separators=(",", ":"))
+                    + f"\n\nQUESTION: {req.message}"
+                ),
+            }
+        )
+        return messages
+
+    def _general_messages(self, req: ChatRequest) -> list[dict]:
+        messages: list[dict] = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
+        if len(req.message.split()) <= 8 and _SHORT_FOLLOW_UP.search(req.message.strip()):
+            messages.extend(
+                {"role": m.role, "content": m.content}
+                for m in req.history[-4:]
+            )
+        messages.append({"role": "user", "content": req.message})
+        return messages
+
+    def _stream_agent(self, messages: list[dict]) -> Iterator[str]:
+        tools = AgentTools(self.db)
+        deadline = monotonic() + settings.openclaw_chat_deadline_seconds
+
+        def remaining_timeout() -> float:
+            remaining = deadline - monotonic()
+            if remaining <= 1.0:
+                raise OpenClawTimeout("Ask request exceeded its overall time budget")
+            return min(getattr(self.client, "timeout", settings.openclaw_timeout_seconds), remaining)
+
+        for _ in range(MAX_AGENT_STEPS):
+            message: dict = {"role": "assistant", "content": "", "tool_calls": []}
+            for event in self.client.stream_chat(
+                messages,
+                tools=agent_tools.TOOL_SCHEMAS,
+                timeout=remaining_timeout(),
+            ):
+                if event["type"] == "content":
+                    yield event["text"]
+                elif event["type"] == "message":
+                    message = event["message"]
+
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                return
+            messages.append(message)
+            for call in tool_calls:
+                fn = call.get("function") or {}
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except (ValueError, TypeError):
+                    args = {}
+                result = tools.run(fn.get("name", ""), args)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id", ""),
+                        "name": fn.get("name", ""),
+                        "content": json.dumps(result),
+                    }
+                )
+
+        for event in self.client.stream_chat(messages, timeout=remaining_timeout()):
+            if event["type"] == "content":
+                yield event["text"]
+
     def _ask_general(self, req: ChatRequest) -> ChatResponse:
         """Answer a non-LifeOS question without injecting personal data.
 
@@ -300,13 +437,7 @@ class ChatService:
         few turns of history, which preserves conversational continuity without
         letting an old sleep discussion hijack a new coding request.
         """
-        messages = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
-        if len(req.message.split()) <= 8 and _SHORT_FOLLOW_UP.search(req.message.strip()):
-            messages.extend(
-                {"role": m.role, "content": m.content}
-                for m in req.history[-4:]
-            )
-        messages.append({"role": "user", "content": req.message})
+        messages = self._general_messages(req)
         timeout = min(
             getattr(self.client, "timeout", settings.openclaw_timeout_seconds),
             settings.openclaw_chat_deadline_seconds,

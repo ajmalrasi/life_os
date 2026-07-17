@@ -10,6 +10,7 @@ can degrade gracefully instead of fabricating an answer.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 
 import httpx
 
@@ -144,6 +145,90 @@ class OpenClawClient:
         except (KeyError, IndexError, TypeError) as exc:
             raise OpenClawUnavailable(f"Unexpected OpenClaw response shape: {data}") from exc
 
+    def stream_chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        temperature: float = 0.2,
+        timeout: float | None = None,
+    ) -> Iterator[dict]:
+        """Stream one OpenAI-compatible completion.
+
+        Yields ``content`` events as soon as visible text arrives, followed by
+        one ``message`` event containing the assembled content/tool calls. Tool
+        call argument fragments are joined by their OpenAI stream index so the
+        normal bounded agent loop can keep working without delaying text-only
+        answers until the whole generation finishes.
+        """
+        url = f"{self.base_url}/v1/chat/completions"
+        payload: dict = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+            "max_tokens": settings.openclaw_max_tokens,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        content_parts: list[str] = []
+        calls: dict[int, dict] = {}
+        visibility = _StreamingThinkFilter()
+        try:
+            with httpx.Client(timeout=timeout or self.timeout) as client:
+                with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
+                    resp.raise_for_status()
+                    for line in resp.iter_lines():
+                        if not line or line.startswith(":"):
+                            continue
+                        raw = line[5:].strip() if line.startswith("data:") else line.strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(raw)
+                            delta = data["choices"][0].get("delta") or {}
+                        except (ValueError, KeyError, IndexError, TypeError) as exc:
+                            raise OpenClawUnavailable(
+                                f"Unexpected OpenClaw stream event: {raw[:200]}"
+                            ) from exc
+
+                        piece = delta.get("content") or ""
+                        if piece:
+                            visible = visibility.push(piece)
+                            if visible:
+                                content_parts.append(visible)
+                                yield {"type": "content", "text": visible}
+
+                        for fragment in delta.get("tool_calls") or []:
+                            index = int(fragment.get("index", 0))
+                            call = calls.setdefault(
+                                index,
+                                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                            )
+                            if fragment.get("id"):
+                                call["id"] = fragment["id"]
+                            fn = fragment.get("function") or {}
+                            call["function"]["name"] += fn.get("name") or ""
+                            call["function"]["arguments"] += fn.get("arguments") or ""
+        except httpx.TimeoutException as exc:
+            raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise OpenClawUnavailable(f"OpenClaw streaming request failed: {exc}") from exc
+
+        tail = visibility.finish()
+        if tail:
+            content_parts.append(tail)
+            yield {"type": "content", "text": tail}
+        yield {
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "content": "".join(content_parts),
+                "tool_calls": [calls[i] for i in sorted(calls)],
+            },
+        }
+
     def chat_structured(
         self,
         messages: list[dict[str, str]],
@@ -229,3 +314,44 @@ class OpenClawClient:
                 return resp.status_code < 500
         except httpx.HTTPError:
             return False
+
+
+class _StreamingThinkFilter:
+    """Hide a leading Qwen ``<think>`` block without delaying normal output."""
+
+    def __init__(self) -> None:
+        self.buffer = ""
+        self.mode: str | None = None
+
+    def push(self, text: str) -> str:
+        if self.mode == "visible":
+            return text
+        self.buffer += text
+        if self.mode == "hidden":
+            return self._finish_hidden_if_ready()
+
+        stripped = self.buffer.lstrip()
+        if "<think>".startswith(stripped):
+            return ""
+        if stripped.startswith("<think>"):
+            self.mode = "hidden"
+            return self._finish_hidden_if_ready()
+
+        self.mode = "visible"
+        visible, self.buffer = self.buffer, ""
+        return visible
+
+    def _finish_hidden_if_ready(self) -> str:
+        end = self.buffer.rfind("</think>")
+        if end == -1:
+            return ""
+        visible = self.buffer[end + len("</think>") :].lstrip()
+        self.buffer = ""
+        self.mode = "visible"
+        return visible
+
+    def finish(self) -> str:
+        if self.mode == "hidden":
+            return ""
+        tail, self.buffer = self.buffer, ""
+        return tail

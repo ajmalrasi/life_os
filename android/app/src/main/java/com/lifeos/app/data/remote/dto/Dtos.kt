@@ -147,6 +147,14 @@ data class ChatResponseDto(
 )
 
 @Serializable
+data class ChatStreamEventDto(
+    val type: String,
+    val text: String? = null,
+    val citations: List<CitationDto> = emptyList(),
+    val grounded: Boolean = false,
+)
+
+@Serializable
 data class SuggestionsResponseDto(
     val questions: List<String> = emptyList(),
 )

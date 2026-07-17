@@ -4,6 +4,7 @@ import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.ChatAnswer
 import com.lifeos.app.domain.model.ChatTurn
+import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.GithubActivity
@@ -60,6 +61,9 @@ interface AnalyticsRepository {
 
 interface ChatRepository {
     suspend fun ask(message: String, history: List<ChatTurn>, contextDays: Int): ChatAnswer
+
+    /** Incremental answer text followed by grounded/citation metadata. */
+    fun stream(message: String, history: List<ChatTurn>, contextDays: Int): Flow<ChatStreamEvent>
 
     /** Data-grounded starter questions for the Ask screen. Never throws — returns
      *  sensible defaults if the backend is unreachable. */

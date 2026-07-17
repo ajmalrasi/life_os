@@ -9,7 +9,7 @@ import pytest
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
 from app.services.chat_service import MAX_AGENT_STEPS, ChatService, _is_personal_data_question
-from app.services.openclaw import OpenClawTimeout
+from app.services.openclaw import OpenClawTimeout, _StreamingThinkFilter
 
 
 class _ToolThenAnswerClient:
@@ -63,6 +63,17 @@ class _GeneralClient:
     def chat(self, messages, temperature=0.2, timeout=None):
         self.messages = messages
         return "def fibonacci(n):\n    return n if n < 2 else fibonacci(n - 1) + fibonacci(n - 2)"
+
+
+class _StreamingGeneralClient(_GeneralClient):
+    def stream_chat(self, messages, tools=None, temperature=0.2, timeout=None):
+        self.messages = messages
+        yield {"type": "content", "text": "def fibonacci"}
+        yield {"type": "content", "text": "(n): return n"}
+        yield {
+            "type": "message",
+            "message": {"role": "assistant", "content": "def fibonacci(n): return n", "tool_calls": []},
+        }
 
 
 def test_agent_executes_tool_then_answers(client, monkeypatch):
@@ -153,6 +164,40 @@ def test_general_code_question_does_not_receive_lifeos_context(client):
     assert response.citations == []
     assert "DATA CONTEXT" not in str(model.messages)
     assert "sleep score was low" not in str(model.messages)
+
+
+def test_general_code_question_streams_without_personal_context(client):
+    from app.schemas.chat import ChatMessage, ChatRequest
+
+    model = _StreamingGeneralClient()
+    svc = ChatService(db=None, client=model)
+    svc.build_context = lambda days: pytest.fail("general streams must not build personal context")
+    events = list(
+        svc.stream(
+            ChatRequest(
+                message="Write Fibonacci code",
+                history=[ChatMessage(role="assistant", content="Your sleep was low")],
+            )
+        )
+    )
+
+    assert [event["text"] for event in events if event["type"] == "delta"] == [
+        "def fibonacci",
+        "(n): return n",
+    ]
+    assert events[-1] == {"type": "done", "citations": [], "grounded": False}
+    assert "sleep was low" not in str(model.messages)
+
+
+def test_streaming_think_filter_hides_reasoning_without_buffering_normal_text():
+    normal = _StreamingThinkFilter()
+    assert normal.push("Hello") == "Hello"
+    assert normal.push(" world") == " world"
+
+    thinking = _StreamingThinkFilter()
+    assert thinking.push("<thi") == ""
+    assert thinking.push("nk>private reasoning") == ""
+    assert thinking.push("</think>Final") == "Final"
 
 
 @pytest.mark.parametrize(

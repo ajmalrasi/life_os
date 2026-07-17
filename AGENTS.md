@@ -334,6 +334,17 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   `DELETE /expenses/repayments/{id}`. Rebuild deletion deliberately preserves any
   transaction referenced by an audit record, so a Gmail reparse cannot erase a
   user decision. Backend full suite and Android `assembleDebug` + unit tests pass.
+- ✅ **Ask streams end-to-end (2026-07-17).** `POST /chat/stream` returns NDJSON
+  `start`/`delta`/`done` events backed by MLC's OpenAI-compatible SSE stream. The
+  Android Ask screen consumes the response incrementally, keeps the newest token
+  visible, and attaches citations from the final event. The bounded tool loop and
+  general-vs-personal routing are preserved; leading `<think>` output is filtered.
+- ✅ **Blue visual refresh + spend widget (2026-07-17).** The muted orange app
+  identity was replaced with a cool navy/ocean-blue palette and the bottom nav is
+  now a high-contrast navy floating bar. A resizable home-screen widget shows
+  today's and the current month's INR spend from the same filtered transaction
+  cache as Money. It refreshes after app-open/manual sync and via six-hour
+  best-effort WorkManager refresh; tapping it opens Money.
 - ✅ **One sync surface + app-open refresh (2026-07-17).** The Today and Money
   sync controls were removed; Settings owns the single **Sync everything** action.
   `LifeOsSyncCoordinator.syncAll()` checks incremental bank alerts + statement

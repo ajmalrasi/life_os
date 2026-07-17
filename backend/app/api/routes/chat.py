@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -15,6 +18,22 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     """Ask LifeOS a question. The answer is grounded in your data and cites metrics."""
     return ChatService(db).ask(req)
+
+
+@router.post("/stream")
+def stream_chat(req: ChatRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    """Stream answer deltas as NDJSON; the final event carries citations."""
+    service = ChatService(db)
+
+    def events():
+        for event in service.stream(req):
+            yield json.dumps(event, separators=(",", ":")) + "\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/suggestions", response_model=SuggestionsResponse)

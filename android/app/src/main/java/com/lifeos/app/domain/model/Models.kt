@@ -123,6 +123,11 @@ data class ChatAnswer(
 
 data class Citation(val metric: String, val value: String)
 
+sealed interface ChatStreamEvent {
+    data class Delta(val text: String) : ChatStreamEvent
+    data class Done(val citations: List<Citation>, val grounded: Boolean) : ChatStreamEvent
+}
+
 data class ExecutionSyncReport(
     val daysUpdated: Int,
     val reposScanned: Int,

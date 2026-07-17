@@ -66,8 +66,10 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
     // Keep the newest message / "Thinking…" in view near the input instead of
     // stranded at the top.
-    val itemCount = state.messages.size + if (state.sending) 1 else 0
-    LaunchedEffect(itemCount) {
+    val waitingForFirstToken = state.sending && state.messages.lastOrNull()?.role == "user"
+    val itemCount = state.messages.size + if (waitingForFirstToken) 1 else 0
+    val lastContentLength = state.messages.lastOrNull()?.content?.length ?: 0
+    LaunchedEffect(itemCount, lastContentLength) {
         if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
     }
 
@@ -77,7 +79,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             .background(LifeOsColors.Background)
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        ScreenHeader("Ask LifeOS", "Grounded answers — every claim cites your data.")
+        ScreenHeader("Ask LifeOS", "Streaming answers, grounded when they use your data.")
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(
@@ -106,7 +108,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                 }
             }
             items(state.messages) { MessageBubble(it) }
-            if (state.sending) {
+            if (waitingForFirstToken) {
                 item { TypingIndicator() }
             }
         }
@@ -117,7 +119,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                 value = state.input,
                 onValueChange = viewModel::onInputChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask about your patterns…") },
+                placeholder = { Text("Ask anything…") },
                 shape = RoundedCornerShape(18.dp),
                 colors = fieldColors,
                 // Single-line + IME "Send" so Enter submits the question instead of
