@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.routes import (
@@ -23,6 +24,7 @@ from app.api.routes import (
 )
 from app.config import get_settings
 from app.database import init_db, purge_seed_data
+from app.services.gmail_client import GmailClientError
 
 settings = get_settings()
 
@@ -51,6 +53,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(GmailClientError)
+async def gmail_client_error_handler(_request: Request, exc: GmailClientError) -> JSONResponse:
+    """Keep Gmail outages visible to Android and cron instead of returning a false 200."""
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 app.include_router(health_data.router)
 app.include_router(mood.router)

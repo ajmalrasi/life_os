@@ -211,6 +211,14 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   tappable; reproducing keyboard-specific bugs (e.g. IME Enter) needs a real
   device or the standalone emulator. Rebuild+reinstall via the green Rerun button
   (~120-490 ms install); watch for the "Install successfully finished" toast.
+- **Gmail OAuth must stay in Google Cloud “In production” mode.** While the OAuth
+  consent screen was in Testing, Google's refresh token expired after seven days
+  (2026-07-10 → 2026-07-17) and spending silently stopped. It was moved to In
+  production and `mail2ajmalrasi@gmail.com` was reauthorized on 2026-07-18 with
+  only `gmail.readonly`. `GmailClient` now turns `invalid_grant`, missing scopes,
+  timeouts, and malformed responses into HTTP 503 from sync endpoints; do not
+  weaken this back to an empty result/HTTP 200, because that makes an auth outage
+  indistinguishable from a no-spend day.
 
 ---
 

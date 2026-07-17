@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 30.0
 
 
+class GmailClientError(RuntimeError):
+    """A Gmail read failed and the sync must not be reported as successful."""
+
+
 class GmailClient:
     def __init__(
         self,
@@ -54,7 +58,7 @@ class GmailClient:
             env["GOG_HOME"] = self.home
         return env
 
-    def _run(self, args: list[str]) -> str | None:
+    def _run(self, args: list[str]) -> str:
         try:
             proc = subprocess.run(
                 [self.gog_bin, "-a", self.account, *args],
@@ -63,13 +67,34 @@ class GmailClient:
                 timeout=_TIMEOUT,
                 env=self._env(),
             )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        except subprocess.TimeoutExpired as exc:
             logger.warning("gog call failed: %s", exc)
-            return None
+            raise GmailClientError("Gmail took too long to respond. Try the sync again.") from exc
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning("gog call failed: %s", exc)
+            raise GmailClientError("The Gmail reader is unavailable on the LifeOS server.") from exc
         if proc.returncode != 0:
-            logger.warning("gog error (%s): %s", proc.returncode, proc.stderr.strip()[:200])
-            return None
+            stderr = proc.stderr.strip()
+            logger.warning("gog error (%s): %s", proc.returncode, stderr[:200])
+            lowered = stderr.lower()
+            if "invalid_grant" in lowered or "insufficientpermissions" in lowered:
+                raise GmailClientError(
+                    "Gmail authorization expired or lacks read access. "
+                    "Reauthorize the LifeOS Gmail connection."
+                )
+            raise GmailClientError("Gmail could not be read. Check the LifeOS server logs.")
         return proc.stdout
+
+    @staticmethod
+    def _json(out: str, operation: str) -> dict:
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError as exc:
+            logger.warning("gog returned invalid JSON while %s", operation)
+            raise GmailClientError("Gmail returned an invalid response. Try the sync again.") from exc
+        if not isinstance(data, dict):
+            raise GmailClientError("Gmail returned an invalid response. Try the sync again.")
+        return data
 
     # -- public API --------------------------------------------------------------
 
@@ -78,21 +103,15 @@ class GmailClient:
         out = self._run(["gmail", "messages", "list", query, "--max", str(max_results), "-j"])
         if not out:
             return []
-        try:
-            data = json.loads(out)
-        except json.JSONDecodeError:
-            return []
-        return data.get("messages", []) if isinstance(data, dict) else []
+        data = self._json(out, "listing messages")
+        return data.get("messages", [])
 
     def get_message(self, message_id: str) -> BankEmail | None:
         """Fetch one message and return it with the body stripped to text."""
         out = self._run(["gmail", "get", message_id, "-j"])
         if not out:
-            return None
-        try:
-            data = json.loads(out)
-        except json.JSONDecodeError:
-            return None
+            raise GmailClientError("Gmail returned an empty message. Try the sync again.")
+        data = self._json(out, "reading a message")
         headers = data.get("headers") or {}
         raw = data.get("body") or ""
         message = data.get("message") or {}
@@ -116,10 +135,7 @@ class GmailClient:
         out = self._run(["gmail", "get", message_id, "-j"])
         if not out:
             return []
-        try:
-            data = json.loads(out)
-        except json.JSONDecodeError:
-            return []
+        data = self._json(out, "listing attachments")
         return [
             {"filename": a.get("filename", ""), "attachmentId": a.get("attachmentId", "")}
             for a in (data.get("attachments") or [])
@@ -130,7 +146,7 @@ class GmailClient:
         out = self._run(
             ["gmail", "attachment", message_id, attachment_id, "--out", out_path]
         )
-        return out is not None
+        return True
 
 
 def strip_html(body: str) -> str:

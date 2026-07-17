@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+import subprocess
 from unittest.mock import patch
+
+import pytest
 
 from app.services.expense_collector import ExpenseCollector, derive_dedup_key
 from app.services.expense_parsers import get_parsers
 from app.services.expense_parsers.base import BankEmail, ParsedTxn, ParserUnavailable
 from app.services.expense_parsers.hdfc_upi import HdfcUpiParser
-from app.services.gmail_client import strip_html
+from app.services.gmail_client import GmailClient, GmailClientError, strip_html
 
 # Real HDFC RuPay-CC UPI alert body (HTML), trimmed to the salient block.
 _HDFC_HTML = """
@@ -206,6 +209,36 @@ def test_sync_endpoint_disabled_without_account(client):
         resp = client.post("/expenses/sync")
     assert resp.status_code == 200
     assert resp.json()["transactions_new"] == 0
+
+
+def test_gmail_auth_failure_is_not_silently_treated_as_no_email():
+    failed = subprocess.CompletedProcess(
+        args=["gog"],
+        returncode=1,
+        stdout="",
+        stderr="oauth2: invalid_grant: Token has been expired or revoked",
+    )
+    with patch("app.services.gmail_client.subprocess.run", return_value=failed):
+        with pytest.raises(GmailClientError, match="authorization expired"):
+            GmailClient("mail@example.com").search("newer_than:1d")
+
+
+def test_sync_endpoint_returns_service_unavailable_for_gmail_auth_failure(client):
+    class _ExpiredGmail(_FakeGmail):
+        def search(self, query: str, max_results: int = 100) -> list[dict]:
+            raise GmailClientError(
+                "Gmail authorization expired or lacks read access. "
+                "Reauthorize the LifeOS Gmail connection."
+            )
+
+    with patch(
+        "app.api.routes.expenses._gmail_client",
+        return_value=_ExpiredGmail([]),
+    ):
+        resp = client.post("/expenses/sync")
+
+    assert resp.status_code == 503
+    assert "Reauthorize" in resp.json()["detail"]
 
 
 def _insert_repayment_rows(*, credit_amount: str = "5000.00") -> tuple[int, int]:
