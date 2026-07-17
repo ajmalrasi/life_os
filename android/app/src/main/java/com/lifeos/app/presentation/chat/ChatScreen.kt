@@ -175,7 +175,7 @@ private fun EmptyState() {
             color = LifeOsColors.OnBackground,
         )
         Text(
-            "I read your real sleep, recovery, mood, fitness, and execution data — and explain the why.",
+            "Ask anything. For personal questions, I can use your real health, mood, money, and execution data.",
             style = MaterialTheme.typography.bodyMedium,
             color = LifeOsColors.OnSurfaceMuted,
         )

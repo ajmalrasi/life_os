@@ -1,15 +1,15 @@
-"""Grounded chat service.
+"""LifeOS chat service.
 
-Builds a compact, factual snapshot of the user's recent data and forces the
-LLM to answer *only* from it, citing metrics. The system prompt and the
-machine-readable context together implement the "no hallucinations, every
-conclusion cites supporting metrics" requirement.
+Personal-data questions receive a compact factual snapshot and strict citation
+rules. General questions take a separate path with no LifeOS snapshot, so a
+request such as "write Fibonacci code" cannot be redirected into sleep advice.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date, timedelta
 from time import monotonic
 
@@ -71,8 +71,8 @@ SYSTEM_PROMPT = (
     "78 over 30d)' or '(recovery 52 on 2026-06-14)'.\n"
     "3. A metric that is null, missing, or has zero days of data is UNKNOWN — not "
     "zero and not bad. Say it's unavailable, and if it matters to the question, tell "
-    "the user how to fill the gap: sleep and recovery need a wearable syncing to "
-    "Health Connect; wellness needs a Pulse check-in; execution needs GitHub "
+    "the user how to fill the gap: sleep and recovery need Apple Health arriving "
+    "through Health Auto Export; wellness needs a Pulse check-in; execution needs GitHub "
     "activity.\n"
     "4. Read correlations honestly: |r| >= 0.5 is strong, 0.3-0.5 moderate, < 0.3 "
     "weak. Flag a small sample size (n) instead of overclaiming, and never present "
@@ -86,6 +86,55 @@ SYSTEM_PROMPT = (
     "- If the data is too sparse to answer, say so plainly and name exactly what to "
     "sync or log to get a real answer."
 )
+
+GENERAL_SYSTEM_PROMPT = (
+    "You are the local assistant inside LifeOS. Answer the user's current request "
+    "directly, including general knowledge, explanations, and programming tasks. "
+    "Do not mention or infer the user's sleep, health, mood, spending, productivity, "
+    "or other personal LifeOS data unless the current request explicitly asks for it. "
+    "Prioritize the newest request over an older conversation topic. Be concise, "
+    "accurate, and provide complete runnable code when code is requested."
+)
+
+_PERSONAL_DATA_TERMS = re.compile(
+    r"\b(?:sleep|recovery|heart\s*rate|hrv|spo2|steps?|workouts?|exercise|fitness|"
+    r"mood|stress|energy|focus|burnout|wellness|health|score|state|spend(?:ing)?|"
+    r"expenses?|transactions?|bank|cards?|emi|commits?|github|execution|"
+    r"productivity|performance|pulse|vitals?)\b",
+    re.IGNORECASE,
+)
+_PERSONAL_CUES = re.compile(
+    r"\b(?:my|me|mine|i|today|yesterday|tonight|last\s+night|this\s+week|"
+    r"this\s+month|recent(?:ly)?)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_PERSONAL_REQUEST = re.compile(
+    r"\b(?:lifeos|my\s+data|according\s+to\s+my|how\s+am\s+i\s+doing)\b",
+    re.IGNORECASE,
+)
+_SHORT_FOLLOW_UP = re.compile(
+    r"^(?:why|how|what\s+about|and|but|can\s+you\s+explain|tell\s+me\s+more)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_personal_data_question(message: str, history=()) -> bool:
+    """Route only questions that actually ask about the user's LifeOS data.
+
+    Domain words alone are insufficient: "what is REM sleep?" is a general
+    knowledge question, while "how was my REM sleep?" is personal. A short
+    follow-up inherits the most recent user's route so "why?" still works.
+    """
+    text = message.strip()
+    if _EXPLICIT_PERSONAL_REQUEST.search(text):
+        return True
+    if _PERSONAL_DATA_TERMS.search(text) and _PERSONAL_CUES.search(text):
+        return True
+    if len(text.split()) <= 8 and _SHORT_FOLLOW_UP.search(text):
+        for previous in reversed(history):
+            if getattr(previous, "role", "") == "user":
+                return _is_personal_data_question(getattr(previous, "content", ""))
+    return False
 
 
 class ChatService:
@@ -191,6 +240,9 @@ class ChatService:
         return cites
 
     def ask(self, req: ChatRequest) -> ChatResponse:
+        if not _is_personal_data_question(req.message, req.history):
+            return self._ask_general(req)
+
         context = self.build_context(req.context_days)
 
         has_data = context["totals"]["days_with_scores"] > 0 or context["totals"][
@@ -199,8 +251,8 @@ class ChatService:
         if not has_data:
             return ChatResponse(
                 answer=(
-                    "I don't have any data yet. Sync Health Connect, log a mood "
-                    "check-in, or push GitHub activity, then ask me again."
+                    "I don't have any personal data yet. Check Health Auto Export, "
+                    "log a Pulse, or sync LifeOS from Settings, then ask me again."
                 ),
                 citations=[],
                 grounded=True,
@@ -238,6 +290,34 @@ class ChatService:
             grounded = True
 
         return ChatResponse(answer=answer, citations=self._citations(context), grounded=grounded)
+
+    def _ask_general(self, req: ChatRequest) -> ChatResponse:
+        """Answer a non-LifeOS question without injecting personal data.
+
+        A clearly new topic intentionally starts clean. Short follow-ups keep a
+        few turns of history, which preserves conversational continuity without
+        letting an old sleep discussion hijack a new coding request.
+        """
+        messages = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
+        if len(req.message.split()) <= 8 and _SHORT_FOLLOW_UP.search(req.message.strip()):
+            messages.extend(
+                {"role": m.role, "content": m.content}
+                for m in req.history[-4:]
+            )
+        messages.append({"role": "user", "content": req.message})
+        timeout = min(
+            getattr(self.client, "timeout", settings.openclaw_timeout_seconds),
+            settings.openclaw_chat_deadline_seconds,
+        )
+        try:
+            answer = self.client.chat(messages, timeout=timeout)
+        except OpenClawTimeout as exc:
+            logger.warning("Ask general local-model timeout: %s", exc)
+            answer = "The local model timed out before it could finish that answer. Please try again."
+        except OpenClawUnavailable as exc:
+            logger.warning("Ask general local-model unavailable: %s", exc)
+            answer = "The local model could not be reached. Please try again when the Jetson is available."
+        return ChatResponse(answer=answer, citations=[], grounded=False)
 
     def suggest(self, days: int = 30) -> list[str]:
         """Propose data-grounded starter questions without invoking the LLM.

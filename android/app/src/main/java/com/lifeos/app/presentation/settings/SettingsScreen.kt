@@ -16,15 +16,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -98,6 +101,51 @@ fun SettingsScreen(
                     "Connection and quiet automation.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+        }
+
+        SettingsSectionLabel("Sync")
+        SettingsGroup {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Sync LifeOS", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Checks new bank alerts and card statements, then refreshes Pulse, Apple Health scores, execution, and insights.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                Button(
+                    onClick = viewModel::syncAll,
+                    enabled = !state.syncing,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LifeOsColors.Primary,
+                        contentColor = LifeOsColors.OnPrimary,
+                    ),
+                ) {
+                    if (state.syncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 10.dp).size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = LifeOsColors.OnPrimary,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
+                    Text(if (state.syncing) "Syncing LifeOS…" else "Sync everything")
+                }
+                Text(
+                    state.syncMessage ?: "Last refreshed ${formatLastSync(state.lastSyncAt)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (state.syncError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
                 )
             }
         }
@@ -220,11 +268,6 @@ fun SettingsScreen(
                         "Asks the Jetson to recompute LifeOS overnight. Apple Health continues to arrive through Health Auto Export.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.OnSurfaceMuted,
-                    )
-                    Text(
-                        "Last completed ${formatLastSync(state.lastSyncAt)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = LifeOsColors.OnBackground,
                     )
                 }
             }

@@ -8,7 +8,7 @@ import pytest
 
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
-from app.services.chat_service import MAX_AGENT_STEPS, ChatService
+from app.services.chat_service import MAX_AGENT_STEPS, ChatService, _is_personal_data_question
 from app.services.openclaw import OpenClawTimeout
 
 
@@ -52,6 +52,17 @@ class _TimeoutClient:
 
     def chat_with_tools(self, messages, tools, temperature=0.2, timeout=None):
         raise OpenClawTimeout("read timed out")
+
+
+class _GeneralClient:
+    timeout = 90.0
+
+    def __init__(self):
+        self.messages = []
+
+    def chat(self, messages, temperature=0.2, timeout=None):
+        self.messages = messages
+        return "def fibonacci(n):\n    return n if n < 2 else fibonacci(n - 1) + fibonacci(n - 2)"
 
 
 def test_agent_executes_tool_then_answers(client, monkeypatch):
@@ -121,6 +132,41 @@ def test_agent_enforces_whole_request_deadline(client, monkeypatch):
 
     with pytest.raises(OpenClawTimeout, match="overall time budget"):
         svc._run_agent([{"role": "user", "content": "q"}])
+
+
+def test_general_code_question_does_not_receive_lifeos_context(client):
+    from app.schemas.chat import ChatMessage, ChatRequest
+
+    model = _GeneralClient()
+    svc = ChatService(db=None, client=model)
+    svc.build_context = lambda days: pytest.fail("general questions must not build personal context")
+
+    response = svc.ask(
+        ChatRequest(
+            message="Write Python code for Fibonacci numbers",
+            history=[ChatMessage(role="assistant", content="Your sleep score was low.")],
+        )
+    )
+
+    assert "def fibonacci" in response.answer
+    assert response.grounded is False
+    assert response.citations == []
+    assert "DATA CONTEXT" not in str(model.messages)
+    assert "sleep score was low" not in str(model.messages)
+
+
+@pytest.mark.parametrize(
+    ("question", "personal"),
+    [
+        ("How was my sleep last night?", True),
+        ("How am I doing this week?", True),
+        ("How much did I spend this month?", True),
+        ("What is REM sleep?", False),
+        ("Write Fibonacci code", False),
+    ],
+)
+def test_chat_route_detection(question, personal):
+    assert _is_personal_data_question(question) is personal
 
 
 def _seed_mood_and_exec(client, n_days=10):

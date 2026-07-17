@@ -3,6 +3,7 @@ package com.lifeos.app.presentation.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.repository.SettingsRepository
+import com.lifeos.app.sync.LifeOsSyncCoordinator
 import com.lifeos.app.work.WorkScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,12 +19,16 @@ data class SettingsUiState(
     val lastSyncAt: Long? = null,
     val pulseReminderEnabled: Boolean = false,
     val pulseReminderHour: Int = 21,
+    val syncing: Boolean = false,
+    val syncMessage: String? = null,
+    val syncError: Boolean = false,
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val workScheduler: WorkScheduler,
+    private val syncCoordinator: LifeOsSyncCoordinator,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -33,10 +38,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 baseUrl = settingsRepository.apiBaseUrl.first(),
-                lastSyncAt = settingsRepository.lastSyncAt.first(),
                 pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first(),
                 pulseReminderHour = settingsRepository.pulseReminderHour.first(),
             )
+        }
+        viewModelScope.launch {
+            settingsRepository.lastSyncAt.collect { lastSyncAt ->
+                _state.value = _state.value.copy(lastSyncAt = lastSyncAt)
+            }
         }
     }
 
@@ -66,6 +75,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.setPulseReminderHour(clamped)
             if (_state.value.pulseReminderEnabled) workScheduler.schedulePulseReminder(clamped)
+        }
+    }
+
+    fun syncAll() {
+        if (_state.value.syncing) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(syncing = true, syncMessage = null, syncError = false)
+            val result = syncCoordinator.syncAll()
+            _state.value = _state.value.copy(
+                syncing = false,
+                syncMessage = result.message,
+                syncError = !result.successful,
+            )
         }
     }
 }

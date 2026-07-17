@@ -10,12 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -125,22 +120,6 @@ fun DashboardScreen(
         // All five vitals, grouped. Tap a row for its detail + trend.
         item { SectionHeader("Today's vitals") }
         item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
-
-        item {
-            Button(
-                onClick = { viewModel.syncAndAnalyze() },
-                enabled = !state.syncing,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = LifeOsColors.Primary,
-                    contentColor = LifeOsColors.OnPrimary,
-                ),
-            ) {
-                if (state.syncing) CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp), color = LifeOsColors.OnPrimary)
-                Text(if (state.syncing) "Syncing…" else "Sync & analyze", fontWeight = FontWeight.SemiBold)
-            }
-        }
 
         if (state.message != null) {
             item {

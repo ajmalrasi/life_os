@@ -33,9 +33,8 @@ import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -288,20 +287,7 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
-                    ScreenHeader("Money", "Where it's going.")
-                }
-                IconButton(onClick = viewModel::syncNow, enabled = !state.syncing) {
-                    if (state.syncing) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Sync now", tint = LifeOsColors.Primary)
-                    }
-                }
-            }
-        }
+        item { ScreenHeader("Money", "Where it's going.") }
 
         state.error?.let { err ->
             item {
@@ -601,7 +587,7 @@ private fun SpendSummaryCard(
 private fun EmptyPeriodCard() {
     LifeOsCard(modifier = Modifier.fillMaxWidth()) {
         Text(
-            "Nothing here for this period. Use ‹ › above to look at another one, or tap sync to pull the latest.",
+            "Nothing here for this period. Use ‹ › above to look at another one, or sync LifeOS from Settings.",
             style = MaterialTheme.typography.bodyMedium,
             color = LifeOsColors.OnSurfaceMuted,
         )
@@ -937,7 +923,7 @@ private fun RepaymentDialog(
                         contentAlignment = Alignment.Center,
                     ) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
                     candidates.isEmpty() -> Text(
-                        "No matching incoming payment was found. Sync Money and try again after the return is received.",
+                        "No matching incoming payment was found. Sync LifeOS in Settings and try again after the return is received.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = LifeOsColors.OnSurfaceMuted,
                     )

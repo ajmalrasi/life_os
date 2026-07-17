@@ -334,6 +334,18 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   `DELETE /expenses/repayments/{id}`. Rebuild deletion deliberately preserves any
   transaction referenced by an audit record, so a Gmail reparse cannot erase a
   user decision. Backend full suite and Android `assembleDebug` + unit tests pass.
+- ✅ **One sync surface + app-open refresh (2026-07-17).** The Today and Money
+  sync controls were removed; Settings owns the single **Sync everything** action.
+  `LifeOsSyncCoordinator.syncAll()` checks incremental bank alerts + statement
+  summaries/EMIs, refreshes Pulse, then recomputes health/execution/insights.
+  App process start calls `refreshOnAppOpen()`, which only refreshes the Android
+  caches from the Jetson (no Gmail polling or LLM work), so opening Ask cannot
+  contend with the local model. The nightly WorkManager recompute remains.
+- ✅ **Ask general-question routing (2026-07-17).** `ChatService.ask()` now routes
+  explicit personal-data questions through the grounded LifeOS context/tools and
+  general knowledge/code questions through a clean general prompt with no personal
+  snapshot or stale sleep history. Clear new topics intentionally drop history;
+  short follow-ups retain it. A Fibonacci regression test guards the reported bug.
 - ✅ **Statements are summary + EMI only (2026-07-17).** Monthly statement PDFs
   still populate `card_statements` (total/minimum due, due date, cycle dates), but
   ordinary line items no longer enter `transactions`; live alerts own normal

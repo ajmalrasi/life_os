@@ -22,7 +22,6 @@ enum class SpendPeriod { DAY, WEEK, MONTH, SIX_MONTHS, YEAR, CUSTOM }
 
 data class MoneyUiState(
     val loading: Boolean = true,
-    val syncing: Boolean = false,
     val error: String? = null,
     val period: SpendPeriod = SpendPeriod.MONTH,
     /** The period currently in view; moved by [prevPeriod]/[nextPeriod]. */
@@ -88,16 +87,6 @@ class MoneyViewModel @Inject constructor(
                         ?: it.cardDues,
                 )
             }
-        }
-    }
-
-    /** Pull-to-refresh: ask the backend to check for new emails now, then reload. */
-    fun syncNow() {
-        viewModelScope.launch {
-            _state.update { it.copy(syncing = true) }
-            runCatching { repository.syncNow() }
-            _state.update { it.copy(syncing = false) }
-            load()
         }
     }
 

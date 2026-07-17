@@ -30,7 +30,6 @@ data class DashboardUiState(
     val pulseSavedMessage: String? = null,
     val pulseSubmitting: Boolean = false,
     val notifications: List<AppNotification> = emptyList(),
-    val syncing: Boolean = false,
     val message: String? = null,
     val usingDemoData: Boolean = false,
 )
@@ -66,7 +65,6 @@ class DashboardViewModel @Inject constructor(
             pulseSavedMessage = t.pulseSavedMessage,
             pulseSubmitting = t.pulseSubmitting,
             notifications = displayNotifications,
-            syncing = t.syncing,
             message = t.message,
             usingDemoData = useDemo,
         )
@@ -88,38 +86,6 @@ class DashboardViewModel @Inject constructor(
             }
         }
     }
-
-    /**
-     * Recompute + refresh. Health data now arrives from the iPhone via Health
-     * Auto Export (POST /health/auto-export), so this no longer reads/uploads
-     * Health Connect — it recomputes the recent window and refreshes the cache.
-     */
-    fun syncAndAnalyze() {
-        viewModelScope.launch {
-            transient.value = transient.value.copy(syncing = true, message = null)
-            runCatching {
-                val execution = analyticsRepository.recompute(60)
-                settingsRepository.setLastSyncDay(LocalDate.now())
-                settingsRepository.setLastSyncAt(System.currentTimeMillis())
-                transient.value = transient.value.copy(
-                    notifications = analyticsRepository.notifications(),
-                )
-                val execNote = execution.todayCommits?.let { commits ->
-                    val mins = execution.todayCodingMinutes ?: 0
-                    " Auto-detected $commits commit(s), ${mins}m coding."
-                } ?: ""
-                setMessage("Recomputed insights from your latest synced data.$execNote")
-            }.onFailure { e ->
-                val url = runCatching { settingsRepository.apiBaseUrl.first() }.getOrDefault("unknown")
-                val hint = if (url.contains("10.0.2.2")) {
-                    " On a real phone, open Settings and set your Mac/Jetson LAN IP (e.g. http://192.168.x.x:8000/)."
-                } else ""
-                setMessage("Sync failed (${e.message ?: "connection error"}). Backend: $url.$hint")
-            }
-            transient.value = transient.value.copy(syncing = false)
-        }
-    }
-
 
     fun submitPulse(pulse: DayPulse) {
         viewModelScope.launch {
@@ -149,7 +115,6 @@ class DashboardViewModel @Inject constructor(
         val pulseSavedMessage: String? = null,
         val pulseSubmitting: Boolean = false,
         val notifications: List<AppNotification> = emptyList(),
-        val syncing: Boolean = false,
         val message: String? = null,
     )
 }

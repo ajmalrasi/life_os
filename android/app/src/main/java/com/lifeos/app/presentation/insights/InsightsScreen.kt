@@ -61,7 +61,7 @@ fun InsightsScreen(viewModel: InsightsViewModel = hiltViewModel()) {
                             color = LifeOsColors.OnBackground,
                         )
                         Text(
-                            "Keep logging your Pulse and syncing health data. Patterns appear once there are enough days to correlate.",
+                            "Keep logging your Pulse; Apple Health arrives through Health Auto Export. Patterns appear once there are enough days to correlate.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = LifeOsColors.OnSurfaceMuted,
                         )
