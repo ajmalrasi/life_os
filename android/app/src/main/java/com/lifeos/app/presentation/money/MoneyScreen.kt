@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -130,8 +131,11 @@ private fun categoryColor(category: String): Color = when (category.lowercase())
     else -> LifeOsColors.OnSurfaceMuted
 }
 
-private fun prettyCategory(category: String): String =
-    category.replace('_', ' ').replaceFirstChar { it.uppercase() }
+private fun prettyCategory(category: String): String = when (category.lowercase()) {
+    "emi" -> "EMI"
+    "emi_fees" -> "EMI fees"
+    else -> category.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
 
 private val EDITABLE_CATEGORIES = listOf(
     "internet", "utilities", "food", "groceries", "fuel", "travel", "shopping",
@@ -1167,8 +1171,32 @@ private fun DuesFooterCard(
     onMarkPaid: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var pendingPaid by remember { mutableStateOf<CardStatement?>(null) }
     val expandable = cards.isNotEmpty()
     val dm = DateTimeFormatter.ofPattern("dd MMM")
+    pendingPaid?.let { card ->
+        AlertDialog(
+            onDismissRequest = { pendingPaid = null },
+            title = { Text("Mark this card paid?") },
+            text = {
+                Text(
+                    "${card.cardLabel} · ${(card.totalDue ?: BigDecimal.ZERO).rupees()} will be removed from upcoming dues. The statement will stay in LifeOS.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingPaid = null
+                        onMarkPaid(card.id)
+                    },
+                ) { Text("Yes, paid") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPaid = null }) { Text("Cancel") }
+            },
+        )
+    }
     LifeOsCard(modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(
@@ -1214,51 +1242,98 @@ private fun DuesFooterCard(
                 Spacer(Modifier.height(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     cards.forEach { card ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = LifeOsColors.SurfaceMuted,
                         ) {
-                            val dueSoon = card.dueDate?.let {
-                                !it.isBefore(LocalDate.now()) && !it.isAfter(LocalDate.now().plusDays(7))
-                            } ?: false
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    card.cardLabel + (card.cardLast4?.let { " ····$it" } ?: ""),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = LifeOsColors.OnBackground,
-                                    maxLines = 1,
-                                )
-                                Text(
-                                    listOfNotNull(
-                                        card.dueDate?.let { "Due ${it.format(dm)}" },
-                                        card.bank,
-                                    ).joinToString(" · "),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (dueSoon) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
-                                    fontWeight = if (dueSoon) FontWeight.SemiBold else null,
-                                    maxLines = 1,
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    (card.totalDue ?: BigDecimal.ZERO).rupees(),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = LifeOsColors.OnBackground,
-                                )
-                                TextButton(
-                                    onClick = { onMarkPaid(card.id) },
-                                    enabled = savingStatementId == null,
-                                ) {
-                                    Text(if (savingStatementId == card.id) "Saving…" else "Mark paid")
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val dueSoon = card.dueDate?.let {
+                                    !it.isBefore(LocalDate.now()) && !it.isAfter(LocalDate.now().plusDays(7))
+                                } ?: false
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        card.cardLabel + (card.cardLast4?.let { " ····$it" } ?: ""),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = LifeOsColors.OnBackground,
+                                        maxLines = 1,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        listOfNotNull(
+                                            card.dueDate?.let { "Due ${it.format(dm)}" },
+                                            card.bank.uppercase(),
+                                        ).joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (dueSoon) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                                        fontWeight = if (dueSoon) FontWeight.SemiBold else null,
+                                        maxLines = 1,
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        (card.totalDue ?: BigDecimal.ZERO).rupees(),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = LifeOsColors.OnBackground,
+                                    )
+                                    Spacer(Modifier.height(5.dp))
+                                    PaidActionPill(
+                                        saving = savingStatementId == card.id,
+                                        enabled = savingStatementId == null,
+                                        onClick = { pendingPaid = card },
+                                    )
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PaidActionPill(
+    saving: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = if (saving) LifeOsColors.SurfaceBorder else LifeOsColors.PrimarySoft,
+        contentColor = if (saving) LifeOsColors.OnSurfaceMuted else LifeOsColors.Primary,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (saving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+            Spacer(Modifier.width(5.dp))
+            Text(
+                if (saving) "Saving" else "Mark paid",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
