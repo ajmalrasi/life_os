@@ -344,7 +344,9 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   custom full-width navy dock with five labeled, equal-width tap targets and a
   slim selection marker (no Material capsule/selection pill). A resizable home-screen widget shows
   today's and the current month's INR spend from the same filtered transaction
-  cache as Money. It refreshes after app-open/manual sync and via six-hour
+  cache as Money. The widget is a compact Samsung 3×1 row with a translucent
+  navy/glass background (the original installed 3×2 instance was manually resized
+  after its provider dimensions changed). It refreshes after app-open/manual sync and via six-hour
   best-effort WorkManager refresh; tapping it opens Money.
 - ✅ **One sync surface + app-open refresh (2026-07-17).** The Today and Money
   sync controls were removed; Settings owns the single **Sync everything** action.

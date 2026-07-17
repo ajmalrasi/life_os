@@ -15,8 +15,6 @@ import kotlinx.coroutines.flow.first
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -56,13 +54,9 @@ class SpendWidgetUpdater @Inject constructor(
                 setTextViewText(R.id.widget_today_amount, todayTotal.rupees())
                 setTextViewText(
                     R.id.widget_month_label,
-                    today.month.name.lowercase().replaceFirstChar(Char::uppercase),
+                    today.month.name.take(3),
                 )
                 setTextViewText(R.id.widget_month_amount, monthTotal.rupees())
-                setTextViewText(
-                    R.id.widget_updated,
-                    "Updated ${LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a"))}",
-                )
                 setOnClickPendingIntent(R.id.widget_root, openMoney)
             }
             manager.updateAppWidget(id, views)
