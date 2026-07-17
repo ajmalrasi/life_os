@@ -266,6 +266,14 @@ class ChatService:
                 grounded=True,
             )
 
+        direct = self._direct_personal_answer(req.message, context)
+        if direct is not None:
+            return ChatResponse(
+                answer=direct,
+                citations=self._citations(context),
+                grounded=True,
+            )
+
         messages = self._personal_messages(req, context)
 
         try:
@@ -329,6 +337,13 @@ class ChatService:
             yield {"type": "done", "citations": [], "grounded": True}
             return
 
+
+        direct = self._direct_personal_answer(req.message, context)
+        if direct is not None:
+            yield {"type": "delta", "text": direct}
+            yield {"type": "done", "citations": citations, "grounded": True}
+            return
+
         messages = self._personal_messages(req, context)
         emitted = False
         try:
@@ -374,6 +389,56 @@ class ChatService:
                 context.get("spending") is not None,
             )
         )
+
+    @staticmethod
+    def _direct_personal_answer(message: str, context: dict) -> str | None:
+        """Answer simple personal facts without spending a local-model call.
+
+        The small Jetson model is still used for interpretation and follow-ups,
+        but totals and score lookups should remain instant and reliable.
+        """
+        text = message.casefold()
+        spending = context.get("spending")
+        if re.search(r"\b(?:spend|spent|spending|expenses?)\b", text) and re.search(
+            r"\b(?:how much|total|what did i|this month|today|yesterday)\b", text
+        ):
+            if not spending:
+                return "I don't have any spending transactions in this data window yet."
+            daily = {row["day"]: row["spend"] for row in spending["recent_daily_spend"]}
+            today = context["window"]["end"]
+            yesterday = (date.fromisoformat(today) - timedelta(days=1)).isoformat()
+            if "today" in text:
+                return f"You spent ₹{daily.get(today, 0):,} today ({today})."
+            if "yesterday" in text:
+                return f"You spent ₹{daily.get(yesterday, 0):,} yesterday ({yesterday})."
+            if "month" in text:
+                return (
+                    f"You spent ₹{spending['current_month_total']:,} this calendar month "
+                    f"({spending['current_month']})."
+                )
+            return (
+                f"You spent ₹{spending['total_spend']:,} over the last "
+                f"{context['window']['days']} days, across "
+                f"{spending['days_with_spend']} spend days."
+            )
+
+        if re.search(r"\b(?:how (?:is|was) my|what(?:'s| is) my) sleep\b", text):
+            sleep_days = [
+                row for row in context.get("recent_daily", []) if row.get("sleep") is not None
+            ]
+            average = context.get("averages", {}).get("sleep_score")
+            if not sleep_days and average is None:
+                return "I don't have a recent sleep score yet. Check the Health Auto Export sync."
+            latest = sleep_days[-1] if sleep_days else None
+            if latest and average is not None:
+                return (
+                    f"Your latest sleep score is {latest['sleep']:.0f} on {latest['day']}; "
+                    f"your {context['window']['days']}-day average is {average:.1f}."
+                )
+            if latest:
+                return f"Your latest sleep score is {latest['sleep']:.0f} on {latest['day']}."
+            return f"Your {context['window']['days']}-day sleep-score average is {average:.1f}."
+        return None
 
     def _general_messages(self, req: ChatRequest) -> list[dict]:
         messages: list[dict] = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]

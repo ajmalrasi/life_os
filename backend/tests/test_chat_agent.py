@@ -271,6 +271,35 @@ def test_timeout_fallback_includes_calendar_month_spending():
     assert "last 30 days: ₹42,100" in answer
 
 
+def test_direct_personal_answers_cover_spending_and_sleep_without_model():
+    context = {
+        "window": {"start": "2026-07-01", "end": "2026-07-18", "days": 30},
+        "averages": {"sleep_score": 44.8},
+        "spending": {
+            "current_month": "2026-07",
+            "current_month_total": 38712,
+            "total_spend": 76086,
+            "days_with_spend": 29,
+            "recent_daily_spend": [
+                {"day": "2026-07-17", "spend": 654},
+                {"day": "2026-07-18", "spend": 120},
+            ],
+        },
+        "recent_daily": [
+            {"day": "2026-07-17", "sleep": 51.2, "recovery": 62, "execution": 20}
+        ],
+    }
+    assert ChatService._direct_personal_answer(
+        "How much did I spend this month?", context
+    ) == "You spent ₹38,712 this calendar month (2026-07)."
+    assert ChatService._direct_personal_answer(
+        "How much did I spend yesterday?", context
+    ) == "You spent ₹654 yesterday (2026-07-17)."
+    assert ChatService._direct_personal_answer("How is my sleep?", context) == (
+        "Your latest sleep score is 51 on 2026-07-17; your 30-day average is 44.8."
+    )
+
+
 @pytest.mark.parametrize(
     ("question", "personal"),
     [
