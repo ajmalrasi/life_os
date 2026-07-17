@@ -124,11 +124,13 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   Uvicorn and `/v1/models` keep returning 200, but generation returns no bytes.
   `backend/scripts/watch_openclaw_mlc.sh` detects the fatal log immediately and
   also performs a conservative one-token probe after three quiet minutes. Two
-  unexplained probe failures restart `openclaw-mlc.service`. The model is pinned
+  unexplained probe failures recover `openclaw-mlc.service`. The model is pinned
   to **4096 tokens only** by `10-lifeos-4k.conf` — 2K is not acceptable. Recovery
-  temporarily stops the unused gateway and Rabbit Hole containers so the Jetson
-  can allocate the 4K model/KV cache from clean unified memory, then restores
-  them after model readiness. The user timer is
+  temporarily stops the gateway plus all LifeOS/Rabbit containers so the Jetson
+  can allocate the 4K model/KV cache from clean unified memory, requires at least
+  6.5GB available, and proves a real generation before restoring them. It makes
+  only one load attempt: repeating a CUDA OOM fragments Tegra NvMap further. The
+  user timer is
   `openclaw-mlc-watchdog.timer` (repo units under `backend/ops/systemd/`). Do not
   replace this with a `/v1/models`-only health check.
 - **Don't make the post-sync recompute slow again.** `/analytics/recompute` runs

@@ -14,7 +14,7 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lifeos"
 FAILURE_FILE="$STATE_DIR/openclaw-mlc-watchdog.failures"
 LOCK_FILE="$STATE_DIR/openclaw-mlc-watchdog.lock"
 DRY_RUN="${MODEL_WATCHDOG_DRY_RUN:-0}"
-ANCILLARY_CONTAINERS="${ANCILLARY_CONTAINERS:-rabbit_hole_api rabbit_hole_db}"
+ANCILLARY_CONTAINERS="${ANCILLARY_CONTAINERS:-backend-api-1 backend-db-1 rabbit_hole_api rabbit_hole_db}"
 ANCILLARY_USER_SERVICE="${ANCILLARY_USER_SERVICE:-openclaw-gateway.service}"
 
 mkdir -p "$STATE_DIR"
@@ -40,6 +40,7 @@ recover_model() {
   local reason="$1"
   local ancillary_service_was_active=0
   local container
+  local available_mib
   local ready=0
   local -a running_containers=()
   clear_failures
@@ -63,17 +64,47 @@ recover_model() {
     fi
   done
 
-  log "restarting 4K $MODEL_SERVICE ($reason)"
-  # The systemd wrapper removes the --rm container, waits for CUDA memory to
-  # settle, drops page cache, and proves a real generation before serving.
-  systemctl --user restart "$MODEL_SERVICE"
-  for _ in $(seq 1 60); do
-    if curl -fsS --max-time 2 "$MODEL_BASE_URL/v1/models" >/dev/null 2>&1; then
-      ready=1
+  log "recovering 4K $MODEL_SERVICE ($reason)"
+  # A blind restart races the Tegra CUDA allocator: the replacement process
+  # can begin loading before the old 4.5GB allocation is actually reclaimed.
+  # Stop once, require the same clean-memory level that recovered 4K in the
+  # live incident, and never loop after a CUDA OOM (retries fragment NvMap).
+  systemctl --user stop "$MODEL_SERVICE"
+  for _ in $(seq 1 30); do
+    available_mib=$(awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
+    if [ "$available_mib" -ge 6500 ]; then
       break
     fi
-    sleep 3
+    sleep 2
   done
+
+  if [ "${available_mib:-0}" -ge 6500 ]; then
+    systemctl --user start "$MODEL_SERVICE"
+    for _ in $(seq 1 100); do
+      if docker logs --tail 40 "$MODEL_CONTAINER" 2>&1 | grep -q 'CUDA: out of memory'; then
+        log "4K load hit CUDA OOM; leaving the model stopped instead of fragmenting memory with retries"
+        break
+      fi
+      if curl -fsS --max-time 2 "$MODEL_BASE_URL/v1/models" >/dev/null 2>&1; then
+        # /v1/models is insufficient: the original failure left it returning
+        # 200 while the decoding thread was dead. Prove a real generation.
+        if curl -fsS --max-time 90 \
+          -H 'Content-Type: application/json' \
+          -d '{"model":"openclaw","messages":[{"role":"user","content":"Reply only: OK"}],"max_tokens":1,"stream":false}' \
+          "$MODEL_BASE_URL/v1/chat/completions" >/dev/null; then
+          ready=1
+        fi
+        break
+      fi
+      sleep 3
+    done
+  else
+    log "only ${available_mib:-unknown} MiB available after cleanup; refusing an unsafe 4K start"
+  fi
+
+  if [ "$ready" != "1" ]; then
+    systemctl --user stop "$MODEL_SERVICE"
+  fi
 
   if [ "$ancillary_service_was_active" = "1" ]; then
     systemctl --user start "$ANCILLARY_USER_SERVICE"
@@ -108,8 +139,8 @@ if [ "${MODEL_WATCHDOG_FORCE_FATAL:-0}" = "1" ]; then
   exit 0
 fi
 
-# The model's existing systemd wrapper already owns startup retries and its
-# 4096 -> 2048 context fallback. Do not interfere while that is in progress.
+# The model's existing systemd wrapper owns startup and its one-token proof.
+# Do not interfere while the 4096-only launch is in progress.
 systemctl --user is-active --quiet "$MODEL_SERVICE" || exit 0
 started_at=$(docker inspect -f '{{.State.StartedAt}}' "$MODEL_CONTAINER" 2>/dev/null) || exit 0
 started_epoch=$(date -d "$started_at" +%s 2>/dev/null) || exit 0
