@@ -341,8 +341,10 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   general-vs-personal routing are preserved; leading `<think>` output is filtered.
 - ✅ **Blue visual refresh + spend widget (2026-07-17).** The muted orange app
   identity was replaced with a cool navy/ocean-blue palette. The bottom nav is a
-  custom full-width navy dock with five labeled, equal-width tap targets and a
-  slim selection marker (no Material capsule/selection pill). A resizable home-screen widget shows
+  flat, edge-to-edge navy dock with five labeled, equal-width tap targets and a
+  slim selection marker (no rounded container or Material selection pill). It
+  continues behind Android's native Recents/Home/Back area, whose icons are
+  light, so there is no separate light system-navigation strip. A resizable home-screen widget shows
   today's and the current month's INR spend from the same filtered transaction
   cache as Money. The widget is a compact Samsung 3×1 row with a translucent
   navy/glass background (the original installed 3×2 instance was manually resized

@@ -15,11 +15,11 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Force dark system-bar icons so the clock, signal, and battery stay visible
-        // on our light canvas regardless of the device's system light/dark setting.
+        // The status bar sits on the light app canvas; the native Android
+        // navigation controls share the navy bottom dock below.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.rgb(0x10, 0x2A, 0x43)),
         )
         // Deep-link target from a notification tap (e.g. the Pulse reminder).
         val startTab = intent?.getStringExtra(AppNotifications.EXTRA_OPEN_TAB)

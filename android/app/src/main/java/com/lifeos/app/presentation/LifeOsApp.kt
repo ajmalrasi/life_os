@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -119,27 +121,21 @@ fun LifeOsApp(startTab: String? = null) {
 }
 
 /**
- * A quiet, full-width dock instead of Material's pill-shaped navigation bar.
- * Each destination owns an equal-width tap target; selection is communicated
- * with a slim top marker, brighter icon, and stronger label—not another pill.
+ * A flat, full-width dock that continues behind Android's native navigation
+ * controls. Each destination owns an equal-width tap target; selection is
+ * communicated with a slim marker, brighter icon, and stronger label.
  */
 @Composable
 private fun LifeOsBottomNavigation(
     selectedRoute: String?,
     onDestinationSelected: (Destination) -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(LifeOsColors.Background)
-            .navigationBarsPadding(),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = LifeOsColors.NavigationSurface,
+        shadowElevation = 8.dp,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = LifeOsColors.NavigationSurface,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            shadowElevation = 10.dp,
-        ) {
+        Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -195,6 +191,11 @@ private fun LifeOsBottomNavigation(
                     }
                 }
             }
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsBottomHeight(WindowInsets.navigationBars),
+            )
         }
     }
 }
