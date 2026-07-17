@@ -340,8 +340,9 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   visible, and attaches citations from the final event. The bounded tool loop and
   general-vs-personal routing are preserved; leading `<think>` output is filtered.
 - ✅ **Blue visual refresh + spend widget (2026-07-17).** The muted orange app
-  identity was replaced with a cool navy/ocean-blue palette and the bottom nav is
-  now a high-contrast navy floating bar. A resizable home-screen widget shows
+  identity was replaced with a cool navy/ocean-blue palette. The bottom nav is a
+  custom full-width navy dock with five labeled, equal-width tap targets and a
+  slim selection marker (no Material capsule/selection pill). A resizable home-screen widget shows
   today's and the current month's INR spend from the same filtered transaction
   cache as Money. It refreshes after app-open/manual sync and via six-hour
   best-effort WorkManager refresh; tapping it opens Money.

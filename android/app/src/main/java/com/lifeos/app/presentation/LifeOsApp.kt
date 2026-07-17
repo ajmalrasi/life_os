@@ -1,13 +1,20 @@
 package com.lifeos.app.presentation
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
@@ -17,17 +24,19 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -77,47 +86,16 @@ fun LifeOsApp(startTab: String? = null) {
         bottomBar = {
             val settingsOpen = current?.hierarchy?.any { it.route == Destination.SETTINGS.route } == true
             if (!settingsOpen) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(LifeOsColors.Background)
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    NavigationBar(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .clip(RoundedCornerShape(22.dp)),
-                        containerColor = LifeOsColors.NavigationSurface,
-                        tonalElevation = 0.dp,
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                    ) {
-                        primaryDestinations.forEach { dest ->
-                            val selected = current?.hierarchy?.any { it.route == dest.route } == true
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    navController.navigate(dest.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                alwaysShowLabel = false,
-                                icon = { Icon(dest.icon, contentDescription = dest.label, modifier = Modifier.size(22.dp)) },
-                                label = { Text(dest.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = LifeOsColors.NavigationSelected,
-                                    selectedTextColor = LifeOsColors.NavigationSelected,
-                                    indicatorColor = LifeOsColors.NavigationIndicator,
-                                    unselectedIconColor = LifeOsColors.NavigationUnselected,
-                                    unselectedTextColor = LifeOsColors.NavigationUnselected,
-                                ),
-                            )
+                LifeOsBottomNavigation(
+                    selectedRoute = current?.route,
+                    onDestinationSelected = { dest ->
+                        navController.navigate(dest.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
                         }
                     }
-                }
+                )
             }
         },
     ) { padding ->
@@ -135,6 +113,87 @@ fun LifeOsApp(startTab: String? = null) {
             composable(Destination.CHAT.route) { ChatScreen() }
             composable(Destination.SETTINGS.route) {
                 SettingsScreen(onBack = { navController.popBackStack() })
+            }
+        }
+    }
+}
+
+/**
+ * A quiet, full-width dock instead of Material's pill-shaped navigation bar.
+ * Each destination owns an equal-width tap target; selection is communicated
+ * with a slim top marker, brighter icon, and stronger label—not another pill.
+ */
+@Composable
+private fun LifeOsBottomNavigation(
+    selectedRoute: String?,
+    onDestinationSelected: (Destination) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(LifeOsColors.Background)
+            .navigationBarsPadding(),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = LifeOsColors.NavigationSurface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            shadowElevation = 10.dp,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(78.dp)
+                    .padding(horizontal = 6.dp),
+            ) {
+                primaryDestinations.forEach { destination ->
+                    val selected = destination.route == selectedRoute
+                    val contentColor by animateColorAsState(
+                        targetValue = if (selected) {
+                            LifeOsColors.NavigationSelected
+                        } else {
+                            LifeOsColors.NavigationUnselected
+                        },
+                        label = "bottom_navigation_color",
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .selectable(
+                                selected = selected,
+                                onClick = { onDestinationSelected(destination) },
+                                role = Role.Tab,
+                            ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(28.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    if (selected) LifeOsColors.AccentSky else Color.Transparent
+                                ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Icon(
+                            imageVector = destination.icon,
+                            contentDescription = destination.label,
+                            modifier = Modifier.size(22.dp),
+                            tint = contentColor,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = destination.label,
+                            color = contentColor,
+                            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        )
+                    }
+                }
             }
         }
     }
