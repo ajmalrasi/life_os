@@ -35,10 +35,10 @@ object LifeOsColors {
     val OnBackground = Color(0xFF172B3A)   // navy ink
     val OnSurfaceMuted = Color(0xFF5D7083)
 
-    val NavigationSurface = Color(0xFF102A43)
-    val NavigationIndicator = Color(0xFF214D75)
-    val NavigationSelected = Color(0xFFF7FBFF)
-    val NavigationUnselected = Color(0xFFA9BDCF)
+    val NavigationSurface = Color(0xFFD7E5F0) // quiet mist blue
+    val NavigationIndicator = Color(0xFF2F76A5)
+    val NavigationSelected = Color(0xFF153B5A) // deep navy for active destination
+    val NavigationUnselected = Color(0xFF62798C)
 
     val ScoreHigh = Color(0xFF6B9B5E)      // moss
     val ScoreMid = Color(0xFFC99A3C)       // ochre

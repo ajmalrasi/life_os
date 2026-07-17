@@ -171,7 +171,7 @@ private fun LifeOsBottomNavigation(
                                 .height(3.dp)
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (selected) LifeOsColors.AccentSky else Color.Transparent
+                                    if (selected) LifeOsColors.NavigationIndicator else Color.Transparent
                                 ),
                         )
                         Spacer(Modifier.height(8.dp))

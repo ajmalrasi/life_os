@@ -19,7 +19,10 @@ class MainActivity : ComponentActivity() {
         // navigation controls share the navy bottom dock below.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.rgb(0x10, 0x2A, 0x43)),
+            navigationBarStyle = SystemBarStyle.light(
+                Color.rgb(0xD7, 0xE5, 0xF0),
+                Color.rgb(0xD7, 0xE5, 0xF0),
+            ),
         )
         // Deep-link target from a notification tap (e.g. the Pulse reminder).
         val startTab = intent?.getStringExtra(AppNotifications.EXTRA_OPEN_TAB)
