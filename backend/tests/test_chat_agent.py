@@ -155,7 +155,10 @@ def test_general_code_question_does_not_receive_lifeos_context(client):
     response = svc.ask(
         ChatRequest(
             message="Write Python code for Fibonacci numbers",
-            history=[ChatMessage(role="assistant", content="Your sleep score was low.")],
+            history=[
+                ChatMessage(role="user", content="How was my sleep last night?"),
+                ChatMessage(role="assistant", content="Your sleep score was low."),
+            ],
         )
     )
 
@@ -164,6 +167,29 @@ def test_general_code_question_does_not_receive_lifeos_context(client):
     assert response.citations == []
     assert "DATA CONTEXT" not in str(model.messages)
     assert "sleep score was low" not in str(model.messages)
+
+
+def test_general_follow_up_receives_recent_conversation(client):
+    from app.schemas.chat import ChatMessage, ChatRequest
+
+    model = _GeneralClient()
+    svc = ChatService(db=None, client=model)
+    svc.build_context = lambda days: pytest.fail("general questions must not build personal context")
+
+    svc.ask(
+        ChatRequest(
+            message="Now make it iterative and add type hints",
+            history=[
+                ChatMessage(role="user", content="Write a recursive Fibonacci function"),
+                ChatMessage(role="assistant", content="def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)"),
+            ],
+        )
+    )
+
+    prompt = str(model.messages)
+    assert "Write a recursive Fibonacci function" in prompt
+    assert "def fibonacci(n)" in prompt
+    assert "Now make it iterative" in prompt
 
 
 def test_general_code_question_streams_without_personal_context(client):
@@ -176,7 +202,10 @@ def test_general_code_question_streams_without_personal_context(client):
         svc.stream(
             ChatRequest(
                 message="Write Fibonacci code",
-                history=[ChatMessage(role="assistant", content="Your sleep was low")],
+                history=[
+                    ChatMessage(role="user", content="How was my sleep last night?"),
+                    ChatMessage(role="assistant", content="Your sleep was low"),
+                ],
             )
         )
     )

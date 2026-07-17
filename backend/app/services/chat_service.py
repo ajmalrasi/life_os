@@ -93,8 +93,9 @@ GENERAL_SYSTEM_PROMPT = (
     "directly, including general knowledge, explanations, and programming tasks. "
     "Do not mention or infer the user's sleep, health, mood, spending, productivity, "
     "or other personal LifeOS data unless the current request explicitly asks for it. "
-    "Prioritize the newest request over an older conversation topic. Be concise, "
-    "accurate, and provide complete runnable code when code is requested."
+    "Use prior turns to resolve references and continue the conversation, but "
+    "prioritize the newest request if it changes direction. Be concise, accurate, "
+    "and provide complete runnable code when code is requested."
 )
 
 _PERSONAL_DATA_TERMS = re.compile(
@@ -261,21 +262,7 @@ class ChatService:
                 grounded=True,
             )
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        # Keep enough continuity for a follow-up without repeatedly feeding the
-        # small 4k-context Jetson model an entire long conversation.
-        for m in req.history[-6:]:
-            messages.append({"role": m.role, "content": m.content})
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "DATA CONTEXT (JSON, your only source of truth):\n"
-                    + json.dumps(context, separators=(",", ":"))
-                    + f"\n\nQUESTION: {req.message}"
-                ),
-            }
-        )
+        messages = self._personal_messages(req, context)
 
         try:
             answer = self._run_agent(messages)
@@ -360,7 +347,7 @@ class ChatService:
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend(
             {"role": m.role, "content": m.content}
-            for m in req.history[-6:]
+            for m in self._compatible_history(req, personal=True)
         )
         messages.append(
             {
@@ -376,13 +363,46 @@ class ChatService:
 
     def _general_messages(self, req: ChatRequest) -> list[dict]:
         messages: list[dict] = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
-        if len(req.message.split()) <= 8 and _SHORT_FOLLOW_UP.search(req.message.strip()):
-            messages.extend(
-                {"role": m.role, "content": m.content}
-                for m in req.history[-4:]
-            )
+        messages.extend(
+            {"role": m.role, "content": m.content}
+            for m in self._compatible_history(req, personal=False)
+        )
         messages.append({"role": "user", "content": req.message})
         return messages
+
+    def _compatible_history(self, req: ChatRequest, personal: bool) -> list:
+        """Return the recent contiguous conversation for the current route.
+
+        Android sends the visible thread on every question. Keep the last six
+        user/assistant turns when they belong to the same personal/general route,
+        but stop at a route boundary. That gives normal follow-ups real memory
+        without feeding an old sleep discussion into a new coding question (or
+        vice versa). Orphan assistant turns are deliberately ignored.
+        """
+        groups: list[tuple[bool, list]] = []
+        current_group: list = []
+        current_route: bool | None = None
+        prior: list = []
+
+        for message in req.history:
+            if message.role == "user":
+                if current_group and current_route is not None:
+                    groups.append((current_route, current_group))
+                current_route = _is_personal_data_question(message.content, prior)
+                current_group = [message]
+            elif current_group:
+                current_group.append(message)
+            prior.append(message)
+
+        if current_group and current_route is not None:
+            groups.append((current_route, current_group))
+
+        compatible: list = []
+        for route, group in reversed(groups):
+            if route != personal:
+                break
+            compatible = group + compatible
+        return compatible[-6:]
 
     def _stream_agent(self, messages: list[dict]) -> Iterator[str]:
         tools = AgentTools(self.db)

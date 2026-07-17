@@ -11,6 +11,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -68,7 +69,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `history is forwarded to repository`() = runTest {
+    fun `completed conversation is forwarded with the next question`() = runTest {
         val captured = mutableListOf<List<ChatTurn>>()
         every { repository.stream(any(), capture(captured), any()) } returns flowOf(
             ChatStreamEvent.Delta("ok"),
@@ -77,12 +78,14 @@ class ChatViewModelTest {
 
         val vm = ChatViewModel(repository)
         vm.send("first")
-        vm.state.test {
-            var latest = awaitItem()
-            while (latest.messages.size < 2) latest = awaitItem()
-            cancelAndIgnoreRemainingEvents()
-        }
-        // First call has empty history.
-        assertTrue(captured.first().isEmpty())
+        advanceUntilIdle()
+        vm.send("second")
+        advanceUntilIdle()
+
+        assertTrue(captured[0].isEmpty())
+        assertEquals(
+            listOf(ChatTurn("user", "first"), ChatTurn("assistant", "ok")),
+            captured[1],
+        )
     }
 }

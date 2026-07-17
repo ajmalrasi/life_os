@@ -189,11 +189,14 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   closing call, and merely opening Ask triggered a competing LLM call for
   suggestion chips. A timed-out `httpx` call was silently mislabeled "OpenClaw is
   unreachable." Fix: suggestions are deterministic (no model request), context
-  JSON is compact, history is capped at 6 turns, tool rounds at 2, generation at
+  JSON is compact, history is capped at 6 route-compatible turns, tool rounds at 2, generation at
   512 tokens (with a 220-word prompt limit), per-call timeout at 90s, and the whole Ask agent at 135s (below
   Android's 150s read timeout). `OpenClawTimeout` is logged and the UI now says
   "The local model timed out"; true connection failures say it could not be
-  reached. Keep these budgets aligned if changing the Android network timeout.
+  reached. As of 2026-07-17, normal follow-ups always receive those recent turns;
+  history stops at a personal/general route boundary so an old sleep discussion
+  cannot contaminate a new coding question. Keep these budgets aligned if changing
+  the Android network timeout.
 - **Git from the Cowork sandbox can't delete `.git/*.lock` (EPERM).** A commit
   succeeds the first time but its lock-cleanup `unlink` is denied by the mount, so
   `.git/index.lock` + `.git/HEAD.lock` are left behind and **block every later
