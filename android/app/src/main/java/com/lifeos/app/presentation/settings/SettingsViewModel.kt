@@ -38,6 +38,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 baseUrl = settingsRepository.apiBaseUrl.first(),
+                lastSyncAt = settingsRepository.lastSyncAt.first(),
                 pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first(),
                 pulseReminderHour = settingsRepository.pulseReminderHour.first(),
             )
@@ -87,6 +88,10 @@ class SettingsViewModel @Inject constructor(
                 syncing = false,
                 syncMessage = result.message,
                 syncError = !result.successful,
+                // The coordinator persists this too. Updating the screen state
+                // explicitly makes the completion timestamp immediate even if
+                // the DataStore collector and navigation recreation race.
+                lastSyncAt = if (result.successful) System.currentTimeMillis() else _state.value.lastSyncAt,
             )
         }
     }
