@@ -253,6 +253,24 @@ def test_spending_only_context_counts_as_personal_data():
     assert ChatService._context_has_data(context) is True
 
 
+def test_timeout_fallback_includes_calendar_month_spending():
+    context = {
+        "window": {"days": 30},
+        "averages": {},
+        "current_state": None,
+        "spending": {
+            "current_month": "2026-07",
+            "current_month_total": 38712,
+            "total_spend": 42100,
+            "days_with_spend": 14,
+        },
+        "discovered_patterns": [],
+    }
+    answer = ChatService._fallback(None, context, "The local model timed out")
+    assert "spending this calendar month (2026-07): ₹38,712" in answer
+    assert "last 30 days: ₹42,100" in answer
+
+
 @pytest.mark.parametrize(
     ("question", "personal"),
     [

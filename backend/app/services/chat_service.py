@@ -166,6 +166,8 @@ class ChatService:
         insight_rows = self.insights.all()
         synth_rows = self.synth.all()
         spend_map = self.expenses.daily_spend(start, end)
+        month_start = end.replace(day=1)
+        month_spend_map = self.expenses.daily_spend(month_start, end)
 
         def avg(attr: str, rows) -> float | None:
             vals = [getattr(r, attr) for r in rows if getattr(r, attr) is not None]
@@ -208,6 +210,8 @@ class ChatService:
                     "total_spend": round(sum(spend_map.values())),
                     "avg_daily_spend": round(sum(spend_map.values()) / len(spend_map), 1),
                     "days_with_spend": len(spend_map),
+                    "current_month": end.strftime("%Y-%m"),
+                    "current_month_total": round(sum(month_spend_map.values())),
                     "recent_daily_spend": [
                         {"day": d.isoformat(), "spend": round(spend_map[d])}
                         for d in sorted(spend_map)[-14:]
@@ -576,6 +580,16 @@ class ChatService:
             parts.append(
                 f"- current state: {context['current_state']['state']} "
                 f"({context['current_state']['rationale']})"
+            )
+        spending = context.get("spending")
+        if spending:
+            parts.append(
+                f"- spending this calendar month ({spending['current_month']}): "
+                f"₹{spending['current_month_total']:,}"
+            )
+            parts.append(
+                f"- spending over the last {context['window']['days']} days: "
+                f"₹{spending['total_spend']:,} across {spending['days_with_spend']} spend days"
             )
         if context["discovered_patterns"]:
             parts.append("Discovered patterns:")
