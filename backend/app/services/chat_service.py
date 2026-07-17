@@ -100,7 +100,8 @@ _PERSONAL_DATA_TERMS = re.compile(
     r"\b(?:sleep|recovery|heart\s*rate|hrv|spo2|steps?|workouts?|exercise|fitness|"
     r"mood|stress|energy|focus|burnout|wellness|health|score|state|spend(?:ing)?|"
     r"expenses?|transactions?|bank|cards?|emi|commits?|github|execution|"
-    r"productivity|performance|pulse|vitals?)\b",
+    r"productiv(?:e|ity)|unproductive|procrastinat(?:e|ing|ion)|tired|fatigue|"
+    r"performance|pulse|vitals?)\b",
     re.IGNORECASE,
 )
 _PERSONAL_CUES = re.compile(
@@ -109,7 +110,8 @@ _PERSONAL_CUES = re.compile(
     re.IGNORECASE,
 )
 _EXPLICIT_PERSONAL_REQUEST = re.compile(
-    r"\b(?:lifeos|my\s+data|according\s+to\s+my|how\s+am\s+i\s+doing)\b",
+    r"\b(?:lifeos|my\s+data|according\s+to\s+my|how\s+am\s+i\s+doing|"
+    r"what\s+should\s+i\s+(?:do|focus\s+on)\s+today)\b",
     re.IGNORECASE,
 )
 _SHORT_FOLLOW_UP = re.compile(

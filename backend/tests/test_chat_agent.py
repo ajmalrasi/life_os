@@ -161,6 +161,8 @@ def test_general_code_question_does_not_receive_lifeos_context(client):
         ("How was my sleep last night?", True),
         ("How am I doing this week?", True),
         ("How much did I spend this month?", True),
+        ("Why am I unproductive?", True),
+        ("What should I do today?", True),
         ("What is REM sleep?", False),
         ("Write Fibonacci code", False),
     ],
