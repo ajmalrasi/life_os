@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TransactionOut(BaseModel):
@@ -27,6 +27,22 @@ class TransactionOut(BaseModel):
     source: str
     reference: str | None
     created_at: datetime
+
+
+class TransactionCategoryUpdate(BaseModel):
+    """A null category clears the manual override and restores auto-categorization."""
+
+    category: str | None = Field(default=None, max_length=64)
+
+    @field_validator("category")
+    @classmethod
+    def normalize_category(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = "_".join(value.strip().lower().replace("-", " ").split())
+        if not normalized or not all(ch.isalnum() or ch == "_" for ch in normalized):
+            raise ValueError("category must contain only letters, numbers, spaces, hyphens, or underscores")
+        return normalized
 
 
 class RepaymentCandidateOut(BaseModel):

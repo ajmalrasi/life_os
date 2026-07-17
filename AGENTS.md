@@ -400,6 +400,17 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   tints now use the shared terracotta/sage theme instead of page-specific green,
   pink, and yellow palettes. Built, unit-tested, installed, and visually checked
   on Samsung device `RZCX60SNHHE`.
+- ✅ **Money edits, early card payment, Ask hardening, and system night mode
+  (2026-07-18).** Money transaction details now support a per-row spend-category
+  override persisted on the Jetson (`transactions.spend_category_override`), with
+  Automatic restoring the payee/keyword result. This is separate from the
+  reconciliation `category`. Expanded card dues can be marked paid before the due
+  date; `card_statements.paid_at` retains the statement while excluding it from
+  upcoming totals. Ask now treats spending-only context as real LifeOS data,
+  explicitly uses authorized personal context, and filters leaked Qwen chat-template
+  tokens as well as `<think>` blocks. Android colors and system bars inherit the
+  system light/dark setting. **Existing Jetson databases require both columns to be
+  added manually because `create_all` does not ALTER tables.**
 
 ## 7. Open items / next steps
 

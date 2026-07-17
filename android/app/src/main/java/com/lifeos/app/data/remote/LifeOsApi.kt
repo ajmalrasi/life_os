@@ -26,11 +26,14 @@ import com.lifeos.app.data.remote.dto.StatementSyncResultDto
 import com.lifeos.app.data.remote.dto.SuggestionsResponseDto
 import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
+import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
+import com.lifeos.app.data.remote.dto.StatementPaidUpdateDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
+import retrofit2.http.PATCH
 import retrofit2.http.Query
 import retrofit2.http.Streaming
 import okhttp3.ResponseBody
@@ -100,11 +103,23 @@ interface LifeOsApi {
     @DELETE("expenses/repayments/{repaymentId}")
     suspend fun undoRepayment(@Path("repaymentId") repaymentId: Int): RepaymentDto
 
+    @PATCH("expenses/{transactionId}/category")
+    suspend fun updateTransactionCategory(
+        @Path("transactionId") transactionId: Int,
+        @Body body: TransactionCategoryUpdateDto,
+    ): TransactionDto
+
     @GET("statements")
     suspend fun listStatements(@Query("months") months: Int): List<CardStatementDto>
 
     @POST("statements/sync")
     suspend fun syncStatements(): StatementSyncResultDto
+
+    @PATCH("statements/{statementId}/paid")
+    suspend fun updateStatementPaid(
+        @Path("statementId") statementId: Int,
+        @Body body: StatementPaidUpdateDto,
+    ): CardStatementDto
 
     @GET("statements/analysis")
     suspend fun spendAnalysis(@Query("days") days: Int): SpendAnalysisDto

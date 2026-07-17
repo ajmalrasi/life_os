@@ -49,6 +49,10 @@ data class MoneyUiState(
     val repaymentError: String? = null,
     /** One-shot event consumed after its Undo snackbar is handled. */
     val completedRepayment: Repayment? = null,
+    val categoryEditTransaction: Transaction? = null,
+    val categorySaving: Boolean = false,
+    val categoryError: String? = null,
+    val statementSavingId: Int? = null,
 )
 
 @HiltViewModel
@@ -225,6 +229,63 @@ class MoneyViewModel @Inject constructor(
 
     fun consumeCompletedRepayment() {
         _state.update { it.copy(completedRepayment = null) }
+    }
+
+    fun beginCategoryEdit(transaction: Transaction) {
+        _state.update {
+            it.copy(categoryEditTransaction = transaction, categorySaving = false, categoryError = null)
+        }
+    }
+
+    fun dismissCategoryEdit() {
+        if (_state.value.categorySaving) return
+        _state.update { it.copy(categoryEditTransaction = null, categoryError = null) }
+    }
+
+    fun saveCategory(category: String?) {
+        val transactionId = _state.value.categoryEditTransaction?.id ?: return
+        if (_state.value.categorySaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(categorySaving = true, categoryError = null) }
+            val result = runCatching { repository.updateTransactionCategory(transactionId, category) }
+            _state.update {
+                if (result.isSuccess) {
+                    it.copy(categoryEditTransaction = null, categorySaving = false)
+                } else {
+                    it.copy(
+                        categorySaving = false,
+                        categoryError = result.exceptionOrNull()?.message ?: "Couldn't update category",
+                    )
+                }
+            }
+        }
+    }
+
+    fun markStatementPaid(statementId: Int) {
+        if (_state.value.statementSavingId != null) return
+        viewModelScope.launch {
+            _state.update { it.copy(statementSavingId = statementId, error = null) }
+            val result = runCatching {
+                repository.updateStatementPaid(statementId, true)
+                repository.analysis()
+            }
+            _state.update {
+                val dues = result.getOrNull()
+                if (dues != null) {
+                    it.copy(
+                        totalDue = dues.totalDueAllCards,
+                        nextDueDate = dues.nextDueDate,
+                        cardDues = dues.cards,
+                        statementSavingId = null,
+                    )
+                } else {
+                    it.copy(
+                        statementSavingId = null,
+                        error = result.exceptionOrNull()?.message ?: "Couldn't mark this card paid",
+                    )
+                }
+            }
+        }
     }
 
     private fun shift(anchor: LocalDate, period: SpendPeriod, steps: Long): LocalDate = when (period) {

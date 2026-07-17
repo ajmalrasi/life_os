@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -20,6 +20,7 @@ from app.schemas.statement import (
     SpendAnalysis,
     SpendTrends,
     StatementSyncResult,
+    StatementPaidUpdate,
 )
 from app.services.gmail_client import GmailClient
 from app.services.reconcile import EXCLUDED_FROM_SPEND
@@ -113,6 +114,19 @@ def list_statements(months: int = 3, db: Session = Depends(get_db)) -> list[Card
     return [CardStatementOut.model_validate(r) for r in rows]
 
 
+@router.patch("/{statement_id}/paid", response_model=CardStatementOut)
+def update_statement_paid(
+    statement_id: int,
+    payload: StatementPaidUpdate,
+    db: Session = Depends(get_db),
+) -> CardStatementOut:
+    """Mark a card statement paid early, or undo that confirmation."""
+    statement = StatementRepository(db).set_paid(statement_id, payload.paid)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
+    return CardStatementOut.model_validate(statement)
+
+
 @router.post("/sync", response_model=StatementSyncResult)
 def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> StatementSyncResult:
     """Fetch statement PDFs and store bill summaries plus EMI costs (idempotent).
@@ -167,7 +181,7 @@ def spend_trends(months: int = 6, db: Session = Depends(get_db)) -> SpendTrends:
         by_cat: dict[str, list[Decimal]] = defaultdict(list)
         by_acct: dict[str, list[Decimal]] = defaultdict(list)
         for t in debits:
-            cat = categorize(t.counterparty or "")
+            cat = t.spend_category_override or categorize(t.counterparty or "")
             by_cat[cat].append(t.amount)
             agg_cat[cat].append(t.amount)
             by_acct[t.account or "unknown"].append(t.amount)
@@ -213,7 +227,7 @@ def spend_analysis(days: int = 45, db: Session = Depends(get_db)) -> SpendAnalys
     cards = [
         c
         for c in StatementRepository(db).latest_per_card()
-        if not (c.due_date and c.due_date < today)
+        if c.paid_at is None and not (c.due_date and c.due_date < today)
     ]
     total_due = sum((c.total_due or Decimal(0)) for c in cards)
     min_due = sum((c.min_due or Decimal(0)) for c in cards)
@@ -231,7 +245,7 @@ def spend_analysis(days: int = 45, db: Session = Depends(get_db)) -> SpendAnalys
         if t.direction != "debit" or t.category in EXCLUDED_FROM_SPEND:
             continue
         desc = t.counterparty or ""
-        by_cat[categorize(desc)].append(t.amount)
+        by_cat[t.spend_category_override or categorize(desc)].append(t.amount)
         if desc:
             by_merchant[desc[:48]].append(t.amount)
 

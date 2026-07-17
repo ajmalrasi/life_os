@@ -23,6 +23,11 @@ class CardStatementOut(BaseModel):
     line_items_total: int
     line_items_ingested: int
     created_at: datetime
+    paid_at: datetime | None = None
+
+
+class StatementPaidUpdate(BaseModel):
+    paid: bool
 
 
 class StatementSyncResult(BaseModel):

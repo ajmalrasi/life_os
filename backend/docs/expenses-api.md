@@ -52,6 +52,12 @@ curl -s "http://<jetson>:8000/expenses/new?after_id=35"
 Polling pattern: start with `after_id=0`; after each call, set `after_id` to the
 max `id` returned; subsequent calls return only newly-ingested rows.
 
+### `PATCH /expenses/{id}/category`
+Set a per-transaction spend category from the app. Body: `{"category":"internet"}`.
+Pass `null` to clear the override and return to payee-label/keyword categorization.
+This never changes the separate reconciliation `category`, so excluded transfers,
+reversals, and repayments remain excluded.
+
 ### `POST /expenses/sync`
 Read only *new* emails (since the stored cursor), parse, upsert, and return the
 rows added **this run**. Idempotent — a repeat call with no new mail returns
@@ -94,6 +100,7 @@ considered, so suffixes such as `DEPT STORES` cannot misclassify them as shoppin
 
 ### `GET /statements` — stored summaries (`months` param, default 3)
 ### `POST /statements/sync` — fetch/parse new statement emails (idempotent)
+### `PATCH /statements/{id}/paid` — set paid state with `{"paid":true}`; `false` undoes it. Paid statements remain stored but are excluded immediately from upcoming-due totals.
 ### `GET /statements/trends` — month-by-month spend (`months` param, default 6):
 per calendar month: `total_debits`, `total_credits`, `txn_count`, `by_category`,
 `by_account`; plus `aggregate_debits` and `aggregate_by_category` across the window.

@@ -133,6 +133,12 @@ private fun categoryColor(category: String): Color = when (category.lowercase())
 private fun prettyCategory(category: String): String =
     category.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
+private val EDITABLE_CATEGORIES = listOf(
+    "internet", "utilities", "food", "groceries", "fuel", "travel", "shopping",
+    "subscriptions", "entertainment", "medical", "education", "rent", "emi",
+    "investments", "legal_fees", "other",
+)
+
 // --- period math ---------------------------------------------------------------
 
 private data class PeriodSlice(val start: LocalDate, val end: LocalDate)
@@ -253,6 +259,16 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
         )
     }
 
+    state.categoryEditTransaction?.let { transaction ->
+        CategoryEditDialog(
+            transaction = transaction,
+            saving = state.categorySaving,
+            error = state.categoryError,
+            onSave = viewModel::saveCategory,
+            onDismiss = viewModel::dismissCategoryEdit,
+        )
+    }
+
     state.repaymentDebit?.let { debit ->
         RepaymentDialog(
             debit = debit,
@@ -369,13 +385,22 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
                     txns = drillDownRows,
                     onBack = { viewModel.selectCategory(null) },
                     onMarkAsRepaid = viewModel::beginRepayment,
+                    onEditCategory = viewModel::beginCategoryEdit,
                 )
             }
         }
 
         // Demoted: card dues live at the very bottom, compact, never the headline.
         state.totalDue?.takeIf { it > BigDecimal.ZERO }?.let { due ->
-            item { DuesFooterCard(due, state.nextDueDate, state.cardDues) }
+            item {
+                DuesFooterCard(
+                    due,
+                    state.nextDueDate,
+                    state.cardDues,
+                    savingStatementId = state.statementSavingId,
+                    onMarkPaid = viewModel::markStatementPaid,
+                )
+            }
         }
 
         item { Spacer(Modifier.height(24.dp)) }
@@ -683,6 +708,7 @@ private fun DrillDownCard(
     txns: List<Transaction>,
     onBack: () -> Unit,
     onMarkAsRepaid: (Transaction) -> Unit,
+    onEditCategory: (Transaction) -> Unit,
 ) {
     var sortKey by remember { mutableStateOf(TxnSortKey.DATE) }
     var descending by remember { mutableStateOf(true) }
@@ -698,6 +724,10 @@ private fun DrillDownCard(
         TransactionDetailDialog(
             transaction = txn,
             onDismiss = { selectedTxn = null },
+            onEditCategory = {
+                selectedTxn = null
+                onEditCategory(txn)
+            },
             onMarkAsRepaid = {
                 selectedTxn = null
                 onMarkAsRepaid(txn)
@@ -844,6 +874,7 @@ private fun TransactionRow(txn: Transaction, onClick: (() -> Unit)? = null) {
 private fun TransactionDetailDialog(
     transaction: Transaction,
     onDismiss: () -> Unit,
+    onEditCategory: () -> Unit,
     onMarkAsRepaid: () -> Unit,
 ) {
     val whenText = transaction.txnAt
@@ -871,6 +902,11 @@ private fun TransactionDetailDialog(
                     color = LifeOsColors.OnSurfaceMuted,
                 )
                 Text(
+                    "Category: ${prettyCategory(transaction.spendCategory ?: "excluded")}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                Text(
                     "If this money was returned, pair it with the incoming payment. The bank records will be kept.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = LifeOsColors.OnSurfaceMuted,
@@ -878,10 +914,77 @@ private fun TransactionDetailDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onMarkAsRepaid) { Text("Mark as repaid") }
+            Row {
+                TextButton(onClick = onEditCategory) { Text("Edit category") }
+                if (transaction.direction == "debit") {
+                    TextButton(onClick = onMarkAsRepaid) { Text("Mark as repaid") }
+                }
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun CategoryEditDialog(
+    transaction: Transaction,
+    saving: Boolean,
+    error: String?,
+    onSave: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selected by remember(transaction.id) { mutableStateOf(transaction.spendCategory) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose category") },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    transaction.counterparty?.takeIf { it.isNotBlank() } ?: transaction.source,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "This changes only this transaction and saves it on your Jetson.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                Spacer(Modifier.height(6.dp))
+                listOf<String?>(null).plus(EDITABLE_CATEGORIES).forEach { category ->
+                    val isSelected = selected == category
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = !saving) { selected = category }
+                            .padding(vertical = 5.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { selected = category },
+                            enabled = !saving,
+                        )
+                        Text(category?.let(::prettyCategory) ?: "Automatic")
+                    }
+                }
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.Warning)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(selected) }, enabled = !saving) {
+                Text(if (saving) "Saving…" else "Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
         },
     )
 }
@@ -1060,6 +1163,8 @@ private fun DuesFooterCard(
     totalDue: BigDecimal,
     nextDueDate: LocalDate?,
     cards: List<CardStatement>,
+    savingStatementId: Int?,
+    onMarkPaid: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val expandable = cards.isNotEmpty()
@@ -1136,12 +1241,20 @@ private fun DuesFooterCard(
                                     maxLines = 1,
                                 )
                             }
-                            Text(
-                                (card.totalDue ?: BigDecimal.ZERO).rupees(),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = LifeOsColors.OnBackground,
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    (card.totalDue ?: BigDecimal.ZERO).rupees(),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = LifeOsColors.OnBackground,
+                                )
+                                TextButton(
+                                    onClick = { onMarkPaid(card.id) },
+                                    enabled = savingStatementId == null,
+                                ) {
+                                    Text(if (savingStatementId == card.id) "Saving…" else "Mark paid")
+                                }
+                            }
                         }
                     }
                 }

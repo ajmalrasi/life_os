@@ -83,4 +83,5 @@ data class CardStatementEntity(
     val totalDue: String?,
     val minDue: String?,
     val totalSpend: String?,
+    val paidAt: String?,
 )

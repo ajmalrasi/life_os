@@ -182,6 +182,7 @@ data class CardStatement(
     val totalDue: BigDecimal?,
     val minDue: BigDecimal?,
     val totalSpend: BigDecimal?,
+    val paidAt: Instant?,
 )
 
 data class CategorySpend(

@@ -10,6 +10,7 @@ can degrade gracefully instead of fabricating an answer.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 
 import httpx
@@ -42,8 +43,20 @@ def _strip_think(text: str) -> str:
         return text
     end = text.rfind("</think>")
     if end == -1:
-        return text
-    return text[end + len("</think>") :].strip()
+        return _strip_control_tokens(text)
+    return _strip_control_tokens(text[end + len("</think>") :]).strip()
+
+
+_CONTROL_TOKEN = re.compile(
+    r"<(?:(?:\||l)?im_(?:start|end)(?:\||l)?|\|?(?:start|end)_of_turn\|?|"
+    r"\|?(?:system|user|assistant)\|?)>\s*(?:system|user|assistant)?\s*",
+    re.IGNORECASE,
+)
+
+
+def _strip_control_tokens(text: str) -> str:
+    """Remove chat-template markers that some local Qwen builds emit as text."""
+    return _CONTROL_TOKEN.sub("", text)
 
 
 def _describe_schema(schema: dict) -> str:
@@ -175,6 +188,7 @@ class OpenClawClient:
         content_parts: list[str] = []
         calls: dict[int, dict] = {}
         visibility = _StreamingThinkFilter()
+        controls = _StreamingControlTokenFilter()
         try:
             with httpx.Client(timeout=timeout or self.timeout) as client:
                 with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
@@ -197,8 +211,10 @@ class OpenClawClient:
                         if piece:
                             visible = visibility.push(piece)
                             if visible:
-                                content_parts.append(visible)
-                                yield {"type": "content", "text": visible}
+                                clean = controls.push(visible)
+                                if clean:
+                                    content_parts.append(clean)
+                                    yield {"type": "content", "text": clean}
 
                         for fragment in delta.get("tool_calls") or []:
                             index = int(fragment.get("index", 0))
@@ -218,8 +234,14 @@ class OpenClawClient:
 
         tail = visibility.finish()
         if tail:
-            content_parts.append(tail)
-            yield {"type": "content", "text": tail}
+            clean = controls.push(tail)
+            if clean:
+                content_parts.append(clean)
+                yield {"type": "content", "text": clean}
+        clean_tail = controls.finish()
+        if clean_tail:
+            content_parts.append(clean_tail)
+            yield {"type": "content", "text": clean_tail}
         yield {
             "type": "message",
             "message": {
@@ -355,3 +377,30 @@ class _StreamingThinkFilter:
             return ""
         tail, self.buffer = self.buffer, ""
         return tail
+
+
+class _StreamingControlTokenFilter:
+    """Strip control tokens even when a token is split across SSE chunks."""
+
+    _TAIL = 64
+
+    def __init__(self) -> None:
+        self.buffer = ""
+
+    def push(self, text: str) -> str:
+        self.buffer += text
+        if len(self.buffer) <= self._TAIL:
+            return ""
+        cut = len(self.buffer) - self._TAIL
+        # If a possible marker begins near the cut, retain it until the next
+        # chunk so a split token can never leak its first half.
+        last_open = self.buffer.rfind("<", max(0, cut - self._TAIL), cut)
+        if last_open != -1:
+            cut = last_open
+        stable, self.buffer = self.buffer[:cut], self.buffer[cut:]
+        return _strip_control_tokens(stable)
+
+    def finish(self) -> str:
+        clean = _strip_control_tokens(self.buffer)
+        self.buffer = ""
+        return clean

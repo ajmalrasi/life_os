@@ -148,7 +148,7 @@ fun RepaymentDto.toDomain() = Repayment(
 
 // --- Money: card statements ---
 fun CardStatementDto.toEntity() = CardStatementEntity(
-    id, bank, cardLabel, cardLast4, statementDate, periodStart, periodEnd, dueDate, totalDue, minDue, totalSpend,
+    id, bank, cardLabel, cardLast4, statementDate, periodStart, periodEnd, dueDate, totalDue, minDue, totalSpend, paidAt,
 )
 fun CardStatementEntity.toDomain() = CardStatement(
     id = id,
@@ -162,6 +162,7 @@ fun CardStatementEntity.toDomain() = CardStatement(
     totalDue = totalDue?.let { BigDecimal(it) },
     minDue = minDue?.let { BigDecimal(it) },
     totalSpend = totalSpend?.let { BigDecimal(it) },
+    paidAt = paidAt?.let { Instant.parse(it) },
 )
 
 // --- Money: analysis / trends (computed server-side; mapped directly, not cached) ---

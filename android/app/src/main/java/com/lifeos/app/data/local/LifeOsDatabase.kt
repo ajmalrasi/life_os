@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
         MoodEntity::class, ScoreEntity::class, StateEntity::class, InsightEntity::class,
         SynthesizedInsightEntity::class, TransactionEntity::class, CardStatementEntity::class,
     ],
-    version = 8, // v8: added TransactionEntity.txnAt (destructive migration is configured)
+    version = 9, // v9: cache card-statement paid state (destructive migration is configured)
     exportSchema = false,
 )
 abstract class LifeOsDatabase : RoomDatabase() {

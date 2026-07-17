@@ -4,6 +4,8 @@ import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.TransactionDao
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
+import com.lifeos.app.data.remote.dto.StatementPaidUpdateDto
+import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.CardStatement
@@ -65,4 +67,21 @@ class MoneyRepositoryImpl @Inject constructor(
 
     override suspend fun undoRepayment(repaymentId: Int): Repayment =
         api.undoRepayment(repaymentId).toDomain()
+
+    override suspend fun updateTransactionCategory(
+        transactionId: Int,
+        category: String?,
+    ): Transaction {
+        val updated = api.updateTransactionCategory(
+            transactionId, TransactionCategoryUpdateDto(category)
+        )
+        transactionDao.upsertAll(listOf(updated.toEntity()))
+        return updated.toDomain()
+    }
+
+    override suspend fun updateStatementPaid(statementId: Int, paid: Boolean): CardStatement {
+        val updated = api.updateStatementPaid(statementId, StatementPaidUpdateDto(paid))
+        cardStatementDao.upsertAll(listOf(updated.toEntity()))
+        return updated.toEntity().toDomain()
+    }
 }

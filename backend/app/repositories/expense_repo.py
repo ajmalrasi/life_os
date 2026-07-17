@@ -260,6 +260,16 @@ class ExpenseRepository:
         stmt = stmt.order_by(Transaction.txn_date.desc(), Transaction.id.desc())
         return list(self.db.execute(stmt).scalars())
 
+    def set_spend_category(self, transaction_id: int, category: str | None) -> Transaction | None:
+        """Persist a per-transaction user override without touching reconciliation state."""
+        transaction = self.db.get(Transaction, transaction_id)
+        if transaction is None:
+            return None
+        transaction.spend_category_override = category
+        self.db.commit()
+        self.db.refresh(transaction)
+        return transaction
+
     def since_id(self, after_id: int, limit: int = 500) -> list[Transaction]:
         """Transactions inserted after ``after_id`` (client incremental polling)."""
         stmt = (

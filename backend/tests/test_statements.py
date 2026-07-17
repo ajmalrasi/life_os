@@ -520,3 +520,36 @@ def test_analysis_drops_cards_whose_due_date_has_passed(client):
     assert data["next_due_date"] == today.isoformat()
     last4s = {c["card_last4"] for c in data["cards"]}
     assert last4s == {"1111", "2222"}
+
+
+def test_marking_statement_paid_removes_it_from_upcoming_dues(client):
+    from datetime import date, timedelta
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.repositories.statement_repo import StatementRepository
+    from app.services.statement_parsers.base import ParsedStatement
+
+    today = date.today()
+    with SessionLocal() as db:
+        statement = StatementRepository(db).add_statement(
+            ParsedStatement(
+                bank="hdfc", card_label="HDFC 1111", card_last4="1111",
+                statement_date=today, period_start=None, period_end=None,
+                total_due=Decimal("1654"), min_due=Decimal("100"),
+                due_date=today + timedelta(days=10), total_spend=None,
+            ),
+            "paid-statement",
+        )
+        db.commit()
+        statement_id = statement.id
+
+    paid = client.patch(f"/statements/{statement_id}/paid", json={"paid": True})
+    assert paid.status_code == 200
+    assert paid.json()["paid_at"] is not None
+    assert client.get("/statements/analysis").json()["cards"] == []
+
+    restored = client.patch(f"/statements/{statement_id}/paid", json={"paid": False})
+    assert restored.status_code == 200
+    assert restored.json()["paid_at"] is None
+    assert len(client.get("/statements/analysis").json()["cards"]) == 1

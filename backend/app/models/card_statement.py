@@ -43,3 +43,5 @@ class CardStatement(Base):
 
     gmail_message_id: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # User confirmation that this statement was settled before its due date.
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

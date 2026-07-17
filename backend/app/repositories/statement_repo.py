@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.card_statement import CardStatement
 from app.services.statement_parsers.base import ParsedStatement
+from app.database import utcnow
 
 
 class StatementRepository:
@@ -77,3 +78,12 @@ class StatementRepository:
             .order_by(CardStatement.statement_date.desc())
         )
         return list(self.db.execute(stmt).scalars())
+
+    def set_paid(self, statement_id: int, paid: bool) -> CardStatement | None:
+        statement = self.db.get(CardStatement, statement_id)
+        if statement is None:
+            return None
+        statement.paid_at = utcnow() if paid else None
+        self.db.commit()
+        self.db.refresh(statement)
+        return statement

@@ -18,10 +18,10 @@ class MainActivity : ComponentActivity() {
         // The status bar sits on the light app canvas; the native Android
         // navigation controls share the navy bottom dock below.
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(
+            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(
                 Color.rgb(0xD7, 0xE5, 0xF0),
-                Color.rgb(0xD7, 0xE5, 0xF0),
+                Color.rgb(0x11, 0x1D, 0x28),
             ),
         )
         // Deep-link target from a notification tap (e.g. the Pulse reminder).

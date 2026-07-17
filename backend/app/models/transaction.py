@@ -37,6 +37,9 @@ class Transaction(Base):
 
     counterparty: Mapped[str | None] = mapped_column(String(256), default=None)
     category: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    # User-selected spend bucket. This is deliberately separate from ``category``,
+    # which is reserved for reconciliation state such as transfers and returns.
+    spend_category_override: Mapped[str | None] = mapped_column(String(64), default=None)
     account: Mapped[str | None] = mapped_column(String(64), default=None)  # e.g. "HDFC RuPay CC ..5473"
     source: Mapped[str] = mapped_column(String(32), index=True)  # "upi" | "cc_statement" | ...
     reference: Mapped[str | None] = mapped_column(String(64), default=None)  # UPI ref / txn id

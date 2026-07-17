@@ -16,6 +16,7 @@ from app.schemas.expense import (
     RawEmailFinalizeResult,
     RawEmailProcessResult,
     TransactionOut,
+    TransactionCategoryUpdate,
     RepaymentCandidateOut,
     RepaymentCreate,
     RepaymentOut,
@@ -39,7 +40,9 @@ def _to_out(rows, db: Session) -> list[TransactionOut]:
     for r in rows:
         dto = TransactionOut.model_validate(r)
         dto.spend_category = (
-            None if r.category in EXCLUDED_FROM_SPEND else categorize(r.counterparty or "")
+            None
+            if r.category in EXCLUDED_FROM_SPEND
+            else (r.spend_category_override or categorize(r.counterparty or ""))
         )
         out.append(dto)
     return out
@@ -91,6 +94,19 @@ def new_since(after_id: int = 0, limit: int = 500, db: Session = Depends(get_db)
     last id it has seen and polls for only the new ones (oldest-first)."""
     rows = ExpenseRepository(db).since_id(after_id, limit=limit)
     return _to_out(rows, db)
+
+
+@router.patch("/{transaction_id}/category", response_model=TransactionOut)
+def update_transaction_category(
+    transaction_id: int,
+    payload: TransactionCategoryUpdate,
+    db: Session = Depends(get_db),
+) -> TransactionOut:
+    """Set or clear the user's spend category for one transaction."""
+    transaction = ExpenseRepository(db).set_spend_category(transaction_id, payload.category)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return _to_out([transaction], db)[0]
 
 
 @router.get("/{transaction_id}/repayment-candidates", response_model=list[RepaymentCandidateOut])

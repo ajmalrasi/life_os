@@ -54,7 +54,9 @@ SYSTEM_PROMPT = (
     "the way they do, and what to do next. The DATA CONTEXT includes a 'spending' "
     "block (total, daily average, and recent daily spend) when expense data exists; "
     "treat those amounts as the user's local currency and cite them like any other "
-    "metric.\n\n"
+    "metric. The user has explicitly authorized access to this local LifeOS data. "
+    "When the context contains the requested data, answer from it and never claim "
+    "that you cannot access or read the user's private data.\n\n"
     "HOW YOU WORK\n"
     "- Each turn begins with a DATA CONTEXT snapshot (JSON). It is your primary source "
     "of truth.\n"
@@ -249,9 +251,7 @@ class ChatService:
 
         context = self.build_context(req.context_days)
 
-        has_data = context["totals"]["days_with_scores"] > 0 or context["totals"][
-            "days_with_mood_checkin"
-        ] > 0
+        has_data = self._context_has_data(context)
         if not has_data:
             return ChatResponse(
                 answer=(
@@ -312,9 +312,7 @@ class ChatService:
             return
 
         context = self.build_context(req.context_days)
-        has_data = context["totals"]["days_with_scores"] > 0 or context["totals"][
-            "days_with_mood_checkin"
-        ] > 0
+        has_data = self._context_has_data(context)
         citations = [c.model_dump() for c in self._citations(context)]
         if not has_data:
             yield {
@@ -360,6 +358,18 @@ class ChatService:
             }
         )
         return messages
+
+    @staticmethod
+    def _context_has_data(context: dict) -> bool:
+        totals = context["totals"]
+        return any(
+            (
+                totals.get("days_with_scores", 0) > 0,
+                totals.get("days_with_mood_checkin", 0) > 0,
+                totals.get("commits", 0) > 0,
+                context.get("spending") is not None,
+            )
+        )
 
     def _general_messages(self, req: ChatRequest) -> list[dict]:
         messages: list[dict] = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
@@ -480,10 +490,7 @@ class ChatService:
         only model exactly when the user submits a real question.
         """
         context = self.build_context(days)
-        has_data = (
-            context["totals"]["days_with_scores"] > 0
-            or context["totals"]["days_with_mood_checkin"] > 0
-        )
+        has_data = self._context_has_data(context)
         if not has_data:
             return DEFAULT_SUGGESTIONS
 

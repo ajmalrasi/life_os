@@ -178,6 +178,9 @@ data class TransactionDto(
 )
 
 @Serializable
+data class TransactionCategoryUpdateDto(val category: String?)
+
+@Serializable
 data class RepaymentCandidateDto(
     val transaction: TransactionDto,
     @SerialName("match_score") val matchScore: Int,
@@ -219,7 +222,11 @@ data class CardStatementDto(
     @SerialName("total_due") val totalDue: String? = null,
     @SerialName("min_due") val minDue: String? = null,
     @SerialName("total_spend") val totalSpend: String? = null,
+    @SerialName("paid_at") val paidAt: String? = null,
 )
+
+@Serializable
+data class StatementPaidUpdateDto(val paid: Boolean)
 
 @Serializable
 data class StatementSyncResultDto(

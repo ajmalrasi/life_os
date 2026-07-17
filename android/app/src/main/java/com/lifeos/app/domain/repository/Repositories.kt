@@ -101,6 +101,12 @@ interface MoneyRepository {
 
     /** Restore both transactions to their previous classifications. */
     suspend fun undoRepayment(repaymentId: Int): Repayment
+
+    /** Persist a category for one transaction; null restores automatic categorization. */
+    suspend fun updateTransactionCategory(transactionId: Int, category: String?): Transaction
+
+    /** Mark an individual card statement paid early, or restore it to upcoming dues. */
+    suspend fun updateStatementPaid(statementId: Int, paid: Boolean): CardStatement
 }
 
 interface SettingsRepository {

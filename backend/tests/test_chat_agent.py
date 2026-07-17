@@ -9,7 +9,12 @@ import pytest
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
 from app.services.chat_service import MAX_AGENT_STEPS, ChatService, _is_personal_data_question
-from app.services.openclaw import OpenClawTimeout, _StreamingThinkFilter
+from app.services.openclaw import (
+    OpenClawTimeout,
+    _StreamingControlTokenFilter,
+    _StreamingThinkFilter,
+    _strip_control_tokens,
+)
 
 
 class _ToolThenAnswerClient:
@@ -227,6 +232,25 @@ def test_streaming_think_filter_hides_reasoning_without_buffering_normal_text():
     assert thinking.push("<thi") == ""
     assert thinking.push("nk>private reasoning") == ""
     assert thinking.push("</think>Final") == "Final"
+
+
+def test_control_tokens_are_removed_from_complete_and_split_stream_text():
+    assert _strip_control_tokens("<|im_start|>user Answer") == "Answer"
+    assert _strip_control_tokens("<lim_start|>assistant Answer") == "Answer"
+
+    stream = _StreamingControlTokenFilter()
+    pieces = [stream.push("<|im_"), stream.push("start|>user Here is your answer"), stream.finish()]
+    answer = "".join(pieces)
+    assert answer == "Here is your answer"
+    assert "im_start" not in answer
+
+
+def test_spending_only_context_counts_as_personal_data():
+    context = {
+        "totals": {"days_with_scores": 0, "days_with_mood_checkin": 0, "commits": 0},
+        "spending": {"total_spend": 654},
+    }
+    assert ChatService._context_has_data(context) is True
 
 
 @pytest.mark.parametrize(

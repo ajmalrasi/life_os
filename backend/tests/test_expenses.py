@@ -123,6 +123,26 @@ def test_collector_persists_and_is_idempotent(client):
     assert rows[0]["source"] == "upi"
 
 
+def test_user_can_override_and_clear_one_transaction_category(client):
+    _run_sync(_FakeGmail([_hdfc_email(mid="category-edit")]))
+    transaction = client.get("/expenses?days=3650").json()[0]
+
+    edited = client.patch(
+        f"/expenses/{transaction['id']}/category", json={"category": "Internet Bill"}
+    )
+    assert edited.status_code == 200
+    assert edited.json()["spend_category"] == "internet_bill"
+
+    rows = client.get("/expenses?days=3650").json()
+    assert rows[0]["spend_category"] == "internet_bill"
+
+    cleared = client.patch(
+        f"/expenses/{transaction['id']}/category", json={"category": None}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["spend_category"] != "internet_bill"
+
+
 def test_collector_incremental_cursor(client):
     # First run: cursor unset → backfill window.
     first = _FakeGmail([_hdfc_email(mid="m1", internal_ms=1_751_000_000_000)])
