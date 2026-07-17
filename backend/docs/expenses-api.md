@@ -1,6 +1,6 @@
 # Expenses API
 
-Transactions parsed from bank / UPI / statement **emails** (read-only Gmail via
+Transactions parsed from live bank / card / UPI **emails** (read-only Gmail via
 the `gog` CLI baked into the API image). The collector is **incremental**: a
 per-mailbox cursor is stored in Postgres, so each sync reads only emails newer
 than the last one processed, and rows are idempotent — safe to call repeatedly.
@@ -22,7 +22,7 @@ than the last one processed, and rows are idempotent — safe to call repeatedly
 | `category` | string \| null | Reconciliation tag (`transfer`, `reversed_debit`, …); null for ordinary spend |
 | `spend_category` | string \| null | Spend-analysis category (payee labels + keyword rules). `null` when excluded from spend (transfers/reversals/returns) so the client can slice by category without double-counting |
 | `account` | string \| null | e.g. `"HDFC RuPay CC ..5473"` |
-| `source` | string | `"upi"` (statement sources land here later) |
+| `source` | string | Live-alert source such as `"upi"` or `"card_live"` |
 | `reference` | string \| null | UPI reference / txn id — the natural dedup key |
 | `created_at` | datetime (ISO, tz-aware) | When the row was ingested |
 
@@ -82,13 +82,11 @@ curl -s -X POST "http://<jetson>:8000/expenses/sync"
 
 Statement emails from HDFC / Axis / ICICI / SBI are auto-fetched, decrypted
 (passwords derived from owner name + DOB in env; see `app/services/pdf_unlock.py`),
-parsed, and stored. Summaries land in `card_statements`; line items land in
-`transactions` with `source='cc_statement'`.
-
-**Dedup rule:** HDFC RuPay-CC UPI purchases arrive twice — once as a live alert
-email (ingested immediately, `source='upi'`) and again as a `UPI-*` line in the
-next monthly statement. A statement debit matching an existing `upi` transaction
-on **same date + same amount** is skipped, so each real transaction is stored once.
+and parsed in **summary-only mode**. Bill summaries land in `card_statements`,
+preserving total due, minimum due, and due date. Parsed statement line items do
+not enter `transactions`; live bank/card alerts are the sole source for individual
+transactions. This prevents duplicates caused by posting-date shifts and final
+foreign-exchange settlement amounts.
 
 ### `GET /statements` — stored summaries (`months` param, default 3)
 ### `POST /statements/sync` — fetch/parse new statement emails (idempotent)

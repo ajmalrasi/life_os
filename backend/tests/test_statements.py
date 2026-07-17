@@ -1,5 +1,4 @@
-"""Tests for CC statement parsing, password derivation, and the UPI dedup rule
-(a statement UPI line matching a live-UPI txn by date+amount must be skipped).
+"""Tests for statement summary parsing and password derivation.
 
 Fixture text is trimmed from real statements (amounts/structure preserved).
 """
@@ -131,31 +130,44 @@ def test_password_candidates():
     assert password_candidates("AJMAL RASI", "01071993", ov, "sbi")[0] == "010719931970"
 
 
-def test_upi_dedup_rule(client):
-    """A statement UPI line with the same date+amount as a live-UPI transaction
-    must be skipped (one real transaction, two email sources)."""
+def test_statement_collector_stores_summary_without_transactions(client, monkeypatch):
+    """Statement line items are observable but never enter the transaction feed."""
     from app.database import SessionLocal
     from app.repositories.expense_repo import ExpenseRepository
     from app.repositories.statement_repo import StatementRepository
-    from app.services.expense_parsers.base import ParsedTxn
+    from app.services.statement_collector import StatementCollector
+
+    class FakeGmail:
+        account = "test@example.com"
+
+        def is_available(self):
+            return True
+
+        def search(self, query, max_results):
+            if "cc.statements@axis.bank.in" in query:
+                return [{"id": "axis-summary-only"}]
+            return []
+
+        def list_pdf_attachments(self, message_id):
+            return [{"attachmentId": "a1", "filename": "axis.pdf"}]
+
+        def download_attachment(self, message_id, attachment_id, destination):
+            return True
+
+    monkeypatch.setattr("app.services.statement_collector.extract_pdf_text", lambda *_: _AXIS)
 
     with SessionLocal() as db:
-        # A live UPI alert already ingested this transaction.
-        ExpenseRepository(db).upsert(
-            ParsedTxn(
-                txn_date=date(2026, 5, 20),
-                amount=Decimal("156.00"),
-                direction="debit",
-                source="upi",
-            ),
-            message_id="live1",
-            dedup_key="upi:ref:12345",
-        )
-        db.commit()
-        repo = StatementRepository(db)
-        assert repo.upi_txn_exists(date(2026, 5, 20), Decimal("156.00")) is True
-        assert repo.upi_txn_exists(date(2026, 5, 20), Decimal("157.00")) is False
-        assert repo.upi_txn_exists(date(2026, 5, 21), Decimal("156.00")) is False
+        report = StatementCollector(db, FakeGmail(), "AJMAL RASI", "01071993").sync()
+        stored = StatementRepository(db).range(date(2026, 6, 1), date(2026, 6, 30))
+
+        assert report.statements_new == 1
+        assert report.line_items_ingested == 0
+        assert "2 parsed line item(s) ignored" in report.message
+        assert len(stored) == 1
+        assert stored[0].total_due == Decimal("18699.25")
+        assert stored[0].line_items_total == 2
+        assert stored[0].line_items_ingested == 0
+        assert ExpenseRepository(db).range(date(2026, 5, 1), date(2026, 6, 30)) == []
 
 
 def test_bank_account_parser_balance_delta():

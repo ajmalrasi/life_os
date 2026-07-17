@@ -1,8 +1,8 @@
-"""Monthly credit-card statement summaries parsed from emailed PDFs.
+"""Monthly statement summaries parsed from emailed PDFs.
 
-One row per (bank, card, statement date). Line items land in ``transactions``
-with source='cc_statement'; this table holds the per-cycle summary that powers
-the "what do I owe this month" view.
+One row per (bank, card, statement date). Line items are counted for parser
+observability but deliberately never copied into ``transactions``; this table
+powers the "what do I owe this month" view.
 """
 
 from __future__ import annotations
@@ -38,7 +38,8 @@ class CardStatement(Base):
     total_spend: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
 
     line_items_total: Mapped[int] = mapped_column(Integer, default=0)
-    line_items_ingested: Mapped[int] = mapped_column(Integer, default=0)  # after UPI dedup
+    # Retained for API/schema compatibility; always 0 in summary-only mode.
+    line_items_ingested: Mapped[int] = mapped_column(Integer, default=0)
 
     gmail_message_id: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

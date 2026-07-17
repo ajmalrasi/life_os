@@ -22,7 +22,7 @@ from app.schemas.statement import (
     StatementSyncResult,
 )
 from app.services.gmail_client import GmailClient
-from app.services.reconcile import EXCLUDED_FROM_SPEND, run_reconciliation
+from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.statement_collector import StatementCollector
 
 router = APIRouter(prefix="/statements", tags=["statements"])
@@ -112,10 +112,12 @@ def list_statements(months: int = 3, db: Session = Depends(get_db)) -> list[Card
 
 @router.post("/sync", response_model=StatementSyncResult)
 def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> StatementSyncResult:
-    """Fetch new statement emails, decrypt PDFs, parse, and ingest (idempotent).
+    """Fetch statement PDFs and store bill summaries only (idempotent).
 
     ``window_days`` widens the Gmail search window for one-off backfills (e.g.
     pulling 6 months of history); the default matches routine monthly polling.
+    Statement line items never enter ``transactions``; live alerts are the sole
+    source for individual purchases.
     """
     settings = get_settings()
     report = StatementCollector(
@@ -126,9 +128,6 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
         password_overrides=settings.cc_pdf_password_overrides,
         window_days=window_days,
     ).sync()
-    # Tag transfers (CC bill payments) and lend/return pairs so they never
-    # count as spend; idempotent over uncategorized rows only.
-    run_reconciliation(db)
     return StatementSyncResult(
         banks_run=report.banks_run,
         emails_seen=report.emails_seen,
@@ -142,8 +141,8 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
 
 @router.get("/trends", response_model=SpendTrends)
 def spend_trends(months: int = 6, db: Session = Depends(get_db)) -> SpendTrends:
-    """Month-by-month spend over the combined feed (UPI + statement line items),
-    then an aggregate across the window. Grouped by calendar month of txn_date."""
+    """Month-by-month spend from stored transactions, then an aggregate across
+    the window. New individual transactions come only from live alerts."""
     end = date.today()
     start = (end.replace(day=1) - timedelta(days=(months - 1) * 31)).replace(day=1)
     txns = ExpenseRepository(db).range(start, end)

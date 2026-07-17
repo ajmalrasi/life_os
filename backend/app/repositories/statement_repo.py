@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.card_statement import CardStatement
-from app.models.transaction import Transaction
 from app.services.statement_parsers.base import ParsedStatement
 
 
@@ -50,32 +48,6 @@ class StatementRepository:
         self.db.add(obj)
         self.db.flush()
         return obj
-
-    # Sources that arrive live, per-transaction, ahead of the monthly
-    # statement PDF. A statement line matching one of these by date+amount is
-    # the same real transaction seen twice — the statement line is skipped.
-    # "card_live" / "bank_live" are the LLM catch-all parser's equivalents of
-    # "hdfc_card_live" for card/plain-bank alerts it identifies itself.
-    LIVE_SOURCES = ("upi", "hdfc_card_live", "card_live", "bank_live")
-
-    def upi_txn_exists(self, txn_date: date, amount: Decimal) -> bool:
-        """True if a live-alert transaction already covers this line item.
-
-        Covers HDFC RuPay-CC UPI alerts (reappear as UPI-* statement lines)
-        and HDFC Diners live "payment was made" alerts (cover every
-        transaction type, not just UPI) — both are pre-statement live feeds
-        deduped the same way. Match on (date, amount, source in LIVE_SOURCES).
-        """
-        count = self.db.execute(
-            select(func.count())
-            .select_from(Transaction)
-            .where(
-                Transaction.source.in_(self.LIVE_SOURCES),
-                Transaction.txn_date == txn_date,
-                Transaction.amount == amount,
-            )
-        ).scalar_one()
-        return count > 0
 
     def latest_per_card(self) -> list[CardStatement]:
         """Most recent statement row for each (bank, card_last4)."""

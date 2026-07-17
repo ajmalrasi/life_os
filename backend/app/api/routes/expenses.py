@@ -9,7 +9,6 @@ from app.api.routes.statements import build_categorizer
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.repositories.expense_repo import ExpenseRepository
-from app.repositories.statement_repo import StatementRepository
 from app.schemas.expense import (
     ExpenseRebuildResult,
     ExpenseSyncResult,
@@ -216,7 +215,7 @@ def rebuild_with_llm(
 
     domains = [BANK_DOMAINS[bank]] if bank else None
     deleted = repo.delete_since(
-        since, sources=StatementRepository.LIVE_SOURCES, account_prefix=bank
+        since, sources=ExpenseRepository.LIVE_SOURCES, account_prefix=bank
     )
 
     report = ExpenseCollector(

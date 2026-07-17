@@ -17,7 +17,6 @@ from unittest.mock import patch
 from app.database import SessionLocal
 from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
-from app.repositories.statement_repo import StatementRepository
 from app.services.expense_collector import ExpenseCollector
 from app.services.expense_parsers.hdfc_upi import HdfcUpiParser
 from tests.test_expenses import _FakeGmail, _hdfc_email
@@ -52,7 +51,7 @@ def test_delete_since_only_touches_scoped_sources_and_date_range(client):
         db.commit()
 
         deleted = ExpenseRepository(db).delete_since(
-            date(2026, 1, 1), sources=StatementRepository.LIVE_SOURCES
+            date(2026, 1, 1), sources=ExpenseRepository.LIVE_SOURCES
         )
         db.commit()
         assert deleted == 1
@@ -67,8 +66,8 @@ def test_delete_since_only_touches_scoped_sources_and_date_range(client):
 def test_live_sources_excludes_statement_sources():
     """A rebuild scoped to LIVE_SOURCES must never be able to delete
     statement-PDF-derived data — there'd be no way to regenerate it."""
-    assert "cc_statement" not in StatementRepository.LIVE_SOURCES
-    assert "bank_account" not in StatementRepository.LIVE_SOURCES
+    assert "cc_statement" not in ExpenseRepository.LIVE_SOURCES
+    assert "bank_account" not in ExpenseRepository.LIVE_SOURCES
 
 
 def test_delete_since_account_prefix_scopes_to_one_bank(client):
@@ -81,7 +80,7 @@ def test_delete_since_account_prefix_scopes_to_one_bank(client):
         db.commit()
 
         deleted = ExpenseRepository(db).delete_since(
-            date(2026, 1, 1), sources=StatementRepository.LIVE_SOURCES, account_prefix="HDFC"
+            date(2026, 1, 1), sources=ExpenseRepository.LIVE_SOURCES, account_prefix="HDFC"
         )
         db.commit()
         assert deleted == 1

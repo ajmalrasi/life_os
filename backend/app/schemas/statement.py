@@ -42,7 +42,7 @@ class CategorySpend(BaseModel):
 
 
 class MonthTrend(BaseModel):
-    """One calendar month of combined spend (UPI feed + statement line items)."""
+    """One calendar month of stored transactions (live-alert sourced going forward)."""
 
     month: str  # "2026-06"
     total_debits: Decimal

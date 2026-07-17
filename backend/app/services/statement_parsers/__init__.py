@@ -22,7 +22,7 @@ _REGISTRY = [
     AxisStatementParser(),
     IciciStatementParser(),
     SbiStatementParser(),
-    # Savings accounts (line items land as source='bank_account').
+    # Savings-account summaries (parsed line items are ignored by the collector).
     IciciAccountParser(),
     AxisAccountParser(),
     HdfcAccountParser(),

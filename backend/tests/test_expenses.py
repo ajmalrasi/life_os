@@ -351,33 +351,6 @@ def test_registry_has_hdfc_diners_live():
     assert any(p.name == "hdfc_diners_live" for p in get_parsers())
 
 
-def test_live_source_dedup_covers_both_upi_and_diners_live(client):
-    """A statement line matching EITHER live source (upi or hdfc_card_live) by
-    date+amount must be recognized as already-seen, not just the UPI one."""
-    from app.database import SessionLocal
-    from app.repositories.statement_repo import StatementRepository
-
-    with SessionLocal() as db:
-        repo = ExpenseCollector(
-            db,
-            client=type("_C", (), {"is_available": lambda self: True})(),  # unused here
-            backfill_days=90,
-        ).repo
-        from app.services.expense_parsers.base import ParsedTxn
-
-        repo.upsert(
-            ParsedTxn(
-                txn_date=date(2026, 6, 29), amount=Decimal("5156.50"), direction="debit",
-                source="hdfc_card_live",
-            ),
-            message_id="live-diners-1", dedup_key="hdfc_card_live:test1",
-        )
-        db.commit()
-        srepo = StatementRepository(db)
-        assert srepo.upi_txn_exists(date(2026, 6, 29), Decimal("5156.50")) is True
-        assert srepo.upi_txn_exists(date(2026, 6, 30), Decimal("5156.50")) is False
-
-
 def test_live_alert_skipped_if_statement_already_ingested(client):
     """If a statement line for a transaction was already ingested (e.g. a live
     parser gets backfilled after that statement period was processed), the

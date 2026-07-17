@@ -1,16 +1,14 @@
-"""Collect monthly credit-card statement PDFs from email and ingest them.
+"""Collect monthly credit-card statement PDFs from email.
 
 Flow per bank parser: search Gmail -> for each unseen statement email, download
-the PDF attachment (gog), decrypt (derived passwords), extract text, parse to a
-summary + line items, persist. Idempotent: emails already ingested are skipped
-via ``card_statements.gmail_message_id``; line items dedup against both the
-live UPI feed (same date + amount -> statement line skipped; see user rule) and
-their own dedup_key on re-runs.
+the PDF attachment (gog), decrypt it, extract text, and persist only the
+statement summary. Parsed line items deliberately do not enter ``transactions``:
+live bank/card alerts are the sole transaction feed, avoiding duplicates when a
+later statement uses a shifted posting date or final foreign-exchange amount.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import tempfile
@@ -19,9 +17,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.models.card_statement import CardStatement
-from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.statement_repo import StatementRepository
-from app.services.expense_parsers.base import ParsedTxn
 from app.services.gmail_client import GmailClient
 from app.services.pdf_unlock import extract_pdf_text, parse_overrides, password_candidates
 from app.services.statement_parsers import get_statement_parsers
@@ -59,14 +55,13 @@ class StatementCollector:
         self.overrides = parse_overrides(password_overrides)
         self.window_days = window_days
         self.repo = StatementRepository(db)
-        self.txn_repo = ExpenseRepository(db)
 
     def sync(self) -> StatementSyncReport:
         if not self.client.is_available():
             return StatementSyncReport(0, 0, 0, 0, 0, "gog CLI unavailable or gmail_account unset")
 
         parsers = get_statement_parsers()
-        emails_seen = new_stmts = ingested = deduped = 0
+        emails_seen = new_stmts = parsed_line_items = 0
         created: list[CardStatement] = []
 
         for parser in parsers:
@@ -83,8 +78,7 @@ class StatementCollector:
                     if stmt is None:
                         continue
                     new_stmts += 1
-                    ingested += stmt.line_items_ingested
-                    deduped += stmt.line_items_total - stmt.line_items_ingested
+                    parsed_line_items += stmt.line_items_total
                     created.append(stmt)
 
         self.db.commit()
@@ -92,11 +86,11 @@ class StatementCollector:
             banks_run=len(parsers),
             emails_seen=emails_seen,
             statements_new=new_stmts,
-            line_items_ingested=ingested,
-            line_items_deduped=deduped,
+            line_items_ingested=0,
+            line_items_deduped=0,
             message=(
-                f"{new_stmts} new statement(s); {ingested} line items ingested, "
-                f"{deduped} deduped against the live UPI feed"
+                f"{new_stmts} new statement(s); summaries stored, "
+                f"{parsed_line_items} parsed line item(s) ignored (summary-only mode)"
             ),
             statements=created,
         )
@@ -125,27 +119,8 @@ class StatementCollector:
 
         stmt = self.repo.add_statement(parsed, message_id)
 
-        source = getattr(parser, "txn_source", "cc_statement")
-        kept = 0
-        for item in parsed.line_items:
-            # USER RULE: a statement UPI line matching an existing live-UPI txn
-            # (same date + amount) is the same transaction — pick only one.
-            if item.direction == "debit" and self.repo.upi_txn_exists(item.txn_date, item.amount):
-                continue
-            txn = ParsedTxn(
-                txn_date=item.txn_date,
-                amount=item.amount,
-                direction=item.direction,
-                source=source,
-                account=f"{parsed.card_label} ..{parsed.card_last4 or '????'}",
-                counterparty=item.description[:256],
-                raw_snippet=item.description[:512],
-            )
-            basis = f"{parsed.bank}|{parsed.card_last4}|{item.txn_date}|{item.amount}|{item.description}"
-            key = "stmt:" + hashlib.sha256(basis.encode()).hexdigest()[:24]
-            if self.txn_repo.upsert(txn, message_id=message_id, dedup_key=key) is not None:
-                kept += 1
-
-        stmt.line_items_ingested = kept
+        # Retain the parsed count for observability, but live alerts are the
+        # only source of individual transactions.
+        stmt.line_items_ingested = 0
         self.db.flush()
         return stmt

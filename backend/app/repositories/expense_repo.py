@@ -32,6 +32,10 @@ _NON_SPEND_CATEGORIES = ("transfer", "lent_returned", "reversed_debit")
 
 
 class ExpenseRepository:
+    # Sources generated from individual live transaction alerts. Historical
+    # rebuilds are always scoped to these so they cannot touch statement data.
+    LIVE_SOURCES = ("upi", "hdfc_card_live", "card_live", "bank_live")
+
     def __init__(self, db: Session) -> None:
         self.db = db
 
@@ -46,13 +50,9 @@ class ExpenseRepository:
         ).scalar_one()
         return count > 0
 
-    # Statement-derived sources. A live-alert transaction matching one of
-    # these by date+amount is the same real transaction already ingested from
-    # a monthly statement — this can happen when a live parser is added (or
-    # backfilled) after that statement period was already ingested. Normal
-    # operation has the live alert arrive first, so this mainly guards
-    # backfills; the reverse case (statement line vs. existing live row) is
-    # handled separately in StatementRepository.upi_txn_exists.
+    # Legacy statement-derived sources. New statement syncs are summary-only,
+    # but this protects historical databases if a live parser is backfilled
+    # before old statement transaction rows have been cleaned up.
     STATEMENT_SOURCES = ("cc_statement", "bank_account")
 
     def statement_txn_exists(self, txn_date: date, amount) -> bool:
