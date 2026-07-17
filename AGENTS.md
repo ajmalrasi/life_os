@@ -119,6 +119,18 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   model holds ~4.7GB of the Jetson's 7.4GB RAM; on the 2026-07-16 investigation it
   had zero restarts and was not OOM-killed — observed failures were generation
   timeouts, not a dead gateway.
+- **MLC can lose its decoding thread while the container stays healthy-looking
+  (2026-07-18).** The observed fatal is `BatchDecodeAction` / `num_rsentries > 0`:
+  Uvicorn and `/v1/models` keep returning 200, but generation returns no bytes.
+  `backend/scripts/watch_openclaw_mlc.sh` detects the fatal log immediately and
+  also performs a conservative one-token probe after three quiet minutes. Two
+  unexplained probe failures restart `openclaw-mlc.service`. The model is pinned
+  to **4096 tokens only** by `10-lifeos-4k.conf` — 2K is not acceptable. Recovery
+  temporarily stops the unused gateway and Rabbit Hole containers so the Jetson
+  can allocate the 4K model/KV cache from clean unified memory, then restores
+  them after model readiness. The user timer is
+  `openclaw-mlc-watchdog.timer` (repo units under `backend/ops/systemd/`). Do not
+  replace this with a `/v1/models`-only health check.
 - **Don't make the post-sync recompute slow again.** `/analytics/recompute` runs
   the health/score recompute synchronously (fast) and the **GitHub execution scan
   (44 repos) in a background task** — it used to be synchronous and made syncs take

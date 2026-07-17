@@ -1,0 +1,12 @@
+[Unit]
+Description=Check OpenClaw MLC generation health every five minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+RandomizedDelaySec=20s
+Persistent=true
+Unit=openclaw-mlc-watchdog.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=LifeOS real-generation health check for OpenClaw MLC
+After=openclaw-mlc.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ajmalrasi/life_os/backend/scripts/watch_openclaw_mlc.sh
