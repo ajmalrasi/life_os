@@ -16,7 +16,7 @@ data class SettingsUiState(
     val baseUrl: String = "",
     val saved: Boolean = false,
     val lastSyncAt: Long? = null,
-    val pulseReminderEnabled: Boolean = true,
+    val pulseReminderEnabled: Boolean = false,
     val pulseReminderHour: Int = 21,
 )
 

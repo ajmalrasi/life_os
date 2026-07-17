@@ -1,7 +1,14 @@
 package com.lifeos.app.presentation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -19,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -44,6 +52,8 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
+private val primaryDestinations = Destination.entries.filter { it != Destination.SETTINGS }
+
 @Composable
 fun LifeOsApp(startTab: String? = null) {
     val navController = rememberNavController()
@@ -65,31 +75,48 @@ fun LifeOsApp(startTab: String? = null) {
     Scaffold(
         containerColor = LifeOsColors.Background,
         bottomBar = {
-            NavigationBar(
-                containerColor = LifeOsColors.Surface,
-                tonalElevation = 8.dp,
-            ) {
-                Destination.entries.forEach { dest ->
-                    val selected = current?.hierarchy?.any { it.route == dest.route } == true
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            navController.navigate(dest.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(dest.icon, contentDescription = dest.label, modifier = Modifier.size(24.dp)) },
-                        label = { Text(dest.label) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = LifeOsColors.Primary,
-                            selectedTextColor = LifeOsColors.Primary,
-                            indicatorColor = LifeOsColors.PrimarySoft,
-                            unselectedIconColor = LifeOsColors.OnSurfaceMuted,
-                            unselectedTextColor = LifeOsColors.OnSurfaceMuted,
-                        ),
-                    )
+            val settingsOpen = current?.hierarchy?.any { it.route == Destination.SETTINGS.route } == true
+            if (!settingsOpen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(LifeOsColors.Background)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    NavigationBar(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .clip(RoundedCornerShape(22.dp)),
+                        containerColor = LifeOsColors.Surface,
+                        tonalElevation = 2.dp,
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                    ) {
+                        primaryDestinations.forEach { dest ->
+                            val selected = current?.hierarchy?.any { it.route == dest.route } == true
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = {
+                                    navController.navigate(dest.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                alwaysShowLabel = false,
+                                icon = { Icon(dest.icon, contentDescription = dest.label, modifier = Modifier.size(22.dp)) },
+                                label = { Text(dest.label) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = LifeOsColors.Primary,
+                                    selectedTextColor = LifeOsColors.Primary,
+                                    indicatorColor = LifeOsColors.PrimarySoft,
+                                    unselectedIconColor = LifeOsColors.OnSurfaceMuted,
+                                    unselectedTextColor = LifeOsColors.OnSurfaceMuted,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -99,12 +126,16 @@ fun LifeOsApp(startTab: String? = null) {
             startDestination = Destination.DASHBOARD.route,
             modifier = Modifier.padding(padding),
         ) {
-            composable(Destination.DASHBOARD.route) { DashboardScreen() }
+            composable(Destination.DASHBOARD.route) {
+                DashboardScreen(onOpenSettings = { navController.navigate(Destination.SETTINGS.route) })
+            }
             composable(Destination.MOOD.route) { MoodScreen() }
             composable(Destination.MONEY.route) { MoneyScreen() }
             composable(Destination.INSIGHTS.route) { InsightsScreen() }
             composable(Destination.CHAT.route) { ChatScreen() }
-            composable(Destination.SETTINGS.route) { SettingsScreen() }
+            composable(Destination.SETTINGS.route) {
+                SettingsScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

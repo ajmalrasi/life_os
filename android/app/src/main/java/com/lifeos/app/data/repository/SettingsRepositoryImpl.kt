@@ -64,7 +64,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override val pulseReminderEnabled: Flow<Boolean> =
-        dataStore.data.map { prefs -> prefs[pulseReminderEnabledKey] ?: true }
+        dataStore.data.map { prefs -> prefs[pulseReminderEnabledKey] ?: false }
 
     override suspend fun setPulseReminderEnabled(enabled: Boolean) {
         dataStore.edit { it[pulseReminderEnabledKey] = enabled }

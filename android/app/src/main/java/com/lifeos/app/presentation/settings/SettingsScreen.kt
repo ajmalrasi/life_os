@@ -1,8 +1,16 @@
 package com.lifeos.app.presentation.settings
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,149 +19,263 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeos.app.presentation.components.LifeOsCard
-import com.lifeos.app.presentation.components.ScreenHeader
-import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.theme.LifeOsColors
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(
+    onBack: () -> Unit = {},
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val fieldColors = lifeOsFieldColors()
+    var notificationPermissionGranted by remember {
+        mutableStateOf(hasNotificationPermission(context))
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        notificationPermissionGranted = granted
+        viewModel.setPulseReminderEnabled(granted)
+    }
+
+    // Older builds defaulted the reminder to enabled without ever requesting
+    // Android 13+ notification permission. Reconcile that impossible state.
+    LaunchedEffect(state.pulseReminderEnabled, notificationPermissionGranted) {
+        if (state.pulseReminderEnabled && !notificationPermissionGranted) {
+            viewModel.setPulseReminderEnabled(false)
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(LifeOsColors.Background)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        ScreenHeader("Settings", "Connect LifeOS to your backend on the local network.")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                    tint = LifeOsColors.OnBackground,
+                )
+            }
+            Column(modifier = Modifier.padding(start = 4.dp)) {
+                Text("Settings", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "Connection and quiet automation.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+        }
 
-        SectionHeader("Connection")
-        LifeOsCard {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Backend URL", style = MaterialTheme.typography.titleMedium)
+        SettingsSectionLabel("Connection")
+        SettingsGroup {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("LifeOS server", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "The app talks to your Jetson over local Wi-Fi.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
                 OutlinedTextField(
                     value = state.baseUrl,
                     onValueChange = viewModel::onUrlChange,
-                    label = { Text("FastAPI server") },
-                    placeholder = { Text("http://192.168.1.50:8000/") },
+                    label = { Text("Backend address") },
+                    placeholder = { Text("http://192.168.3.30:8000/") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = fieldColors,
                 )
                 if (state.baseUrl.contains("10.0.2.2")) {
                     Text(
-                        "10.0.2.2 only works on the emulator. Use your Mac/Jetson LAN IP on a real phone.",
+                        "10.0.2.2 is emulator-only. Use the Jetson LAN address on your phone.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.Warning,
                     )
                 }
                 Button(
                     onClick = viewModel::save,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LifeOsColors.Primary,
                         contentColor = LifeOsColors.OnPrimary,
                     ),
                 ) {
-                    Text("Save", fontWeight = FontWeight.SemiBold)
-                }
-                if (state.saved) {
-                    Text("Saved.", color = LifeOsColors.Primary, style = MaterialTheme.typography.bodyMedium)
+                    Text(if (state.saved) "Saved" else "Save address", fontWeight = FontWeight.SemiBold)
                 }
             }
         }
 
-        SectionHeader("Sync")
-        LifeOsCard {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Background sync", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "LifeOS reads Health Connect and recomputes nightly, so you don't have to tap Sync each day.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-                Text(
-                    "Last sync: ${formatLastSync(state.lastSyncAt)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-
-        SectionHeader("Reminders")
-        LifeOsCard {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SettingsSectionLabel("Automation")
+        SettingsGroup {
+            Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text("Evening Pulse reminder", style = MaterialTheme.typography.titleMedium)
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Daily Pulse reminder", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (state.pulseReminderEnabled) {
+                                "Around ${formatHour(state.pulseReminderHour)}, only if today’s Pulse is still empty."
+                            } else {
+                                "Optional local notification. Nothing is sent off-device."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
                     Switch(
-                        checked = state.pulseReminderEnabled,
-                        onCheckedChange = viewModel::setPulseReminderEnabled,
+                        checked = state.pulseReminderEnabled && notificationPermissionGranted,
+                        onCheckedChange = { enabled ->
+                            when {
+                                !enabled -> viewModel.setPulseReminderEnabled(false)
+                                notificationPermissionGranted -> viewModel.setPulseReminderEnabled(true)
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                else -> viewModel.setPulseReminderEnabled(true)
+                            }
+                        },
                     )
                 }
-                Text(
-                    "Get a nudge to log your Pulse if you haven't by the evening.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-                if (state.pulseReminderEnabled) {
+
+                if (state.pulseReminderEnabled && notificationPermissionGranted) {
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Reminder time", style = MaterialTheme.typography.bodyMedium)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour - 1) }) {
-                                Text("−", style = MaterialTheme.typography.titleLarge, color = LifeOsColors.Primary)
-                            }
-                            Text(formatHour(state.pulseReminderHour), style = MaterialTheme.typography.titleMedium)
-                            IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour + 1) }) {
-                                Text("+", style = MaterialTheme.typography.titleLarge, color = LifeOsColors.Primary)
-                            }
+                        Text(
+                            "Reminder time",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour - 1) }) {
+                            Icon(Icons.Rounded.Remove, contentDescription = "One hour earlier")
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = LifeOsColors.PrimarySoft,
+                        ) {
+                            Text(
+                                formatHour(state.pulseReminderHour),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = LifeOsColors.Primary,
+                            )
+                        }
+                        IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour + 1) }) {
+                            Icon(Icons.Rounded.Add, contentDescription = "One hour later")
                         }
                     }
                 }
+
+                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Nightly refresh", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Asks the Jetson to recompute LifeOS overnight. Apple Health continues to arrive through Health Auto Export.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                    Text(
+                        "Last completed ${formatLastSync(state.lastSyncAt)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LifeOsColors.OnBackground,
+                    )
+                }
             }
         }
 
-        SectionHeader("Help")
-        LifeOsCard {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Tips", style = MaterialTheme.typography.titleMedium)
-                Text("• Emulator → http://10.0.2.2:8000/", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
-                Text("• Real phone → http://<your-mac-ip>:8000/", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
-                Text("• OpenClaw URL is set in backend/.env on the Jetson", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+        SettingsSectionLabel("About")
+        SettingsGroup {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text("Private by design", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Your data stays on your phone and Jetson. Settings here affect this device only.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
     }
 }
+
+@Composable
+private fun SettingsSectionLabel(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = LifeOsColors.OnSurfaceMuted,
+        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+    )
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = LifeOsColors.Surface,
+        border = BorderStroke(1.dp, LifeOsColors.SurfaceBorder),
+        shadowElevation = 0.dp,
+        content = content,
+    )
+}
+
+private fun hasNotificationPermission(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
 
 private fun formatHour(hour: Int): String {
     val h = ((hour % 24) + 24) % 24

@@ -65,10 +65,10 @@ fun scoreColor(score: Double?): Color = when {
 }
 
 private fun DayPulse.tint(): Pair<Color, Color> = when (this) {
-    DayPulse.ROUGH -> Color(0xFFFFE4E6) to Color(0xFFF43F5E)
-    DayPulse.MEH -> Color(0xFFF1F5F9) to Color(0xFF94A3B8)
-    DayPulse.GOOD -> Color(0xFFDCFCE7) to Color(0xFF22C55E)
-    DayPulse.FLOW -> Color(0xFFFEF3C7) to Color(0xFFF59E0B)
+    DayPulse.ROUGH -> LifeOsColors.PrimarySoft to LifeOsColors.ScoreLow
+    DayPulse.MEH -> LifeOsColors.SurfaceMuted to LifeOsColors.OnSurfaceMuted
+    DayPulse.GOOD -> LifeOsColors.SecondarySoft to LifeOsColors.Secondary
+    DayPulse.FLOW -> LifeOsColors.PrimarySoft to LifeOsColors.Primary
 }
 
 @Composable
@@ -95,12 +95,23 @@ fun DemoBanner() {
 }
 
 @Composable
-fun ScreenHeader(title: String, subtitle: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium)
-        if (subtitle != null) {
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnSurfaceMuted)
+fun ScreenHeader(
+    title: String,
+    subtitle: String? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineMedium)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnSurfaceMuted)
+            }
         }
+        action?.invoke()
     }
 }
 
@@ -437,11 +448,11 @@ fun LifeScoreHero(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(6.dp, shape, ambientColor = Color(0x33059669), spotColor = Color(0x33059669))
+            .shadow(5.dp, shape, ambientColor = LifeOsColors.Primary.copy(alpha = 0.18f), spotColor = LifeOsColors.Primary.copy(alpha = 0.18f))
             .clip(shape)
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFF059669), Color(0xFF0D9488), Color(0xFF10B981)),
+                    listOf(LifeOsColors.Primary, LifeOsColors.AccentCoral),
                 ),
             )
             .padding(22.dp),
@@ -518,11 +529,11 @@ fun StateHeroCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(3.dp, shape, ambientColor = Color(0x26059669), spotColor = Color(0x26059669))
+            .shadow(2.dp, shape, ambientColor = LifeOsColors.Primary.copy(alpha = 0.12f), spotColor = LifeOsColors.Primary.copy(alpha = 0.12f))
             .clip(shape)
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFFD1FAE5), Color(0xFFCCFBF1)),
+                    listOf(LifeOsColors.PrimarySoft, LifeOsColors.SecondarySoft),
                 ),
             )
             .border(1.dp, LifeOsColors.Primary.copy(alpha = 0.2f), shape)

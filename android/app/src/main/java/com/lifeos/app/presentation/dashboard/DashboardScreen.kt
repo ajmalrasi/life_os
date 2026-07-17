@@ -11,9 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +42,10 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
+fun DashboardScreen(
+    onOpenSettings: () -> Unit = {},
+    viewModel: DashboardViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
 
@@ -66,7 +73,15 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            ScreenHeader("Today", dateLabel)
+            ScreenHeader("Today", dateLabel) {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        Icons.Rounded.Settings,
+                        contentDescription = "Settings",
+                        tint = LifeOsColors.OnSurfaceMuted,
+                    )
+                }
+            }
             if (state.usingDemoData) {
                 Spacer(Modifier.height(10.dp))
                 DemoBanner()

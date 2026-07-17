@@ -348,6 +348,19 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   before shopping/merchant rules (Axis appends text like `DEPT STORES`). The
   Android Money screen uses calendar periods, not statement cycles: an EMI dated
   June 30 is under June even when it appears on a June 17–July 15 statement.
+- ✅ **Android visual-system cleanup + working Pulse permission (2026-07-17).**
+  Bottom navigation now has five primary tabs, inset rounded bounds (so edge-item
+  ripples are not clipped), labels only on the selected tab, and no nav bar while
+  Settings is open. Settings moved to the Today header and was rebuilt as three
+  restrained groups (Connection, Automation, About); obsolete Health Connect and
+  Mac/OpenClaw setup copy was removed. Pulse Reminder was already backed by a
+  daily WorkManager job that checks Room and deep-links to Pulse, but Android 13+
+  notification permission was never requested, so it could silently no-op. It is
+  now explicit opt-in (default off), requests `POST_NOTIFICATIONS`, and reconciles
+  legacy enabled-without-permission state. The dashboard hero and Pulse selection
+  tints now use the shared terracotta/sage theme instead of page-specific green,
+  pink, and yellow palettes. Built, unit-tested, installed, and visually checked
+  on Samsung device `RZCX60SNHHE`.
 
 ## 7. Open items / next steps
 
