@@ -1,6 +1,7 @@
 package com.lifeos.app.data.remote
 
 import com.lifeos.app.data.remote.dto.CardStatementDto
+import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
 import com.lifeos.app.data.remote.dto.ChatRequestDto
 import com.lifeos.app.data.remote.dto.ChatResponseDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
@@ -120,6 +121,11 @@ interface LifeOsApi {
         @Path("statementId") statementId: Int,
         @Body body: StatementPaidUpdateDto,
     ): CardStatementDto
+
+    @GET("statements/{statementId}/details")
+    suspend fun statementDetails(
+        @Path("statementId") statementId: Int,
+    ): CardStatementDetailsDto
 
     @GET("statements/analysis")
     suspend fun spendAnalysis(@Query("days") days: Int): SpendAnalysisDto

@@ -15,6 +15,8 @@ from app.repositories.payee_label_repo import PayeeLabelRepository
 from app.repositories.statement_repo import StatementRepository
 from app.schemas.statement import (
     CardStatementOut,
+    CardStatementDetailsOut,
+    CardStatementItemOut,
     CategorySpend,
     MonthTrend,
     SpendAnalysis,
@@ -25,6 +27,7 @@ from app.schemas.statement import (
 from app.services.gmail_client import GmailClient
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.statement_collector import StatementCollector
+from app.services.statement_details import statement_breakdown
 
 router = APIRouter(prefix="/statements", tags=["statements"])
 
@@ -127,6 +130,22 @@ def update_statement_paid(
     return CardStatementOut.model_validate(statement)
 
 
+@router.get("/{statement_id}/details", response_model=CardStatementDetailsOut)
+def statement_details(
+    statement_id: int,
+    db: Session = Depends(get_db),
+) -> CardStatementDetailsOut:
+    """One stored bill plus explanatory rows that never enter spend totals."""
+    statement, items = StatementRepository(db).details(statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
+    return CardStatementDetailsOut(
+        statement=CardStatementOut.model_validate(statement),
+        items=[CardStatementItemOut.model_validate(item) for item in items],
+        breakdown=statement_breakdown(items),
+    )
+
+
 @router.post("/sync", response_model=StatementSyncResult)
 def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> StatementSyncResult:
     """Fetch statement PDFs and store bill summaries plus EMI costs (idempotent).
@@ -150,6 +169,7 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
         emails_seen=report.emails_seen,
         statements_new=report.statements_new,
         line_items_ingested=report.line_items_ingested,
+        line_items_stored=report.line_items_stored,
         line_items_deduped=report.line_items_deduped,
         message=report.message,
         statements=[CardStatementOut.model_validate(s) for s in report.statements],

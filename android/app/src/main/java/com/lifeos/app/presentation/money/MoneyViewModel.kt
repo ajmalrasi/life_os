@@ -69,6 +69,30 @@ class MoneyViewModel @Inject constructor(
                 _state.update { it.copy(transactions = txns) }
             }
         }
+        // A paid-state change from the statement details screen updates Room;
+        // observing the shared cache makes the due footer correct immediately
+        // when the user navigates back.
+        viewModelScope.launch {
+            repository.observeStatements(STATEMENT_CACHE_MONTHS).collect { statements ->
+                val today = LocalDate.now()
+                val active = statements
+                    .filter { statement ->
+                        statement.paidAt == null &&
+                            !(statement.dueDate?.isBefore(today) ?: false) &&
+                            (statement.totalDue ?: BigDecimal.ZERO) > BigDecimal.ZERO
+                    }
+                    .sortedBy { statement -> statement.dueDate ?: LocalDate.MAX }
+                _state.update {
+                    it.copy(
+                        cardDues = active,
+                        totalDue = active.fold(BigDecimal.ZERO) { total, statement ->
+                            total + (statement.totalDue ?: BigDecimal.ZERO)
+                        },
+                        nextDueDate = active.mapNotNull { statement -> statement.dueDate }.minOrNull(),
+                    )
+                }
+            }
+        }
         load()
     }
 
@@ -300,5 +324,6 @@ class MoneyViewModel @Inject constructor(
     private companion object {
         // Wide enough to cover "This year" and paging back through 6-month views.
         const val TRANSACTION_WINDOW_DAYS = 400
+        const val STATEMENT_CACHE_MONTHS = 7
     }
 }

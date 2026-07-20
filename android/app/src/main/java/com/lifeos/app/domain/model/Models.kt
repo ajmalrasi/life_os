@@ -183,6 +183,34 @@ data class CardStatement(
     val minDue: BigDecimal?,
     val totalSpend: BigDecimal?,
     val paidAt: Instant?,
+    val status: String,
+    val detailsStatus: String,
+    val detailsParserVersion: Int,
+    val detailsParsedAt: Instant?,
+)
+
+/** One statement-only explanatory row. It is never part of spend totals. */
+data class CardStatementItem(
+    val id: Int,
+    val sequence: Int,
+    val txnDate: LocalDate,
+    val description: String,
+    val amount: BigDecimal,
+    val direction: String,
+    val itemType: String,
+)
+
+data class StatementBreakdownItem(
+    val key: String,
+    val label: String,
+    val total: BigDecimal,
+    val count: Int,
+)
+
+data class CardStatementDetails(
+    val statement: CardStatement,
+    val items: List<CardStatementItem>,
+    val breakdown: List<StatementBreakdownItem>,
 )
 
 data class CategorySpend(

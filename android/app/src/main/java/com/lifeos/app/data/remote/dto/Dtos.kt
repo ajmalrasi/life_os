@@ -223,6 +223,36 @@ data class CardStatementDto(
     @SerialName("min_due") val minDue: String? = null,
     @SerialName("total_spend") val totalSpend: String? = null,
     @SerialName("paid_at") val paidAt: String? = null,
+    val status: String = "upcoming",
+    @SerialName("details_status") val detailsStatus: String = "pending",
+    @SerialName("details_parser_version") val detailsParserVersion: Int = 0,
+    @SerialName("details_parsed_at") val detailsParsedAt: String? = null,
+)
+
+@Serializable
+data class CardStatementItemDto(
+    val id: Int,
+    val sequence: Int,
+    @SerialName("txn_date") val txnDate: String,
+    val description: String,
+    val amount: String,
+    val direction: String,
+    @SerialName("item_type") val itemType: String,
+)
+
+@Serializable
+data class StatementBreakdownItemDto(
+    val key: String,
+    val label: String,
+    val total: String,
+    val count: Int,
+)
+
+@Serializable
+data class CardStatementDetailsDto(
+    val statement: CardStatementDto,
+    val items: List<CardStatementItemDto> = emptyList(),
+    val breakdown: List<StatementBreakdownItemDto> = emptyList(),
 )
 
 @Serializable
@@ -234,6 +264,7 @@ data class StatementSyncResultDto(
     @SerialName("emails_seen") val emailsSeen: Int = 0,
     @SerialName("statements_new") val statementsNew: Int,
     @SerialName("line_items_ingested") val lineItemsIngested: Int = 0,
+    @SerialName("line_items_stored") val lineItemsStored: Int = 0,
     @SerialName("line_items_deduped") val lineItemsDeduped: Int = 0,
     val message: String,
 )

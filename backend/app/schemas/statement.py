@@ -24,6 +24,35 @@ class CardStatementOut(BaseModel):
     line_items_ingested: int
     created_at: datetime
     paid_at: datetime | None = None
+    status: str
+    details_status: str
+    details_parser_version: int
+    details_parsed_at: datetime | None = None
+
+
+class CardStatementItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sequence: int
+    txn_date: date
+    description: str
+    amount: Decimal
+    direction: str
+    item_type: str
+
+
+class StatementBreakdownItem(BaseModel):
+    key: str
+    label: str
+    total: Decimal
+    count: int
+
+
+class CardStatementDetailsOut(BaseModel):
+    statement: CardStatementOut
+    items: list[CardStatementItemOut]
+    breakdown: list[StatementBreakdownItem]
 
 
 class StatementPaidUpdate(BaseModel):
@@ -35,6 +64,7 @@ class StatementSyncResult(BaseModel):
     emails_seen: int
     statements_new: int
     line_items_ingested: int
+    line_items_stored: int = 0
     line_items_deduped: int
     message: str
     statements: list[CardStatementOut] = []

@@ -9,6 +9,7 @@ import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.Transaction
@@ -84,4 +85,7 @@ class MoneyRepositoryImpl @Inject constructor(
         cardStatementDao.upsertAll(listOf(updated.toEntity()))
         return updated.toEntity().toDomain()
     }
+
+    override suspend fun statementDetails(statementId: Int): CardStatementDetails =
+        api.statementDetails(statementId).toDomain()
 }

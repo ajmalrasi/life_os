@@ -209,7 +209,10 @@ private fun periodLabel(period: SpendPeriod, anchor: LocalDate, slice: PeriodSli
 private data class CategoryTotal(val category: String, val total: BigDecimal, val count: Int)
 
 @Composable
-fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
+fun MoneyScreen(
+    onOpenStatement: (Int) -> Unit = {},
+    viewModel: MoneyViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showRangePicker by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -403,6 +406,7 @@ fun MoneyScreen(viewModel: MoneyViewModel = hiltViewModel()) {
                     state.cardDues,
                     savingStatementId = state.statementSavingId,
                     onMarkPaid = viewModel::markStatementPaid,
+                    onOpenDetails = onOpenStatement,
                 )
             }
         }
@@ -1169,6 +1173,7 @@ private fun DuesFooterCard(
     cards: List<CardStatement>,
     savingStatementId: Int?,
     onMarkPaid: (Int) -> Unit,
+    onOpenDetails: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var pendingPaid by remember { mutableStateOf<CardStatement?>(null) }
@@ -1243,6 +1248,7 @@ private fun DuesFooterCard(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     cards.forEach { card ->
                         Surface(
+                            modifier = Modifier.clickable { onOpenDetails(card.id) },
                             shape = RoundedCornerShape(14.dp),
                             color = LifeOsColors.SurfaceMuted,
                         ) {
@@ -1289,6 +1295,13 @@ private fun DuesFooterCard(
                                         onClick = { pendingPaid = card },
                                     )
                                 }
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    Icons.Rounded.ChevronRight,
+                                    contentDescription = "Open ${card.cardLabel} statement",
+                                    tint = LifeOsColors.OnSurfaceMuted,
+                                    modifier = Modifier.size(20.dp),
+                                )
                             }
                         }
                     }

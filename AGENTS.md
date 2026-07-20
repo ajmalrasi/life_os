@@ -387,10 +387,13 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   general knowledge/code questions through a clean general prompt with no personal
   snapshot or stale sleep history. Clear new topics intentionally drop history;
   short follow-ups retain it. A Fibonacci regression test guards the reported bug.
-- ✅ **Statements are summary + EMI only (2026-07-17).** Monthly statement PDFs
-  still populate `card_statements` (total/minimum due, due date, cycle dates), but
-  ordinary line items no longer enter `transactions`; live alerts own normal
-  purchases. The only retained rows use `source='statement_emi'`: deterministic
+- ✅ **Statements use separate summary, detail, and EMI accounting paths
+  (2026-07-17, detail storage/UI added 2026-07-21).** Monthly statement PDFs
+  populate `card_statements` (total/minimum due, due date, cycle dates) and all
+  recognized explanatory rows now live in `card_statement_items`. Detail rows
+  power the per-card statement screen only and never enter spend; live alerts own
+  normal purchases. The only statement rows retained in `transactions` use
+  `source='statement_emi'`: deterministic
   principal/interest/processing-fee/loan patterns plus ambiguous whole-word-EMI
   merchant rows approved by one batched local-model review. Model timeout,
   malformed output, or uncertainty skips ambiguous rows; conversion credits are
@@ -401,6 +404,18 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   before shopping/merchant rules (Axis appends text like `DEPT STORES`). The
   Android Money screen uses calendar periods, not statement cycles: an EMI dated
   June 30 is under June even when it appears on a June 17–July 15 statement.
+  Detail parsing is versioned (`details_parser_version`) so saved Gmail PDFs can
+  be reparsed idempotently. Payment state persists only as `paid_at`; API status
+  (`upcoming`/`overdue`/`paid`) is derived so time-based state cannot go stale.
+  Android opens a dedicated, long-scroll statement screen from each upcoming-card
+  row, shows activity categories plus every parsed debit/credit, clearly states
+  that details are excluded from Money spend, and updates the cached due footer
+  immediately after marking paid. Backend full suite (266 tests) and Android
+  `assembleDebug` + unit tests pass. **Not deployed/installed yet.** Before the
+  backend image is started on the existing Jetson DB, run
+  `backend/scripts/2026_07_21_statement_details.sql`; `create_all` cannot add the
+  three new `card_statements` columns. The next statement sync backfills recent
+  saved PDFs whose detail parser version is 0.
 - ✅ **Android visual-system cleanup + working Pulse permission (2026-07-17).**
   Bottom navigation now has five primary tabs, inset rounded bounds (so edge-item
   ripples are not clipped), labels only on the selected tab, and no nav bar while
@@ -428,6 +443,10 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Deploy statement details (2026-07-21 work).** Apply
+  `backend/scripts/2026_07_21_statement_details.sql` to the Jetson DB before
+  rebuilding the API, run statement sync to backfill the current bills, then
+  install the new debug/release APK and visually verify one large real statement.
 - **UI pass in Android Studio** (the user has a list of visual issues). Done so
   far: the two unbuilt files (built/verified), the Sleep trend stale-headline +
   sparse-state fix, and the Ask-tab Enter fix. More UI issues likely to come from
@@ -473,6 +492,9 @@ backend/app/services/expense_collector.py # incremental cursor sync (only-new em
 backend/app/services/expense_parsers/     # per-source parsers (registry); add a bank = add a file
 backend/app/services/repayments.py         # repayment candidates, validation, pair + Undo
 backend/app/models/transaction.py         # transactions table (idempotent on dedup_key)
+backend/app/models/card_statement.py      # statement summaries + statement-only detail rows
+backend/app/services/statement_details.py # display classification/rollup; never spend
+backend/scripts/2026_07_21_statement_details.sql # required existing-DB migration
 backend/app/models/transaction_reconciliation.py # audited repayment pairs + Undo state
 backend/app/api/routes/health_data.py    # /health/batch + /health/auto-export
 backend/app/api/routes/analytics.py      # /analytics/recompute (bg github scan), scores, state
@@ -485,5 +507,6 @@ backend/app/models/health.py             # HealthRecord (free-form type) + Healt
 backend/scripts/import_apple_health.py   # one-time export.zip importer
 android/app/.../work/HealthSyncWorker.kt # nightly/manual sync -> upload -> recompute
 android/app/.../components/TrendChart.kt  # dashboard trend chart + range selector
+android/app/.../money/StatementDetailsScreen.kt # per-card due activity and transaction list
 android/app/.../data/health/HealthConnectManager.kt  # Health Connect reads
 ```

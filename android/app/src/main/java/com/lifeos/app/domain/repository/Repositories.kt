@@ -2,6 +2,7 @@ package com.lifeos.app.domain.repository
 
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.ChatAnswer
 import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.ChatStreamEvent
@@ -107,6 +108,9 @@ interface MoneyRepository {
 
     /** Mark an individual card statement paid early, or restore it to upcoming dues. */
     suspend fun updateStatementPaid(statementId: Int, paid: Boolean): CardStatement
+
+    /** Full statement-only activity for explaining a bill; never included in spend. */
+    suspend fun statementDetails(statementId: Int): CardStatementDetails
 }
 
 interface SettingsRepository {

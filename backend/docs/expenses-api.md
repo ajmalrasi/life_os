@@ -88,9 +88,10 @@ curl -s -X POST "http://<jetson>:8000/expenses/sync"
 
 Statement emails from HDFC / Axis / ICICI / SBI are auto-fetched, decrypted
 (passwords derived from owner name + DOB in env; see `app/services/pdf_unlock.py`),
-and parsed in **summary + EMI mode**. Bill summaries land in `card_statements`,
+and parsed in **summary + detail + EMI mode**. Bill summaries land in `card_statements`,
 preserving total due, minimum due, and due date. Ordinary statement lines do not
-enter `transactions`; live bank/card alerts remain the source for normal purchases.
+enter `transactions`; they land in the separate `card_statement_items` table only
+to explain the bill. Live bank/card alerts remain the source for normal purchases.
 Only EMI installments, interest, and processing fees that live alerts commonly
 miss are stored as `source='statement_emi'`. Explicit EMI narrations use audited
 rules; ambiguous merchant-EMI descriptions get one batched local-model review and
@@ -99,6 +100,7 @@ retained EMI rows expose `spend_category='emi'` before merchant-category rules a
 considered, so suffixes such as `DEPT STORES` cannot misclassify them as shopping.
 
 ### `GET /statements` — stored summaries (`months` param, default 3)
+### `GET /statements/{id}/details` — one summary plus its full statement-only transaction list and activity breakdown. These rows never affect spend.
 ### `POST /statements/sync` — fetch/parse new statement emails (idempotent)
 ### `PATCH /statements/{id}/paid` — set paid state with `{"paid":true}`; `false` undoes it. Paid statements remain stored but are excluded immediately from upcoming-due totals.
 ### `GET /statements/trends` — month-by-month spend (`months` param, default 6):

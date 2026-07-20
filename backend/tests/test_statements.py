@@ -130,8 +130,8 @@ def test_password_candidates():
     assert password_candidates("AJMAL RASI", "01071993", ov, "sbi")[0] == "010719931970"
 
 
-def test_statement_collector_stores_summary_without_transactions(client, monkeypatch):
-    """Statement line items are observable but never enter the transaction feed."""
+def test_statement_collector_stores_details_without_spend_transactions(client, monkeypatch):
+    """Statement details are durable but never enter the transaction feed."""
     from app.database import SessionLocal
     from app.repositories.expense_repo import ExpenseRepository
     from app.repositories.statement_repo import StatementRepository
@@ -162,13 +162,111 @@ def test_statement_collector_stores_summary_without_transactions(client, monkeyp
 
         assert report.statements_new == 1
         assert report.line_items_ingested == 0
-        assert "0 EMI item(s) ingested" in report.message
-        assert "2 other line item(s) ignored" in report.message
+        assert report.line_items_stored == 2
+        assert "2 detail item(s) stored separately" in report.message
+        assert "0 EMI item(s) added to spend" in report.message
         assert len(stored) == 1
         assert stored[0].total_due == Decimal("18699.25")
         assert stored[0].line_items_total == 2
         assert stored[0].line_items_ingested == 0
         assert ExpenseRepository(db).range(date(2026, 5, 1), date(2026, 6, 30)) == []
+
+    details = client.get(f"/statements/{stored[0].id}/details")
+    assert details.status_code == 200
+    body = details.json()
+    assert body["statement"]["status"] in {"upcoming", "overdue"}
+    assert body["statement"]["details_status"] == "ready"
+    assert [item["direction"] for item in body["items"]] == ["credit", "debit"]
+    assert [part["key"] for part in body["breakdown"]] == [
+        "new_charges", "payments_credits"
+    ]
+    assert float(body["breakdown"][0]["total"]) == 3750.0
+    assert float(body["breakdown"][1]["total"]) == -1255.02
+
+
+def test_statement_detail_backfill_is_idempotent(client, monkeypatch):
+    from app.database import SessionLocal
+    from app.models.card_statement import CardStatementItem
+    from app.services.statement_collector import StatementCollector
+    from sqlalchemy import func, select
+
+    class FakeGmail:
+        account = "test@example.com"
+        def is_available(self): return True
+        def search(self, query, max_results):
+            return [{"id": "axis-idempotent"}] if "cc.statements@axis.bank.in" in query else []
+        def list_pdf_attachments(self, message_id):
+            return [{"attachmentId": "a1", "filename": "axis.pdf"}]
+        def download_attachment(self, message_id, attachment_id, destination): return True
+
+    monkeypatch.setattr("app.services.statement_collector.extract_pdf_text", lambda *_: _AXIS)
+    with SessionLocal() as db:
+        collector = StatementCollector(db, FakeGmail(), "AJMAL RASI", "01071993")
+        first = collector.sync()
+        second = collector.sync()
+        count = db.execute(select(func.count()).select_from(CardStatementItem)).scalar_one()
+        assert first.line_items_stored == 2
+        assert second.line_items_stored == 0
+        assert second.statements_new == 0
+        assert count == 2
+
+
+def test_existing_summary_is_backfilled_without_recreating_statement(client, monkeypatch):
+    from app.database import SessionLocal
+    from app.repositories.statement_repo import StatementRepository
+    from app.services.statement_collector import StatementCollector
+
+    parsed = AxisStatementParser().parse(_AXIS)
+    with SessionLocal() as db:
+        original = StatementRepository(db).add_statement(parsed, "axis-needs-details")
+        original_id = original.id
+        db.commit()
+
+    class FakeGmail:
+        account = "test@example.com"
+        def is_available(self): return True
+        def search(self, query, max_results):
+            return [{"id": "axis-needs-details"}] if "cc.statements@axis.bank.in" in query else []
+        def list_pdf_attachments(self, message_id):
+            return [{"attachmentId": "a1", "filename": "axis.pdf"}]
+        def download_attachment(self, message_id, attachment_id, destination): return True
+
+    monkeypatch.setattr("app.services.statement_collector.extract_pdf_text", lambda *_: _AXIS)
+    with SessionLocal() as db:
+        report = StatementCollector(db, FakeGmail(), "AJMAL RASI", "01071993").sync()
+        stored = StatementRepository(db).range(date(2026, 6, 1), date(2026, 6, 30))
+        assert report.statements_new == 0
+        assert report.line_items_stored == 2
+        assert [statement.id for statement in stored] == [original_id]
+        assert stored[0].details_status == "ready"
+        assert stored[0].details_parser_version == 1
+
+
+def test_statement_details_are_not_in_spend_analysis(client):
+    from app.database import SessionLocal
+    from app.repositories.statement_repo import StatementRepository
+    from app.services.statement_details import DETAILS_PARSER_VERSION
+    from app.services.statement_parsers.base import ParsedStatement, StatementTxn
+
+    today = date.today()
+    parsed = ParsedStatement(
+        bank="axis", card_label="Axis Test", card_last4="1234",
+        statement_date=today, period_start=today, period_end=today,
+        total_due=Decimal("9000"), min_due=Decimal("900"), due_date=today,
+        total_spend=Decimal("9000"),
+        line_items=[StatementTxn(today, "BIG PURCHASE", Decimal("9000"), "debit")],
+    )
+    with SessionLocal() as db:
+        repo = StatementRepository(db)
+        statement = repo.add_statement(parsed, "detail-isolation")
+        repo.replace_details(statement, parsed.line_items, DETAILS_PARSER_VERSION)
+        db.commit()
+
+    analysis = client.get("/statements/analysis").json()
+    assert float(analysis["total_due_all_cards"]) == 9000.0
+    assert analysis["spend_by_category"] == []
+    trends = client.get("/statements/trends?months=1").json()
+    assert float(trends["aggregate_debits"]) == 0.0
 
 
 def test_statement_emi_selection_uses_rules_then_one_model_review():

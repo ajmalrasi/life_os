@@ -46,10 +46,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.lifeos.app.presentation.chat.ChatScreen
 import com.lifeos.app.presentation.dashboard.DashboardScreen
 import com.lifeos.app.presentation.insights.InsightsScreen
 import com.lifeos.app.presentation.money.MoneyScreen
+import com.lifeos.app.presentation.money.StatementDetailsScreen
 import com.lifeos.app.presentation.mood.MoodScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
@@ -64,6 +67,7 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
 }
 
 private val primaryDestinations = Destination.entries.filter { it != Destination.SETTINGS }
+private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
 
 @Composable
 fun LifeOsApp(startTab: String? = null) {
@@ -86,8 +90,10 @@ fun LifeOsApp(startTab: String? = null) {
     Scaffold(
         containerColor = LifeOsColors.Background,
         bottomBar = {
-            val settingsOpen = current?.hierarchy?.any { it.route == Destination.SETTINGS.route } == true
-            if (!settingsOpen) {
+            val secondaryScreenOpen = current?.hierarchy?.any {
+                it.route == Destination.SETTINGS.route || it.route == STATEMENT_DETAILS_ROUTE
+            } == true
+            if (!secondaryScreenOpen) {
                 LifeOsBottomNavigation(
                     selectedRoute = current?.route,
                     onDestinationSelected = { dest ->
@@ -110,11 +116,19 @@ fun LifeOsApp(startTab: String? = null) {
                 DashboardScreen(onOpenSettings = { navController.navigate(Destination.SETTINGS.route) })
             }
             composable(Destination.MOOD.route) { MoodScreen() }
-            composable(Destination.MONEY.route) { MoneyScreen() }
+            composable(Destination.MONEY.route) {
+                MoneyScreen(onOpenStatement = { id -> navController.navigate("statement/$id") })
+            }
             composable(Destination.INSIGHTS.route) { InsightsScreen() }
             composable(Destination.CHAT.route) { ChatScreen() }
             composable(Destination.SETTINGS.route) {
                 SettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = STATEMENT_DETAILS_ROUTE,
+                arguments = listOf(navArgument("statementId") { type = NavType.IntType }),
+            ) {
+                StatementDetailsScreen(onBack = { navController.popBackStack() })
             }
         }
     }

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models.card_statement import CardStatement
-from app.services.statement_parsers.base import ParsedStatement
+from app.models.card_statement import CardStatement, CardStatementItem
+from app.services.statement_details import classify_statement_item
+from app.services.statement_parsers.base import ParsedStatement, StatementTxn
 from app.database import utcnow
 
 
@@ -21,6 +22,14 @@ class StatementRepository:
             .where(CardStatement.gmail_message_id == message_id)
         ).scalar_one()
         return count > 0
+
+    def message_needs_processing(self, message_id: str, parser_version: int) -> bool:
+        statements = list(
+            self.db.execute(
+                select(CardStatement).where(CardStatement.gmail_message_id == message_id)
+            ).scalars()
+        )
+        return not statements or any(s.details_parser_version < parser_version for s in statements)
 
     def get_existing(self, bank: str, last4: str | None, stmt_date: date | None) -> CardStatement | None:
         return self.db.execute(
@@ -49,6 +58,49 @@ class StatementRepository:
         self.db.add(obj)
         self.db.flush()
         return obj
+
+    def replace_details(
+        self,
+        statement: CardStatement,
+        items: list[StatementTxn],
+        parser_version: int,
+    ) -> list[CardStatementItem]:
+        """Atomically replace derived detail rows for one parser version."""
+        self.db.execute(
+            delete(CardStatementItem).where(CardStatementItem.statement_id == statement.id)
+        )
+        stored = [
+            CardStatementItem(
+                statement_id=statement.id,
+                sequence=sequence,
+                txn_date=item.txn_date,
+                description=item.description[:512],
+                amount=item.amount,
+                direction=item.direction,
+                item_type=classify_statement_item(item),
+            )
+            for sequence, item in enumerate(items)
+        ]
+        self.db.add_all(stored)
+        statement.line_items_total = len(stored)
+        statement.details_status = "ready" if stored else "unavailable"
+        statement.details_parser_version = parser_version
+        statement.details_parsed_at = utcnow()
+        self.db.flush()
+        return stored
+
+    def details(self, statement_id: int) -> tuple[CardStatement | None, list[CardStatementItem]]:
+        statement = self.db.get(CardStatement, statement_id)
+        if statement is None:
+            return None, []
+        items = list(
+            self.db.execute(
+                select(CardStatementItem)
+                .where(CardStatementItem.statement_id == statement_id)
+                .order_by(CardStatementItem.sequence)
+            ).scalars()
+        )
+        return statement, items
 
     def latest_per_card(self) -> list[CardStatement]:
         """Most recent statement row for each (bank, card_last4)."""

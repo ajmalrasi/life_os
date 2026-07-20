@@ -8,6 +8,7 @@ import com.lifeos.app.data.local.StateEntity
 import com.lifeos.app.data.local.SynthesizedInsightEntity
 import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.dto.CardStatementDto
+import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
 import com.lifeos.app.data.remote.dto.CategorySpendDto
 import com.lifeos.app.data.remote.dto.ChatMessageDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
@@ -26,6 +27,9 @@ import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.CardStatementDetails
+import com.lifeos.app.domain.model.CardStatementItem
+import com.lifeos.app.domain.model.StatementBreakdownItem
 import com.lifeos.app.domain.model.CategorySpend
 import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.DailyScore
@@ -148,7 +152,8 @@ fun RepaymentDto.toDomain() = Repayment(
 
 // --- Money: card statements ---
 fun CardStatementDto.toEntity() = CardStatementEntity(
-    id, bank, cardLabel, cardLast4, statementDate, periodStart, periodEnd, dueDate, totalDue, minDue, totalSpend, paidAt,
+    id, bank, cardLabel, cardLast4, statementDate, periodStart, periodEnd, dueDate,
+    totalDue, minDue, totalSpend, paidAt, status, detailsStatus, detailsParserVersion, detailsParsedAt,
 )
 fun CardStatementEntity.toDomain() = CardStatement(
     id = id,
@@ -163,6 +168,27 @@ fun CardStatementEntity.toDomain() = CardStatement(
     minDue = minDue?.let { BigDecimal(it) },
     totalSpend = totalSpend?.let { BigDecimal(it) },
     paidAt = paidAt?.let { Instant.parse(it) },
+    status = status,
+    detailsStatus = detailsStatus,
+    detailsParserVersion = detailsParserVersion,
+    detailsParsedAt = detailsParsedAt?.let { Instant.parse(it) },
+)
+fun CardStatementDetailsDto.toDomain() = CardStatementDetails(
+    statement = statement.toEntity().toDomain(),
+    items = items.map {
+        CardStatementItem(
+            id = it.id,
+            sequence = it.sequence,
+            txnDate = LocalDate.parse(it.txnDate),
+            description = it.description,
+            amount = BigDecimal(it.amount),
+            direction = it.direction,
+            itemType = it.itemType,
+        )
+    },
+    breakdown = breakdown.map {
+        StatementBreakdownItem(it.key, it.label, BigDecimal(it.total), it.count)
+    },
 )
 
 // --- Money: analysis / trends (computed server-side; mapped directly, not cached) ---
