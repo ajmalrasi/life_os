@@ -14,7 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Cool navy/blue identity — crisp off-white canvas, deep navigation chrome,
+// Cool navy/blue identity: crisp off-white canvas, deep navigation chrome,
 // and calm ocean accents. Semantic score colors stay distinct.
 object LifeOsColors {
     var Background = Color(0xFFF4F7FB); private set
@@ -48,14 +48,14 @@ object LifeOsColors {
     val Warning = Color(0xFFC76E3B)        // burnt orange
     val Positive = Color(0xFF4A7C59)       // forest
 
-    // Per-metric identity colors — distinct hues, desaturated to sit calmly on ivory.
+    // Per-metric identity colors: distinct hues, desaturated to sit calmly on ivory.
     val MetricSleep = Color(0xFF5B7DB1)     // dusk blue (night/rest)
     val MetricRecovery = Color(0xFF5FA396)  // sea teal
     val MetricExecution = Color(0xFF8B78C6) // violet (drive/output)
     val MetricWellness = Color(0xFFC05F86)  // rose clay
     val MetricFitness = Color(0xFF6B9B5E)   // moss
 
-    // Charting — gridlines and faint axis text on the trend graph.
+    // Charting: gridlines and faint axis text on the trend graph.
     var ChartGrid = Color(0xFFE1E8F0); private set
     var ChartAxisText = Color(0xFF8191A2); private set
 

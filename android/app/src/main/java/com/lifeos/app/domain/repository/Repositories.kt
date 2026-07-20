@@ -66,7 +66,7 @@ interface ChatRepository {
     /** Incremental answer text followed by grounded/citation metadata. */
     fun stream(message: String, history: List<ChatTurn>, contextDays: Int): Flow<ChatStreamEvent>
 
-    /** Data-grounded starter questions for the Ask screen. Never throws — returns
+    /** Data-grounded starter questions for the Ask screen. Never throws; returns
      *  sensible defaults if the backend is unreachable. */
     suspend fun suggestions(contextDays: Int): List<String>
 }
@@ -82,7 +82,7 @@ interface MoneyRepository {
     suspend fun refresh(transactionDays: Int = 90, statementMonths: Int = 7)
 
     /** Month-at-a-glance: dues across every card + category/merchant breakdown.
-     * Computed server-side on every call — not cached, always current. */
+     * Computed server-side on every call, not cached, always current. */
     suspend fun analysis(days: Int = 45): SpendAnalysis
 
     /** Month-by-month spend trend. Computed server-side on every call. */

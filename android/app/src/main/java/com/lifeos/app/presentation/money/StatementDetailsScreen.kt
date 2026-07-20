@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -51,6 +50,8 @@ import com.lifeos.app.presentation.theme.LifeOsColors
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.format.DateTimeFormatter
+
+private enum class StatementSortKey { DATE, AMOUNT }
 
 @Composable
 fun StatementDetailsScreen(
@@ -91,6 +92,19 @@ private fun StatementDetailsContent(
     val statement = details.statement
     val dateFormat = DateTimeFormatter.ofPattern("dd MMM yyyy")
     var selectedItem by remember { mutableStateOf<CardStatementItem?>(null) }
+    var sortKey by remember { mutableStateOf(StatementSortKey.DATE) }
+    var descending by remember { mutableStateOf(true) }
+    val sortedItems = remember(details.items, sortKey, descending) {
+        val ascending = when (sortKey) {
+            StatementSortKey.DATE -> details.items.sortedWith(
+                compareBy<CardStatementItem> { it.txnDate }
+                    .thenBy { it.txnTime }
+                    .thenBy { it.sequence }
+            )
+            StatementSortKey.AMOUNT -> details.items.sortedBy { it.amount }
+        }
+        if (descending) ascending.asReversed() else ascending
+    }
     selectedItem?.let { item ->
         StatementItemDetailDialog(item = item, onDismiss = { selectedItem = null })
     }
@@ -160,13 +174,44 @@ private fun StatementDetailsContent(
         }
 
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Transactions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "${details.items.size} items",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
+            Column {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Transactions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${details.items.size} items",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                }
+                if (details.items.size > 1) {
+                    Spacer(Modifier.size(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatementSortChip(
+                            label = if (sortKey == StatementSortKey.DATE && !descending) "Oldest" else "Recent",
+                            active = sortKey == StatementSortKey.DATE,
+                            descending = descending,
+                            onClick = {
+                                if (sortKey == StatementSortKey.DATE) descending = !descending
+                                else {
+                                    sortKey = StatementSortKey.DATE
+                                    descending = true
+                                }
+                            },
+                        )
+                        StatementSortChip(
+                            label = if (sortKey == StatementSortKey.AMOUNT && !descending) "Lowest" else "Highest",
+                            active = sortKey == StatementSortKey.AMOUNT,
+                            descending = descending,
+                            onClick = {
+                                if (sortKey == StatementSortKey.AMOUNT) descending = !descending
+                                else {
+                                    sortKey = StatementSortKey.AMOUNT
+                                    descending = true
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
 
@@ -186,15 +231,10 @@ private fun StatementDetailsContent(
                 }
             }
         } else {
-            itemsIndexed(details.items, key = { _, item -> item.id }) { index, item ->
-                Column {
-                    StatementItemRow(item, onClick = { selectedItem = item })
-                    if (index < details.items.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                            thickness = 0.5.dp,
-                            color = LifeOsColors.SurfaceBorder,
-                        )
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    sortedItems.forEach { item ->
+                        StatementItemRow(item, onClick = { selectedItem = item })
                     }
                 }
             }
@@ -202,6 +242,28 @@ private fun StatementDetailsContent(
 
         item { Spacer(Modifier.height(28.dp)) }
     }
+}
+
+@Composable
+private fun StatementSortChip(
+    label: String,
+    active: Boolean,
+    descending: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = if (active) "$label ${if (descending) "↓" else "↑"}" else label,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (active) LifeOsColors.Primary else LifeOsColors.OnSurfaceMuted,
+        modifier = Modifier
+            .background(
+                if (active) LifeOsColors.PrimarySoft else LifeOsColors.SurfaceMuted,
+                RoundedCornerShape(50),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 @Composable
@@ -265,7 +327,7 @@ private fun StatementSummaryCard(
             val period = listOfNotNull(
                 statement.periodStart?.format(dateFormat),
                 statement.periodEnd?.format(dateFormat),
-            ).joinToString(" – ")
+            ).joinToString(" to ")
             if (period.isNotBlank()) {
                 Text("Statement period  $period", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
             }
@@ -331,9 +393,8 @@ private fun StatementItemRow(item: CardStatementItem, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -390,7 +451,7 @@ private fun StatementItemDetailDialog(item: CardStatementItem, onDismiss: () -> 
                     color = LifeOsColors.OnSurfaceMuted,
                 )
                 Text(
-                    "Statement detail only — this row is not added to Money spend.",
+                    "Statement detail only. This row is not added to Money spend.",
                     style = MaterialTheme.typography.bodySmall,
                     color = LifeOsColors.OnSurfaceMuted,
                 )

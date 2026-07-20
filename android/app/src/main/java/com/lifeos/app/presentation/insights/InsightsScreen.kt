@@ -40,7 +40,7 @@ fun InsightsScreen(viewModel: InsightsViewModel = hiltViewModel()) {
         item {
             ScreenHeader(
                 "Patterns",
-                "Correlations discovered in your own data — grounded in real samples.",
+                "Correlations discovered in your own data, grounded in real samples.",
             )
             if (state.usingDemoData) {
                 Spacer(Modifier.height(10.dp))

@@ -83,7 +83,7 @@ fun DashboardScreen(
             }
         }
 
-        // Hero focal point — composite Life Score, delta, and current state.
+        // Hero focal point: composite Life Score, delta, and current state.
         item {
             LifeScoreHero(
                 score = composite,
@@ -93,7 +93,7 @@ fun DashboardScreen(
             )
         }
 
-        // Historical trend graph with metric toggle — the heart of the redesign.
+        // Historical trend graph with metric toggle, the heart of the redesign.
         item { TrendChart(history = state.scoreHistory) }
 
         // Why-this-state explanation, only when the model gives a rationale.

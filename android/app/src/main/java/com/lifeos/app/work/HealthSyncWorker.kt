@@ -11,11 +11,11 @@ import dagger.assisted.AssistedInject
 import java.time.LocalDate
 
 /**
- * Phase 1 #2 — nightly background recompute.
+ * Phase 1 #2: nightly background recompute.
  *
  * Health data now arrives solely from the iPhone via Health Auto Export
  * (POST /health/auto-export), which already ingests and recomputes the touched
- * days. This worker no longer reads/uploads Health Connect samples — doing so
+ * days. This worker no longer reads/uploads Health Connect samples because doing so
  * double-counted activity Apple already provides (single source = HAE). It just
  * triggers a backend recompute of the recent window so the dashboard stays
  * fresh (and correlations are rediscovered) even on days with no live push.

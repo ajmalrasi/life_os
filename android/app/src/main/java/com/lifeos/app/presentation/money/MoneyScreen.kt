@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -100,7 +99,7 @@ private val CURRENCY_SYMBOLS = mapOf("INR" to "₹", "USD" to "$", "EUR" to "€
 /** Amount rendered in its own currency. INR keeps the Indian lakh/crore
  * grouping (₹12,34,567); every other currency uses plain thousands grouping
  * with its symbol where we know one, else the ISO code as a suffix ("23 AED")
- * — so a foreign-currency alert never gets mislabeled as rupees. */
+ * so a foreign-currency alert never gets mislabeled as rupees. */
 private fun BigDecimal.money(currency: String): String {
     if (currency == "INR") return rupees()
     val plain = this.setScale(0, RoundingMode.HALF_UP).toPlainString()
@@ -113,7 +112,7 @@ private fun BigDecimal.money(currency: String): String {
     return if (symbol != null) "$sign$symbol$grouped" else "$sign$grouped $currency"
 }
 
-/** One category's identity color — distinct hues, desaturated for the warm
+/** One category's identity color: distinct hues, desaturated for the warm
  * ivory canvas, consistent everywhere. */
 private fun categoryColor(category: String): Color = when (category.lowercase()) {
     "fuel" -> Color(0xFFC76E3B)          // burnt orange
@@ -192,17 +191,17 @@ private fun periodLabel(period: SpendPeriod, anchor: LocalDate, slice: PeriodSli
         }
         SpendPeriod.WEEK ->
             if (!today.isBefore(slice.start) && !today.isAfter(slice.end)) "This week"
-            else "${slice.start.format(dm)} – ${slice.end.format(dm)}"
+            else "${slice.start.format(dm)} to ${slice.end.format(dm)}"
         SpendPeriod.MONTH ->
             if (anchor.year == today.year && anchor.month == today.month) "This month"
             else anchor.format(DateTimeFormatter.ofPattern("MMMM yyyy"))
         SpendPeriod.SIX_MONTHS ->
             if (anchor.year == today.year && anchor.month == today.month) "Last 6 months"
-            else "${slice.start.format(my)} – ${slice.end.format(my)}"
+            else "${slice.start.format(my)} to ${slice.end.format(my)}"
         SpendPeriod.YEAR ->
             if (anchor.year == today.year) "This year" else anchor.year.toString()
         SpendPeriod.CUSTOM ->
-            "${slice.start.format(dmy)} – ${slice.end.format(dmy)}"
+            "${slice.start.format(dmy)} to ${slice.end.format(dmy)}"
     }
 }
 
@@ -220,7 +219,7 @@ fun MoneyScreen(
     val slice = remember(state.period, state.anchor, state.customStart, state.customEnd) {
         sliceFor(state.period, state.anchor, state.customStart, state.customEnd)
     }
-    // Everything spendable inside the period, before the category filter —
+    // Everything spendable inside the period, before the category filter.
     // this is what the filter chips are built from, so they never vanish.
     val sliceTxns = remember(state.transactions, slice) {
         state.transactions.filter {
@@ -318,7 +317,7 @@ fun MoneyScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Couldn't refresh", style = MaterialTheme.typography.titleSmall, color = LifeOsColors.Warning)
                         Text(
-                            "$err — showing the last synced data.",
+                            "$err. Showing the last synced data.",
                             style = MaterialTheme.typography.bodySmall,
                             color = LifeOsColors.OnSurfaceMuted,
                         )
@@ -382,7 +381,7 @@ fun MoneyScreen(
                 }
             }
         } else {
-            // Drill-down: one card, dues-breakdown style — header on top,
+            // Drill-down: one card, dues-breakdown style, with the header on top.
             // this category's transactions listed right below it.
             val catTotal = byCategory.firstOrNull { it.category == selected }?.total ?: BigDecimal.ZERO
             item {
@@ -404,8 +403,6 @@ fun MoneyScreen(
                     due,
                     state.nextDueDate,
                     state.cardDues,
-                    savingStatementId = state.statementSavingId,
-                    onMarkPaid = viewModel::markStatementPaid,
                     onOpenDetails = onOpenStatement,
                 )
             }
@@ -1171,37 +1168,11 @@ private fun DuesFooterCard(
     totalDue: BigDecimal,
     nextDueDate: LocalDate?,
     cards: List<CardStatement>,
-    savingStatementId: Int?,
-    onMarkPaid: (Int) -> Unit,
     onOpenDetails: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var pendingPaid by remember { mutableStateOf<CardStatement?>(null) }
     val expandable = cards.isNotEmpty()
     val dm = DateTimeFormatter.ofPattern("dd MMM")
-    pendingPaid?.let { card ->
-        AlertDialog(
-            onDismissRequest = { pendingPaid = null },
-            title = { Text("Mark this card paid?") },
-            text = {
-                Text(
-                    "${card.cardLabel} · ${(card.totalDue ?: BigDecimal.ZERO).rupees()} will be removed from upcoming dues. The statement will stay in LifeOS.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingPaid = null
-                        onMarkPaid(card.id)
-                    },
-                ) { Text("Yes, paid") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingPaid = null }) { Text("Cancel") }
-            },
-        )
-    }
     LifeOsCard(modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(
@@ -1281,20 +1252,12 @@ private fun DuesFooterCard(
                                     )
                                 }
                                 Spacer(Modifier.width(12.dp))
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        (card.totalDue ?: BigDecimal.ZERO).rupees(),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = LifeOsColors.OnBackground,
-                                    )
-                                    Spacer(Modifier.height(5.dp))
-                                    PaidActionPill(
-                                        saving = savingStatementId == card.id,
-                                        enabled = savingStatementId == null,
-                                        onClick = { pendingPaid = card },
-                                    )
-                                }
+                                Text(
+                                    (card.totalDue ?: BigDecimal.ZERO).rupees(),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = LifeOsColors.OnBackground,
+                                )
                                 Spacer(Modifier.width(6.dp))
                                 Icon(
                                     Icons.Rounded.ChevronRight,
@@ -1307,46 +1270,6 @@ private fun DuesFooterCard(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun PaidActionPill(
-    saving: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        color = if (saving) LifeOsColors.SurfaceBorder else LifeOsColors.PrimarySoft,
-        contentColor = if (saving) LifeOsColors.OnSurfaceMuted else LifeOsColors.Primary,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (saving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    strokeWidth = 2.dp,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-            } else {
-                Icon(
-                    Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(15.dp),
-                )
-            }
-            Spacer(Modifier.width(5.dp))
-            Text(
-                if (saving) "Saving" else "Mark paid",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
         }
     }
 }

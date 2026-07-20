@@ -7,14 +7,14 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * Phase 1 #5 — receives FCM messages from the backend.
+ * Phase 1 #5: receives FCM messages from the backend.
  *
  * On token rotation we re-register with the backend; on an incoming message we
  * surface it as a system notification on the "insights" channel.
  *
  * NOTE: requires Firebase to be configured (add google-services.json and apply
  * the com.google.gms.google-services plugin). Until then this class compiles but
- * is never invoked — see android/README or docs for setup.
+ * is never invoked. See android/README or docs for setup.
  */
 @AndroidEntryPoint
 class LifeOsMessagingService : FirebaseMessagingService() {

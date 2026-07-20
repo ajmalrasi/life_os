@@ -418,11 +418,14 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   with zero new `statement_emi` spend rows, and all seven upcoming bills are
   `details_status='ready'`. APK installed and the Axis 0872 real-data details
   screen was visually verified on Samsung device `RZCX60SNHHE`. **UI refinement
-  2026-07-21:** the oversized filled “Mark as paid” CTA is now a compact payment-
-  status row with a secondary text action and standard confirmation. Statement
-  transactions are a flat, fixed-72dp list (single-line ellipsized description,
-  consistent trailing amount, thin dividers) rather than variable-height cards;
-  tapping a row reveals its full description. Parser v2 adds nullable
+  2026-07-21:** payment can only be changed on the statement breakdown screen;
+  the redundant action was removed from the expanded due list. The breakdown uses
+  Recent/Oldest and Highest/Lowest sort controls. Statement transactions now match
+  the compact Money drill-down: flat rows, 10dp row spacing, 2dp vertical padding,
+  single-line ellipsized descriptions, consistent trailing amounts, and no row
+  dividers or individual cards. Tapping a row reveals its full description. All
+  en-dash and em-dash characters were removed from Android source and user-facing
+  copy. Parser v2 adds nullable
   `card_statement_items.txn_time`: HDFC's printed clock time is preserved and
   shown with the date, while other banks remain honestly date-only. The migration
   was reapplied idempotently, the 90-day v2 reparse stored the same 469 rows with

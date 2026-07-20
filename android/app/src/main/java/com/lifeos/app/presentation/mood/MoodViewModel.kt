@@ -72,7 +72,7 @@ class MoodViewModel @Inject constructor(
             }
             transient.value = transient.value.copy(
                 submitting = false,
-                savedMessage = "${selected.emoji} ${selected.label} — logged for today",
+                savedMessage = "${selected.emoji} ${selected.label}. Logged for today.",
             )
         }
     }

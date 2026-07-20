@@ -108,7 +108,7 @@ class HealthConnectManager @Inject constructor(
     /**
      * Read every supported metric the user has granted for the last [days] and
      * normalize to samples. Each reader runs only if its read permission was
-     * granted, so a partial grant never raises a SecurityException — it just
+     * granted, so a partial grant never raises a SecurityException. It just
      * skips the types the user withheld.
      */
     suspend fun readRecentSamples(days: Int): List<HealthSample> {

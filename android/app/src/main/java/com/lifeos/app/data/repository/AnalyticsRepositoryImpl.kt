@@ -46,7 +46,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
         stateDao.upsertAll(api.states(days).map { it.toEntity() })
         insightDao.clear()
         insightDao.upsertAll(api.insights().map { it.toEntity() })
-        // Synthesis is the newest, most optional feed — never let a backend that
+        // Synthesis is the newest, most optional feed. Never let a backend that
         // doesn't have it (or a transient failure) wipe or block the rest.
         runCatching {
             val synth = api.synthesis().mapIndexed { i, dto -> dto.toEntity(i) }

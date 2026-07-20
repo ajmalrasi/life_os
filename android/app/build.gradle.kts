@@ -36,7 +36,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
-            // Sample/demo data disabled — show only the user's real data (empty states when sparse).
+            // Sample/demo data disabled. Show only the user's real data (empty states when sparse).
             buildConfigField("Boolean", "USE_DEMO_DATA", "false")
         }
     }

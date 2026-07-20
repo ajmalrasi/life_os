@@ -48,13 +48,13 @@ object DemoData {
     val synthesizedInsights: List<SynthesizedInsight> = listOf(
         SynthesizedInsight(
             title = "The hidden cost of your best output",
-            body = "Your highest-execution weeks come right as recovery dips and mood softens a day later — you're borrowing from rest to ship.",
+            body = "Your highest-execution weeks come right as recovery dips and mood softens a day later. You're borrowing from rest to ship.",
             theme = "cross-domain",
             cites = listOf("corr:execution_score->mood", "trend:recovery_score", "avg:execution_score"),
         ),
         SynthesizedInsight(
             title = "Stress shows up in your spending",
-            body = "Heavier-spend days cluster after high-stress ones, and mood tends to dip two days on — an early stress-spending loop worth watching.",
+            body = "Heavier-spend days cluster after high-stress ones, and mood tends to dip two days later. This may be an early stress-spending loop worth watching.",
             theme = "spending",
             cites = listOf("corr:stress->daily_spend", "corr:daily_spend->mood", "spend:peak"),
         ),
@@ -67,7 +67,7 @@ object DemoData {
             correlation = 0.68,
             sampleSize = 21,
             lagDays = 0,
-            summary = "Execution Score increases as sleep score rises — r=+0.68 over 21 days. Execution Score increases 31% when sleep score is above 7.2h.",
+            summary = "Execution Score increases as sleep score rises (r=+0.68 over 21 days). Execution Score increases 31% when sleep score is above 7.2h.",
         ),
         Insight(
             driver = "recovery_score",
@@ -75,7 +75,7 @@ object DemoData {
             correlation = 0.54,
             sampleSize = 18,
             lagDays = 1,
-            summary = "Mood increases as recovery score rises (with a 1-day lag) — r=+0.54 over 18 days.",
+            summary = "Mood increases as recovery score rises with a 1-day lag (r=+0.54 over 18 days).",
         ),
         Insight(
             driver = "execution_score",
@@ -83,7 +83,7 @@ object DemoData {
             correlation = 0.47,
             sampleSize = 18,
             lagDays = 0,
-            summary = "Mood increases as execution score rises — r=+0.47 over 18 days.",
+            summary = "Mood increases as execution score rises (r=+0.47 over 18 days).",
         ),
     )
 

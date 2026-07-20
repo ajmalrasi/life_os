@@ -33,7 +33,7 @@ class SettingsRepositoryImpl @Inject constructor(
     private val defaultBaseUrl = com.lifeos.app.BuildConfig.DEFAULT_API_BASE_URL
     private val defaultReminderHour = 21 // 9 PM
 
-    // Must be declared BEFORE init — init launches a coroutine that reads this Flow.
+    // Must be declared BEFORE init because init launches a coroutine that reads this Flow.
     override val apiBaseUrl: Flow<String> =
         dataStore.data.map { it[baseUrlKey] ?: defaultBaseUrl }
 

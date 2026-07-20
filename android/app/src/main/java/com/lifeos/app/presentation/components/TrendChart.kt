@@ -71,7 +71,7 @@ private fun TrendMetric.color(): Color = when (this) {
     TrendMetric.FITNESS -> LifeOsColors.MetricFitness
 }
 
-/** Composite "Life Score" — average of the available vitals for a day. */
+/** Composite "Life Score": average of the available vitals for a day. */
 fun compositeScore(score: DailyScore?): Double? {
     if (score == null) return null
     val parts = listOfNotNull(
@@ -116,7 +116,7 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
 
     // The headline value is the most recent reading in the window. When that
     // reading is NOT the window's latest day (e.g. today has no sleep yet, but an
-    // earlier night does), the number is stale — flag it so it doesn't read as
+    // earlier night does), the number is stale. Flag it so it doesn't read as
     // "today's score". `lastDataIdx` is the slot of that reading in `chrono`.
     val lastDataIdx = values.indexOfLast { it != null }
     val latestDay = chrono.getOrNull(lastDataIdx)?.day
@@ -160,7 +160,7 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                 }
             }
 
-            // Range selector — segmented control for the look-back window.
+            // Range selector: segmented control for the look-back window.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -203,7 +203,7 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "No ${metric.label.lowercase()} data in this range yet — keep syncing.",
+                        "No ${metric.label.lowercase()} data in this range yet. Keep syncing.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = LifeOsColors.OnSurfaceMuted,
                     )
@@ -211,17 +211,17 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
             } else if (present.size == 1) {
                 // Exactly one day has data in this window. The score is per-day; a
                 // trend *line* needs 2+ days. Render an intentional single-point
-                // card — the value + which day, plus a message that fits the
+                // card: the value + which day, plus a message that fits the
                 // selected range (1D vs a sparse multi-day window).
                 val onlyValue = present.first().roundToInt()
                 val dayLabel = latestDay?.let { formatShort(it) }
                 // The single point may be an earlier day, not literally today, so
                 // keep the 1D copy range-neutral (the date is shown by the dot).
                 val message = if (range.days == 1) {
-                    "Just one day in this range — a trend line appears once there are 2+ days."
+                    "Just one day in this range. A trend line appears once there are 2+ days."
                 } else {
                     "Only one day with ${metric.label.lowercase()} data in the last " +
-                        "${range.days} days — a trend line needs 2+."
+                        "${range.days} days. A trend line needs 2+."
                 }
                 Box(
                     Modifier.fillMaxWidth().height(176.dp),
@@ -292,9 +292,9 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
 
                 // Footer stat chips.
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatChip("Avg", avg?.roundToInt()?.toString() ?: "—", Modifier.weight(1f))
-                    StatChip("Low", present.minOrNull()?.roundToInt()?.toString() ?: "—", Modifier.weight(1f))
-                    StatChip("High", present.maxOrNull()?.roundToInt()?.toString() ?: "—", Modifier.weight(1f))
+                    StatChip("Avg", avg?.roundToInt()?.toString() ?: "N/A", Modifier.weight(1f))
+                    StatChip("Low", present.minOrNull()?.roundToInt()?.toString() ?: "N/A", Modifier.weight(1f))
+                    StatChip("High", present.maxOrNull()?.roundToInt()?.toString() ?: "N/A", Modifier.weight(1f))
                 }
             }
         }

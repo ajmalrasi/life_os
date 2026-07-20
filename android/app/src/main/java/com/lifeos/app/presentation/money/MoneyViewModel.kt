@@ -35,7 +35,7 @@ data class MoneyUiState(
     val selectedCategory: String? = null,
     /** Multi-select category filter; empty = show everything. */
     val categoryFilter: Set<String> = emptySet(),
-    // Demoted card-dues summary — loaded softly so a backend hiccup never blanks
+    // Demoted card-dues summary, loaded softly so a backend hiccup never blanks
     // the (offline, cache-driven) spend view.
     val totalDue: BigDecimal? = null,
     val nextDueDate: LocalDate? = null,
@@ -52,7 +52,6 @@ data class MoneyUiState(
     val categoryEditTransaction: Transaction? = null,
     val categorySaving: Boolean = false,
     val categoryError: String? = null,
-    val statementSavingId: Int? = null,
 )
 
 @HiltViewModel
@@ -119,7 +118,7 @@ class MoneyViewModel @Inject constructor(
     }
 
     /** Switch bucketing. Resets to the current period and clears any drill-down.
-     * The category filter is intentionally kept — it's an orthogonal control. */
+     * The category filter is intentionally kept because it's an orthogonal control. */
     fun setPeriod(period: SpendPeriod) {
         _state.update { it.copy(period = period, anchor = LocalDate.now(), selectedCategory = null) }
     }
@@ -279,33 +278,6 @@ class MoneyViewModel @Inject constructor(
                     it.copy(
                         categorySaving = false,
                         categoryError = result.exceptionOrNull()?.message ?: "Couldn't update category",
-                    )
-                }
-            }
-        }
-    }
-
-    fun markStatementPaid(statementId: Int) {
-        if (_state.value.statementSavingId != null) return
-        viewModelScope.launch {
-            _state.update { it.copy(statementSavingId = statementId, error = null) }
-            val result = runCatching {
-                repository.updateStatementPaid(statementId, true)
-                repository.analysis()
-            }
-            _state.update {
-                val dues = result.getOrNull()
-                if (dues != null) {
-                    it.copy(
-                        totalDue = dues.totalDueAllCards,
-                        nextDueDate = dues.nextDueDate,
-                        cardDues = dues.cards,
-                        statementSavingId = null,
-                    )
-                } else {
-                    it.copy(
-                        statementSavingId = null,
-                        error = result.exceptionOrNull()?.message ?: "Couldn't mark this card paid",
                     )
                 }
             }

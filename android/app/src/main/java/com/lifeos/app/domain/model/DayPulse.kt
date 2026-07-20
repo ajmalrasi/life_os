@@ -2,7 +2,7 @@ package com.lifeos.app.domain.model
 
 import java.time.LocalDate
 
-/** One-tap daily pulse — maps to backend mood fields so correlations still work. */
+/** One-tap daily pulse that maps to backend mood fields so correlations still work. */
 enum class DayPulse(val emoji: String, val label: String) {
     ROUGH("😞", "Rough"),
     MEH("😐", "Meh"),

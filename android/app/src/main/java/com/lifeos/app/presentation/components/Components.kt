@@ -86,7 +86,7 @@ fun DemoBanner() {
             Text("◉", color = LifeOsColors.AccentAmber, fontSize = 10.sp)
             Spacer(Modifier.width(8.dp))
             Text(
-                "Preview mode — sample data",
+                "Preview mode: sample data",
                 style = MaterialTheme.typography.labelMedium,
                 color = Color(0xFFB45309),
             )
@@ -153,7 +153,7 @@ fun ScoreCard(title: String, score: Double?, modifier: Modifier = Modifier) {
             Text(title.uppercase(), style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
             Spacer(Modifier.height(6.dp))
             Text(
-                text = score?.toInt()?.toString() ?: "—",
+                text = score?.toInt()?.toString() ?: "N/A",
                 style = MaterialTheme.typography.displaySmall,
                 color = color,
             )
@@ -168,7 +168,7 @@ fun ScoreCard(title: String, score: Double?, modifier: Modifier = Modifier) {
     }
 }
 
-/** One metric's identity color — kept consistent everywhere it appears. */
+/** One metric's identity color, kept consistent everywhere it appears. */
 fun metricColor(name: String): Color = when (name.lowercase()) {
     "sleep" -> LifeOsColors.MetricSleep
     "recovery" -> LifeOsColors.MetricRecovery
@@ -193,11 +193,11 @@ private fun DailyScore.metricValue(name: String): Double? = when (name) {
 
 /** Plain-language description of what each vital captures. */
 private fun metricBlurb(name: String): String = when (name) {
-    "Sleep" -> "How well you slept — duration, deep/REM balance, and how fragmented the night was."
+    "Sleep" -> "How well you slept: duration, deep/REM balance, and how fragmented the night was."
     "Recovery" -> "Overnight physiological recovery from resting heart rate, HRV, and blood oxygen."
-    "Execution" -> "What you got done — coding activity, commits, and follow-through on the day."
-    "Wellness" -> "Your own check-ins — mood, energy, focus, and stress logged in the Pulse tab."
-    "Fitness" -> "Movement and cardio load — steps, workouts, calories, and VO₂ max."
+    "Execution" -> "What you got done: coding activity, commits, and follow-through on the day."
+    "Wellness" -> "Your own check-ins: mood, energy, focus, and stress logged in the Pulse tab."
+    "Fitness" -> "Movement and cardio load: steps, workouts, calories, and VO₂ max."
     else -> ""
 }
 
@@ -266,7 +266,7 @@ private fun VitalDetailSheet(
                 Text(name, style = MaterialTheme.typography.headlineSmall, color = LifeOsColors.OnBackground)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = current?.toInt()?.toString() ?: "—",
+                    text = current?.toInt()?.toString() ?: "N/A",
                     style = MaterialTheme.typography.displaySmall,
                     color = if (current == null) LifeOsColors.OnSurfaceMuted else color,
                     fontWeight = FontWeight.Bold,
@@ -304,9 +304,9 @@ private fun VitalDetailSheet(
 
             // Avg / Low / High over the shown window.
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                VitalStat("Avg", present.takeIf { it.isNotEmpty() }?.average()?.toInt()?.toString() ?: "—", Modifier.weight(1f))
-                VitalStat("Low", present.minOrNull()?.toInt()?.toString() ?: "—", Modifier.weight(1f))
-                VitalStat("High", present.maxOrNull()?.toInt()?.toString() ?: "—", Modifier.weight(1f))
+                VitalStat("Avg", present.takeIf { it.isNotEmpty() }?.average()?.toInt()?.toString() ?: "N/A", Modifier.weight(1f))
+                VitalStat("Low", present.minOrNull()?.toInt()?.toString() ?: "N/A", Modifier.weight(1f))
+                VitalStat("High", present.maxOrNull()?.toInt()?.toString() ?: "N/A", Modifier.weight(1f))
             }
         }
     }
@@ -381,7 +381,7 @@ private fun VitalRow(name: String, value: Double?, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Text(
-            text = value?.toInt()?.toString() ?: "—",
+            text = value?.toInt()?.toString() ?: "N/A",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = if (value == null) LifeOsColors.OnSurfaceMuted else color,
@@ -392,7 +392,7 @@ private fun VitalRow(name: String, value: Double?, onClick: () -> Unit) {
     }
 }
 
-/** Compact 7-ish-day bar strip for a single metric — adds rhythm at a glance. */
+/** Compact 7-ish-day bar strip for a single metric that adds rhythm at a glance. */
 @Composable
 fun WeeklyTrendCard(
     label: String,
@@ -434,7 +434,7 @@ fun WeeklyTrendCard(
 
 /**
  * Top-of-dashboard focal point: the composite Life Score for today, its day-over-day
- * delta, and the inferred current state — all in one gradient hero so the eye lands here first.
+ * delta, and the inferred current state in one gradient hero so the eye lands here first.
  */
 @Composable
 fun LifeScoreHero(
@@ -466,7 +466,7 @@ fun LifeScoreHero(
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = score?.let { kotlin.math.round(it).toInt().toString() } ?: "—",
+                    text = score?.let { kotlin.math.round(it).toInt().toString() } ?: "N/A",
                     fontSize = 56.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -565,7 +565,7 @@ fun QuickCheckInCard(
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("How was today?", style = MaterialTheme.typography.titleMedium)
             Text(
-                "One tap. Skip anytime — sleep & execution still teach LifeOS.",
+                "One tap. Skip anytime. Sleep and execution still teach LifeOS.",
                 style = MaterialTheme.typography.bodySmall,
                 color = LifeOsColors.OnSurfaceMuted,
             )

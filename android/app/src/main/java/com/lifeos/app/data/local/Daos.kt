@@ -69,7 +69,7 @@ interface TransactionDao {
     suspend fun upsertAll(entities: List<TransactionEntity>)
 
     // The server can delete-and-reinsert a transaction under a new id (e.g. a
-    // backend rebuild reprocessing an email) — upsertAll alone never removes
+    // backend rebuild reprocessing an email); upsertAll alone never removes
     // the old id, so it lingers forever as a phantom duplicate. Call this
     // with every id the server just returned for the same window so the
     // cache mirrors the server instead of only ever growing.

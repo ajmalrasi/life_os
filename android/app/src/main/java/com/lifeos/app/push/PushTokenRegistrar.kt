@@ -12,7 +12,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Phase 1 #5 — registers this device's FCM token with the backend so it can
+ * Phase 1 #5: registers this device's FCM token with the backend so it can
  * receive pushed burnout/peak/inactivity alerts.
  *
  * Fail-safe: if Firebase isn't configured yet (no google-services.json), token

@@ -96,7 +96,7 @@ class DashboardViewModel @Inject constructor(
             }
             transient.value = transient.value.copy(
                 pulseSubmitting = false,
-                pulseSavedMessage = "${pulse.emoji} Logged — ${pulse.label}",
+                pulseSavedMessage = "${pulse.emoji} Logged: ${pulse.label}",
             )
         }
     }
