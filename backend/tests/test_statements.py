@@ -87,6 +87,7 @@ def test_hdfc_parser():
     assert len(p.line_items) == 3
     upi = p.line_items[0]
     assert (upi.description, upi.amount, upi.direction) == ("UPI-SHIHAB K P", Decimal("156.00"), "debit")
+    assert upi.txn_time.isoformat(timespec="minutes") == "12:29"
     # "+ 12" tail is reward points, not a credit marker; bare "+" IS a credit.
     assert p.line_items[1].direction == "debit"
     assert p.line_items[2].direction == "credit"
@@ -241,7 +242,7 @@ def test_existing_summary_is_backfilled_without_recreating_statement(client, mon
         assert report.line_items_stored == 2
         assert [statement.id for statement in stored] == [original_id]
         assert stored[0].details_status == "ready"
-        assert stored[0].details_parser_version == 1
+        assert stored[0].details_parser_version == 2
 
 
 def test_statement_details_are_not_in_spend_analysis(client):

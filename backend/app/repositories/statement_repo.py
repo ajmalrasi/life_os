@@ -74,6 +74,7 @@ class StatementRepository:
                 statement_id=statement.id,
                 sequence=sequence,
                 txn_date=item.txn_date,
+                txn_time=item.txn_time,
                 description=item.description[:512],
                 amount=item.amount,
                 direction=item.direction,

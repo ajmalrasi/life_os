@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
@@ -36,6 +36,7 @@ class CardStatementItemOut(BaseModel):
     id: int
     sequence: int
     txn_date: date
+    txn_time: time | None = None
     description: str
     amount: Decimal
     direction: str

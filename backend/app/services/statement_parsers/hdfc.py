@@ -17,7 +17,7 @@ from decimal import Decimal
 from app.services.statement_parsers.base import ParsedStatement, StatementTxn
 
 _LINE = re.compile(
-    r"^(\d{2}/\d{2}/\d{4})\s*\|\s*\d{2}:\d{2}\s+(.+?)\s+C\s?([\d,]+\.\d{2})\s*l?\s*$",
+    r"^(\d{2}/\d{2}/\d{4})\s*\|\s*(\d{2}:\d{2})\s+(.+?)\s+C\s?([\d,]+\.\d{2})\s*l?\s*$",
     re.M,
 )
 _POINTS_TAIL = re.compile(r"\s*\+\s*\d+\s*$")
@@ -63,7 +63,7 @@ class HdfcStatementParser:
         total_spend = Decimal(m.group(1).replace(",", "")) if m else None
 
         items: list[StatementTxn] = []
-        for dm, desc, amt in _LINE.findall(text):
+        for dm, tm, desc, amt in _LINE.findall(text):
             desc = desc.strip()
             direction = "debit"
             if desc.endswith("+"):  # bare "+" before C -> payment/credit
@@ -80,6 +80,7 @@ class HdfcStatementParser:
                     description=desc,
                     amount=Decimal(amt.replace(",", "")),
                     direction=direction,
+                    txn_time=datetime.strptime(tm, "%H:%M").time(),
                 )
             )
 

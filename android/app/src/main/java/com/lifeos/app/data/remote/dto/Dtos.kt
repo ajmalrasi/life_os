@@ -234,6 +234,7 @@ data class CardStatementItemDto(
     val id: Int,
     val sequence: Int,
     @SerialName("txn_date") val txnDate: String,
+    @SerialName("txn_time") val txnTime: String? = null,
     val description: String,
     val amount: String,
     val direction: String,

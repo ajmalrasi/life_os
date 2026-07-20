@@ -9,7 +9,7 @@ from decimal import Decimal
 from app.models.card_statement import CardStatementItem
 from app.services.statement_parsers.base import StatementTxn
 
-DETAILS_PARSER_VERSION = 1
+DETAILS_PARSER_VERSION = 2
 
 _PAYMENT = re.compile(r"payment received|cc payment|card payment|bbps payment|autopay", re.I)
 _EMI = re.compile(r"\bemi\b|\binstal+ment\b|\binstallment\b|\bflexipay\b", re.I)

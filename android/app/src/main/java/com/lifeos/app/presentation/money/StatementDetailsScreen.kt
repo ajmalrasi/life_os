@@ -1,6 +1,7 @@
 package com.lifeos.app.presentation.money
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,20 +12,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,6 +90,10 @@ private fun StatementDetailsContent(
 ) {
     val statement = details.statement
     val dateFormat = DateTimeFormatter.ofPattern("dd MMM yyyy")
+    var selectedItem by remember { mutableStateOf<CardStatementItem?>(null) }
+    selectedItem?.let { item ->
+        StatementItemDetailDialog(item = item, onDismiss = { selectedItem = null })
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -177,16 +187,15 @@ private fun StatementDetailsContent(
             }
         } else {
             itemsIndexed(details.items, key = { _, item -> item.id }) { index, item ->
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (index == 0 || details.items[index - 1].txnDate != item.txnDate) {
-                        Text(
-                            item.txnDate.format(dateFormat),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = LifeOsColors.OnSurfaceMuted,
-                            modifier = Modifier.padding(start = 4.dp),
+                Column {
+                    StatementItemRow(item, onClick = { selectedItem = item })
+                    if (index < details.items.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            thickness = 0.5.dp,
+                            color = LifeOsColors.SurfaceBorder,
                         )
                     }
-                    StatementItemRow(item)
                 }
             }
         }
@@ -218,13 +227,13 @@ private fun StatementSummaryCard(
                 )
             },
             confirmButton = {
-                Button(onClick = {
+                TextButton(onClick = {
                     confirmPaid = false
                     onTogglePaid()
                 }) { Text("Yes, paid") }
             },
             dismissButton = {
-                OutlinedButton(onClick = { confirmPaid = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmPaid = false }) { Text("Cancel") }
             },
         )
     }
@@ -260,13 +269,42 @@ private fun StatementSummaryCard(
             if (period.isNotBlank()) {
                 Text("Statement period  $period", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
             }
-            if (statement.status == "paid") {
-                OutlinedButton(onClick = onTogglePaid, enabled = !savingPaid, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (savingPaid) "Saving…" else "Restore as unpaid")
+            HorizontalDivider(thickness = 0.5.dp, color = LifeOsColors.SurfaceBorder)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        "Payment status",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                    Text(
+                        if (statement.status == "paid") "Marked paid" else "Not marked paid",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = if (statement.status == "paid") LifeOsColors.Positive else LifeOsColors.OnBackground,
+                    )
                 }
-            } else {
-                Button(onClick = { confirmPaid = true }, enabled = !savingPaid, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (savingPaid) "Saving…" else "Mark as paid")
+                TextButton(
+                    onClick = if (statement.status == "paid") onTogglePaid else ({ confirmPaid = true }),
+                    enabled = !savingPaid,
+                ) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.size(6.dp))
+                    Text(
+                        when {
+                            savingPaid -> "Saving…"
+                            statement.status == "paid" -> "Mark unpaid"
+                            else -> "Mark paid"
+                        }
+                    )
                 }
             }
         }
@@ -282,37 +320,84 @@ private fun SummaryDatum(label: String, value: String, end: Boolean = false) {
 }
 
 @Composable
-private fun StatementItemRow(item: CardStatementItem) {
+private fun StatementItemRow(item: CardStatementItem, onClick: () -> Unit) {
     val credit = item.direction == "credit"
-    Surface(shape = RoundedCornerShape(14.dp), color = LifeOsColors.Surface) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    val time = item.txnTime?.format(DateTimeFormatter.ofPattern("h:mm a"))
+    val metadata = listOfNotNull(
+        item.txnDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy")),
+        time,
+        item.itemType.prettyItemType(),
+    ).joinToString(" · ")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                item.description,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                metadata,
+                style = MaterialTheme.typography.labelSmall,
+                color = LifeOsColors.OnSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.widthIn(min = 12.dp))
+        Text(
+            (if (credit) -item.amount else item.amount).rupees(),
+            modifier = Modifier.widthIn(min = 92.dp),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (credit) LifeOsColors.Positive else LifeOsColors.OnBackground,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun StatementItemDetailDialog(item: CardStatementItem, onDismiss: () -> Unit) {
+    val time = item.txnTime?.format(DateTimeFormatter.ofPattern("h:mm a"))
+    val whenText = listOfNotNull(
+        item.txnDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy")),
+        time,
+    ).joinToString(", ")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Statement transaction") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(item.description, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    item.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    (if (item.direction == "credit") -item.amount else item.amount).rupees(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = if (item.direction == "credit") LifeOsColors.Positive else LifeOsColors.OnBackground,
                 )
                 Text(
-                    item.itemType.prettyItemType(),
-                    style = MaterialTheme.typography.labelSmall,
+                    "$whenText · ${item.itemType.prettyItemType()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                Text(
+                    "Statement detail only — this row is not added to Money spend.",
+                    style = MaterialTheme.typography.bodySmall,
                     color = LifeOsColors.OnSurfaceMuted,
                 )
             }
-            Spacer(Modifier.size(12.dp))
-            Text(
-                (if (credit) -item.amount else item.amount).rupees(),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (credit) LifeOsColors.Positive else LifeOsColors.OnBackground,
-            )
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }
 
 @Composable

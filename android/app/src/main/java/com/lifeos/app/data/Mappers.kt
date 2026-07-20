@@ -48,6 +48,7 @@ import com.lifeos.app.domain.model.Transaction
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 
 // --- Health ---
 fun HealthSample.toDto() = HealthRecordDto(
@@ -180,6 +181,7 @@ fun CardStatementDetailsDto.toDomain() = CardStatementDetails(
             id = it.id,
             sequence = it.sequence,
             txnDate = LocalDate.parse(it.txnDate),
+            txnTime = it.txnTime?.let(LocalTime::parse),
             description = it.description,
             amount = BigDecimal(it.amount),
             direction = it.direction,

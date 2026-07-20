@@ -8,7 +8,7 @@ attachment filename where the bank uses a generic subject (e.g. ICICI).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 
 
@@ -18,6 +18,7 @@ class StatementTxn:
     description: str
     amount: Decimal  # positive magnitude
     direction: str  # "debit" | "credit"
+    txn_time: time | None = None  # local card-statement time when the PDF provides it
 
 
 @dataclass

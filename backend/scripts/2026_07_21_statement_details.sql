@@ -24,3 +24,7 @@ CREATE INDEX IF NOT EXISTS ix_card_statement_items_statement_id
     ON card_statement_items (statement_id);
 CREATE INDEX IF NOT EXISTS ix_card_statement_items_txn_date
     ON card_statement_items (txn_date);
+
+-- Added with detail parser v2: HDFC PDFs expose a local transaction time.
+ALTER TABLE card_statement_items
+    ADD COLUMN IF NOT EXISTS txn_time time NULL;

@@ -194,6 +194,7 @@ data class CardStatementItem(
     val id: Int,
     val sequence: Int,
     val txnDate: LocalDate,
+    val txnTime: java.time.LocalTime?,
     val description: String,
     val amount: BigDecimal,
     val direction: String,

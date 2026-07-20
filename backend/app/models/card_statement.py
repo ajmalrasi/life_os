@@ -7,10 +7,10 @@ table powers the "what do I owe this month" view.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base, utcnow
@@ -87,6 +87,7 @@ class CardStatementItem(Base):
     )
     sequence: Mapped[int] = mapped_column(Integer)
     txn_date: Mapped[date] = mapped_column(Date, index=True)
+    txn_time: Mapped[time | None] = mapped_column(Time, default=None)
     description: Mapped[str] = mapped_column(String(512))
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     direction: Mapped[str] = mapped_column(String(8))

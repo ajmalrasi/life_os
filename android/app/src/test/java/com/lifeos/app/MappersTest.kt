@@ -64,6 +64,7 @@ class MappersTest {
                     id = 7,
                     sequence = 0,
                     txnDate = "2026-07-02",
+                    txnTime = "12:29:00",
                     description = "PAYMENT RECEIVED",
                     amount = "8000.00",
                     direction = "credit",
@@ -79,6 +80,7 @@ class MappersTest {
         assertEquals("ready", details.statement.detailsStatus)
         assertEquals(BigDecimal("8000.00"), details.items.single().amount)
         assertEquals("credit", details.items.single().direction)
+        assertEquals(java.time.LocalTime.of(12, 29), details.items.single().txnTime)
         assertEquals(BigDecimal("-8000.00"), details.breakdown.single().total)
     }
 }
