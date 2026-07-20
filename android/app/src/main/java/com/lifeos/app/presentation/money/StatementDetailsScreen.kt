@@ -127,7 +127,7 @@ private fun StatementDetailsContent(
                         details.breakdown.forEach { part ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(
-                                    "${part.label} · ${part.count}",
+                                    part.label + if (part.count > 0) " · ${part.count}" else "",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = LifeOsColors.OnSurfaceMuted,
                                 )

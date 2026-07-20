@@ -100,7 +100,7 @@ retained EMI rows expose `spend_category='emi'` before merchant-category rules a
 considered, so suffixes such as `DEPT STORES` cannot misclassify them as shopping.
 
 ### `GET /statements` — stored summaries (`months` param, default 3)
-### `GET /statements/{id}/details` — one summary plus its full statement-only transaction list and activity breakdown. These rows never affect spend.
+### `GET /statements/{id}/details` — one summary plus its full statement-only transaction list and activity breakdown. A clearly labeled previous-balance/adjustment residual reconciles parsed activity to the bank's authoritative total due. These rows never affect spend.
 ### `POST /statements/sync` — fetch/parse new statement emails (idempotent)
 ### `PATCH /statements/{id}/paid` — set paid state with `{"paid":true}`; `false` undoes it. Paid statements remain stored but are excluded immediately from upcoming-due totals.
 ### `GET /statements/trends` — month-by-month spend (`months` param, default 6):

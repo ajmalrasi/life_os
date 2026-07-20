@@ -178,10 +178,12 @@ def test_statement_collector_stores_details_without_spend_transactions(client, m
     assert body["statement"]["details_status"] == "ready"
     assert [item["direction"] for item in body["items"]] == ["credit", "debit"]
     assert [part["key"] for part in body["breakdown"]] == [
-        "new_charges", "payments_credits"
+        "previous_balance_adjustments", "new_charges", "payments_credits"
     ]
-    assert float(body["breakdown"][0]["total"]) == 3750.0
-    assert float(body["breakdown"][1]["total"]) == -1255.02
+    assert float(body["breakdown"][0]["total"]) == 16204.27
+    assert float(body["breakdown"][1]["total"]) == 3750.0
+    assert float(body["breakdown"][2]["total"]) == -1255.02
+    assert sum(float(part["total"]) for part in body["breakdown"]) == 18699.25
 
 
 def test_statement_detail_backfill_is_idempotent(client, monkeypatch):

@@ -142,7 +142,7 @@ def statement_details(
     return CardStatementDetailsOut(
         statement=CardStatementOut.model_validate(statement),
         items=[CardStatementItemOut.model_validate(item) for item in items],
-        breakdown=statement_breakdown(items),
+        breakdown=statement_breakdown(items, statement.total_due),
     )
 
 

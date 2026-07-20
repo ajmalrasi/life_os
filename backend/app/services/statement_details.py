@@ -34,8 +34,16 @@ def classify_statement_item(item: StatementTxn) -> str:
     return "purchase"
 
 
-def statement_breakdown(items: list[CardStatementItem]) -> list[dict]:
-    """Produce compact statement-activity totals for the details screen."""
+def statement_breakdown(
+    items: list[CardStatementItem], total_due: Decimal | None = None
+) -> list[dict]:
+    """Produce activity totals and reconcile them to the bank's total due.
+
+    Statement line items alone do not necessarily explain the bill: a card can
+    carry a previous balance or bank-level adjustments that are present only in
+    the summary. Expose that residual honestly instead of presenting categories
+    that appear to add up when they do not.
+    """
     totals: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
     counts: dict[str, int] = defaultdict(int)
     for item in items:
@@ -60,8 +68,22 @@ def statement_breakdown(items: list[CardStatementItem]) -> list[dict]:
         "payments_credits": "Payments & credits",
     }
     order = ("new_charges", "emi", "fees_interest", "payments_credits")
-    return [
+    breakdown = [
         {"key": key, "label": labels[key], "total": totals[key], "count": counts[key]}
         for key in order
         if counts[key]
     ]
+    if total_due is not None:
+        activity_total = sum((part["total"] for part in breakdown), Decimal(0))
+        residual = total_due - activity_total
+        if abs(residual) >= Decimal("0.01"):
+            breakdown.insert(
+                0,
+                {
+                    "key": "previous_balance_adjustments",
+                    "label": "Previous balance & adjustments",
+                    "total": residual,
+                    "count": 0,
+                },
+            )
+    return breakdown

@@ -408,14 +408,16 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   be reparsed idempotently. Payment state persists only as `paid_at`; API status
   (`upcoming`/`overdue`/`paid`) is derived so time-based state cannot go stale.
   Android opens a dedicated, long-scroll statement screen from each upcoming-card
-  row, shows activity categories plus every parsed debit/credit, clearly states
+  row, shows activity categories plus every parsed debit/credit, reconciles any
+  prior-balance/summary-only difference as “Previous balance & adjustments”, clearly states
   that details are excluded from Money spend, and updates the cached due footer
   immediately after marking paid. Backend full suite (266 tests) and Android
-  `assembleDebug` + unit tests pass. **Not deployed/installed yet.** Before the
-  backend image is started on the existing Jetson DB, run
-  `backend/scripts/2026_07_21_statement_details.sql`; `create_all` cannot add the
-  three new `card_statements` columns. The next statement sync backfills recent
-  saved PDFs whose detail parser version is 0.
+  `assembleDebug` + unit tests pass. **Deployed and installed 2026-07-21:** the
+  idempotent Jetson migration in `backend/scripts/2026_07_21_statement_details.sql`
+  was applied before rebuilding the API, a 90-day sync stored 469 detail rows
+  with zero new `statement_emi` spend rows, and all seven upcoming bills are
+  `details_status='ready'`. APK installed and the Axis 0872 real-data details
+  screen was visually verified on Samsung device `RZCX60SNHHE`.
 - ✅ **Android visual-system cleanup + working Pulse permission (2026-07-17).**
   Bottom navigation now has five primary tabs, inset rounded bounds (so edge-item
   ripples are not clipped), labels only on the selected tab, and no nav bar while
@@ -443,10 +445,6 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
-- **Deploy statement details (2026-07-21 work).** Apply
-  `backend/scripts/2026_07_21_statement_details.sql` to the Jetson DB before
-  rebuilding the API, run statement sync to backfill the current bills, then
-  install the new debug/release APK and visually verify one large real statement.
 - **UI pass in Android Studio** (the user has a list of visual issues). Done so
   far: the two unbuilt files (built/verified), the Sleep trend stale-headline +
   sparse-state fix, and the Ask-tab Enter fix. More UI issues likely to come from
