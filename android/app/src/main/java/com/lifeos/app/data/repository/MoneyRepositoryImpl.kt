@@ -47,7 +47,9 @@ class MoneyRepositoryImpl @Inject constructor(
             transactionDao.deleteStaleSince(since, fresh.map { it.id })
             transactionDao.upsertAll(fresh.map { it.toEntity() })
         }
-        cardStatementDao.upsertAll(api.listStatements(statementMonths).map { it.toEntity() })
+        // Mirror the server instead of appending forever. Statements can be
+        // deliberately removed server-side and must not survive as stale cache.
+        cardStatementDao.replaceAll(api.listStatements(statementMonths).map { it.toEntity() })
     }
 
     override suspend fun analysis(days: Int): SpendAnalysis = api.spendAnalysis(days).toDomain()

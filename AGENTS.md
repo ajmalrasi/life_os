@@ -440,7 +440,9 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   were deleted from production, along with 12 HDFC Savings `statement_emi` rows
   derived from those PDFs. Transaction-email rows, all 38 credit-card statements,
   and all 27 credit-card EMI rows were preserved. Production now has zero non-card
-  statements and zero non-card statement-derived transactions.
+  statements and zero non-card statement-derived transactions. Android statement
+  refresh now atomically replaces its Room cache instead of append-only upserting,
+  so server-deleted statements disappear locally on the next refresh as well.
 - ✅ **Android visual-system cleanup + working Pulse permission (2026-07-17).**
   Bottom navigation now has five primary tabs, inset rounded bounds (so edge-item
   ripples are not clipped), labels only on the selected tab, and no nav bar while

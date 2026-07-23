@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -87,6 +88,15 @@ interface TransactionDao {
 interface CardStatementDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<CardStatementEntity>)
+
+    @Query("DELETE FROM card_statements_cache")
+    suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(entities: List<CardStatementEntity>) {
+        clear()
+        upsertAll(entities)
+    }
 
     @Query("SELECT * FROM card_statements_cache ORDER BY statementDate DESC")
     fun observeAll(): Flow<List<CardStatementEntity>>
