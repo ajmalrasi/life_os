@@ -14,6 +14,16 @@ from app.services.statement_parsers.hdfc import HdfcStatementParser
 from app.services.statement_parsers.icici import IciciStatementParser
 from app.services.statement_parsers.sbi import SbiStatementParser
 
+
+def test_active_statement_registry_contains_only_credit_cards():
+    from app.services.statement_parsers import get_statement_parsers
+
+    parsers = get_statement_parsers()
+
+    assert {parser.bank for parser in parsers} == {"hdfc", "axis", "icici", "sbi"}
+    assert all(not parser.bank.endswith("_acct") for parser in parsers)
+
+
 _HDFC = """Tata Neu Plus HDFC Bank Credit Card Statement
 AJMAL RASI Credit Card No. 652925XXXXXX5473
 Statement Date 19 Jun, 2026

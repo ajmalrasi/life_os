@@ -431,6 +431,13 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   was reapplied idempotently, the 90-day v2 reparse stored the same 469 rows with
   zero new spend items, all 206 HDFC detail rows have a time, and the redesigned
   HDFC 6116 screen was installed/visually verified on `RZCX60SNHHE`.
+- ✅ **Savings-account statement parsing disabled (2026-07-23).** Only credit-card
+  PDF parsers are registered in `statement_parsers.get_statement_parsers()`.
+  `Sync everything` must not search for, download, parse, or store savings/current
+  account e-statements. The inactive parser implementations remain for historical
+  test coverage, but do not register them again. Previously stored `*_acct`
+  summaries/details were deliberately left intact pending an explicit deletion
+  request; they never contributed ordinary rows to Money spend.
 - ✅ **Android visual-system cleanup + working Pulse permission (2026-07-17).**
   Bottom navigation now has five primary tabs, inset rounded bounds (so edge-item
   ripples are not clipped), labels only on the selected tab, and no nav bar while
