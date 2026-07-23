@@ -435,9 +435,12 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   PDF parsers are registered in `statement_parsers.get_statement_parsers()`.
   `Sync everything` must not search for, download, parse, or store savings/current
   account e-statements. The inactive parser implementations remain for historical
-  test coverage, but do not register them again. Previously stored `*_acct`
-  summaries/details were deliberately left intact pending an explicit deletion
-  request; they never contributed ordinary rows to Money spend.
+  test coverage, but do not register them again. Later the same day, at the user's
+  request, all 15 July-created `*_acct` summaries and their 126 stored detail rows
+  were deleted from production, along with 12 HDFC Savings `statement_emi` rows
+  derived from those PDFs. Transaction-email rows, all 38 credit-card statements,
+  and all 27 credit-card EMI rows were preserved. Production now has zero non-card
+  statements and zero non-card statement-derived transactions.
 - ✅ **Android visual-system cleanup + working Pulse permission (2026-07-17).**
   Bottom navigation now has five primary tabs, inset rounded bounds (so edge-item
   ripples are not clipped), labels only on the selected tab, and no nav bar while
