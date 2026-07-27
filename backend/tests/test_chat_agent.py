@@ -9,7 +9,12 @@ import pytest
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
 from app.services.chat_service import MAX_AGENT_STEPS, ChatService, _is_personal_data_question
-from app.services.money_query import MoneyQueryError, query_money
+from app.services.money_query import (
+    MoneyQueryError,
+    format_money_answer,
+    plan_money_query,
+    query_money,
+)
 from app.services.openclaw import (
     OpenClawTimeout,
     _StreamingControlTokenFilter,
@@ -534,3 +539,106 @@ def test_query_money_is_advertised_to_the_model():
     assert "query_money" in schemas
     params = schemas["query_money"]["function"]["parameters"]["properties"]
     assert set(params["group_by"]["enum"]) >= {"month", "category", "counterparty", "account"}
+
+
+def test_money_query_planner_resolves_last_month_and_top_categories():
+    plan = plan_money_query(
+        "What were my top 3 spending categories last month?",
+        today=date(2026, 7, 27),
+    )
+    assert plan == {
+        "mode": "spending",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-30",
+        "group_by": "category",
+        "limit": 3,
+        "sort_by": "total",
+        "sort_order": "desc",
+    }
+
+
+def test_money_query_formatter_returns_grounded_ranked_answer():
+    answer = format_money_answer(
+        "What were my top 2 spending categories last month?",
+        {
+            "mode": "spending",
+            "window": {"start": "2026-06-01", "end": "2026-06-30"},
+            "filters": {},
+            "summary": {"total": 1500, "count": 3, "average": 500, "max": 900},
+            "group_by": "category",
+            "rows": [
+                {"group": "food", "total": 900, "count": 2, "average": 450, "max": 500},
+                {"group": "travel", "total": 600, "count": 1, "average": 600, "max": 600},
+            ],
+        },
+    )
+    assert answer is not None
+    assert "1. food: ₹900 across 2 transactions" in answer
+    assert "2. travel: ₹600 across 1 transaction" in answer
+    assert "Matched total: ₹1,500 across 3 transactions." in answer
+
+
+def test_stream_prefetches_factual_money_query_without_model_call(client):
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.models.transaction import Transaction
+    from app.schemas.chat import ChatRequest
+
+    class NoModel:
+        timeout = 90.0
+
+        def __getattr__(self, name):
+            raise AssertionError(f"model must not be called for factual money query: {name}")
+
+    today = date.today()
+    previous_month_end = today.replace(day=1) - timedelta(days=1)
+    previous_month_day = previous_month_end.replace(day=2)
+    db = SessionLocal()
+    try:
+        db.add_all(
+            [
+                Transaction(
+                    txn_date=previous_month_day,
+                    amount=Decimal("900.00"),
+                    currency="INR",
+                    direction="debit",
+                    counterparty="ZOMATO",
+                    account="HDFC Savings ..7672",
+                    source="upi",
+                    gmail_message_id="prefetch-food",
+                    dedup_key="prefetch-food",
+                ),
+                Transaction(
+                    txn_date=previous_month_day,
+                    amount=Decimal("600.00"),
+                    currency="INR",
+                    direction="debit",
+                    counterparty="UBER",
+                    account="HDFC Savings ..7672",
+                    source="upi",
+                    gmail_message_id="prefetch-travel",
+                    dedup_key="prefetch-travel",
+                ),
+            ]
+        )
+        db.commit()
+
+        events = list(
+            ChatService(db, client=NoModel()).stream(
+                ChatRequest(
+                    message="What were my top 2 spending categories last month?",
+                    context_days=30,
+                )
+            )
+        )
+        answer = "".join(event.get("text", "") for event in events)
+        assert "1. food: ₹900 across 1 transaction" in answer
+        assert "2. travel: ₹600 across 1 transaction" in answer
+        assert events[-1]["grounded"] is True
+        assert any(
+            citation["metric"].startswith("spending_")
+            for citation in events[-1]["citations"]
+        )
+    finally:
+        db.close()

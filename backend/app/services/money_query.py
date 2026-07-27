@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+import re
 from typing import Any
 
 from sqlalchemy import func, select
@@ -36,10 +37,139 @@ _SORTS = {"total", "count", "average", "max", "date", "amount", "name"}
 _ORDERS = {"asc", "desc"}
 _MAX_RESULT_ROWS = 50
 _DEFAULT_DAYS = 30
+_KNOWN_CATEGORIES = {
+    "fuel": "fuel",
+    "wallet": "wallet_load",
+    "wallet load": "wallet_load",
+    "food": "food",
+    "dining": "food",
+    "restaurant": "food",
+    "groceries": "groceries",
+    "grocery": "groceries",
+    "shopping": "shopping",
+    "subscriptions": "subscriptions",
+    "subscription": "subscriptions",
+    "investments": "investments",
+    "investment": "investments",
+    "entertainment": "entertainment",
+    "emi": "emi",
+    "emi fees": "emi_fees",
+    "travel": "travel",
+    "legal fees": "legal_fees",
+    "internet": "internet_bill",
+}
 
 
 class MoneyQueryError(ValueError):
     """The requested semantic query is invalid or outside the safe contract."""
+
+
+def plan_money_query(question: str, today: date | None = None) -> dict[str, Any]:
+    """Translate common natural-language money phrasing into the safe contract.
+
+    This deterministic planner guarantees that factual Ask questions reach the
+    table even when the local model declines an optional function call. The
+    model-facing ``query_money`` tool remains available for refinements.
+    """
+    today = today or date.today()
+    text = " ".join(question.casefold().split())
+    args: dict[str, Any] = {"mode": "spending"}
+
+    if re.search(r"\b(?:income|earned|earnings|credited|credits?|received)\b", text):
+        args["mode"] = "income"
+    elif re.search(r"\b(?:debits?\s+and\s+credits?|all\s+transactions?)\b", text):
+        args["mode"] = "all"
+
+    start, end = _question_window(text, today)
+    args["start_date"] = start.isoformat()
+    args["end_date"] = end.isoformat()
+
+    if re.search(r"\b(?:categories|category\s+breakdown|by\s+category)\b", text):
+        args["group_by"] = "category"
+    elif re.search(r"\b(?:merchants?|payees?|counterpart(?:y|ies))\b", text):
+        args["group_by"] = "counterparty"
+    elif re.search(r"\b(?:accounts?|cards?|by\s+account|by\s+card)\b", text):
+        args["group_by"] = "account"
+    elif re.search(r"\b(?:sources?|by\s+source)\b", text):
+        args["group_by"] = "source"
+    elif re.search(r"\b(?:by\s+month|monthly\s+breakdown)\b", text):
+        args["group_by"] = "month"
+    elif re.search(r"\b(?:by\s+week|weekly\s+breakdown)\b", text):
+        args["group_by"] = "week"
+    elif re.search(r"\b(?:by\s+day|daily\s+breakdown)\b", text):
+        args["group_by"] = "day"
+    else:
+        args["group_by"] = "none"
+
+    if args["group_by"] == "none":
+        category = _category_from_question(text)
+        if category:
+            args["category"] = category
+
+    top = re.search(r"\b(?:top|largest|highest|biggest)\s+(\d{1,2})\b", text)
+    if top:
+        args["limit"] = min(50, max(1, int(top.group(1))))
+    elif re.search(r"\b(?:top|largest|highest|biggest|most)\b", text):
+        args["limit"] = 5
+    else:
+        args["limit"] = 10
+
+    if args["group_by"] == "none" and re.search(
+        r"\b(?:largest|highest|biggest|top|most expensive)\b", text
+    ):
+        args["sort_by"] = "amount"
+    elif args["group_by"] != "none":
+        args["sort_by"] = "total"
+    args["sort_order"] = "desc"
+    return args
+
+
+def format_money_answer(question: str, result: dict[str, Any]) -> str | None:
+    """Return an instant factual answer; leave interpretive questions to the model."""
+    text = question.casefold()
+    if re.search(
+        r"\b(?:why|driving|cause|affect|relationship|correlat|pattern|compare|versus|vs)\b",
+        text,
+    ):
+        return None
+
+    summary = result["summary"]
+    window = result["window"]
+    mode = result["mode"]
+    noun = {"spending": "spending", "income": "income", "all": "transaction value"}[mode]
+    period = f"{window['start']} to {window['end']}"
+    filters = result.get("filters") or {}
+
+    if not summary["count"]:
+        qualifier = ""
+        if filters.get("category"):
+            qualifier = f" in {str(filters['category']).replace('_', ' ')}"
+        return f"I found no matching {noun}{qualifier} from {period}."
+
+    if result["group_by"] != "none":
+        dimension = result["group_by"].replace("counterparty", "merchant")
+        lines = [f"From {period}, your top {noun} by {dimension} was:"]
+        for index, row in enumerate(result["rows"], start=1):
+            group = str(row["group"]).replace("_", " ")
+            lines.append(
+                f"{index}. {group}: {_inr(row['total'])} across "
+                f"{row['count']} transaction{'s' if row['count'] != 1 else ''}"
+            )
+        lines.append(
+            f"Matched total: {_inr(summary['total'])} across "
+            f"{summary['count']} transactions."
+        )
+        return "\n".join(lines)
+
+    qualifier = ""
+    if filters.get("category"):
+        qualifier = f" in {str(filters['category']).replace('_', ' ')}"
+    return (
+        f"From {period}, your matched {noun}{qualifier} was "
+        f"{_inr(summary['total'])} across {summary['count']} "
+        f"transaction{'s' if summary['count'] != 1 else ''}. "
+        f"The largest was {_inr(summary['max'])}."
+    )
 
 
 def spending_coverage(db: Session) -> dict[str, Any] | None:
@@ -307,3 +437,72 @@ def _text(raw: str) -> str:
     if not value or len(value) > 100:
         raise MoneyQueryError("text filters must contain 1-100 characters")
     return value
+
+
+def _question_window(text: str, today: date) -> tuple[date, date]:
+    if "last month" in text:
+        this_month = today.replace(day=1)
+        end = this_month - timedelta(days=1)
+        return end.replace(day=1), end
+    if re.search(r"\b(?:this|current) month\b", text):
+        return today.replace(day=1), today
+    if "yesterday" in text:
+        yesterday = today - timedelta(days=1)
+        return yesterday, yesterday
+    if re.search(r"\btoday\b", text):
+        return today, today
+    if "last week" in text:
+        this_week = today - timedelta(days=today.weekday())
+        end = this_week - timedelta(days=1)
+        return end - timedelta(days=6), end
+    if "this week" in text:
+        return today - timedelta(days=today.weekday()), today
+    if "last year" in text:
+        year = today.year - 1
+        return date(year, 1, 1), date(year, 12, 31)
+    if "this year" in text:
+        return date(today.year, 1, 1), today
+
+    trailing = re.search(r"\b(?:last|past)\s+(\d{1,4})\s+(days?|weeks?|months?)\b", text)
+    if trailing:
+        count = max(1, int(trailing.group(1)))
+        unit = trailing.group(2)
+        if unit.startswith("week"):
+            days = count * 7
+        elif unit.startswith("month"):
+            days = count * 31
+        else:
+            days = count
+        return today - timedelta(days=min(days, 3650) - 1), today
+
+    month_names = {
+        "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+        "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+        "august": 8, "aug": 8, "september": 9, "sep": 9, "october": 10, "oct": 10,
+        "november": 11, "nov": 11, "december": 12, "dec": 12,
+    }
+    month_match = re.search(
+        r"\b(" + "|".join(month_names) + r")(?:\s+(20\d{2}))?\b",
+        text,
+    )
+    if month_match:
+        month = month_names[month_match.group(1)]
+        year = int(month_match.group(2) or today.year)
+        start = date(year, month, 1)
+        next_month = date(year + (month == 12), 1 if month == 12 else month + 1, 1)
+        end = min(next_month - timedelta(days=1), today) if start <= today else next_month - timedelta(days=1)
+        return start, end
+
+    return today - timedelta(days=_DEFAULT_DAYS - 1), today
+
+
+def _category_from_question(text: str) -> str | None:
+    for phrase in sorted(_KNOWN_CATEGORIES, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(phrase)}\b", text):
+            return _KNOWN_CATEGORIES[phrase]
+    return None
+
+
+def _inr(value: int | float) -> str:
+    number = float(value)
+    return f"₹{number:,.0f}" if number.is_integer() else f"₹{number:,.2f}"

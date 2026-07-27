@@ -224,7 +224,12 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   the Money page. Statement detail rows are deliberately absent because they
   explain bills but never enter Money spend. Simple today/yesterday/current-month
   totals still take the deterministic fast path; qualified questions such as
-  "food last month" must reach `query_money`.
+  "food last month" must reach `query_money`. **Do not rely on Qwen choosing the
+  optional function call:** production smoke-testing showed it can answer from
+  the shallow snapshot instead. `plan_money_query` therefore deterministically
+  resolves common periods/dimensions/categories and prefetches the guarded query;
+  factual results are formatted directly without an LLM call, while interpretive
+  questions receive `money_query_result` in their grounded context.
 - **Git from the Cowork sandbox can't delete `.git/*.lock` (EPERM).** A commit
   succeeds the first time but its lock-cleanup `unlink` is denied by the mount, so
   `.git/index.lock` + `.git/HEAD.lock` are left behind and **block every later
@@ -487,9 +492,11 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   account/source breakdowns, rankings, income, and matching-row questions without
   exposing raw SQL or write access. Historical transaction coverage is included
   in the chat context so an older-period question can still enter the tool loop
-  when the current 30-day snapshot is empty. The previous fast-path bug that
-  treated "food last month" as the current-month total is regression-tested.
-  Backend full suite passes.
+  when the current 30-day snapshot is empty. A deterministic prefetch planner
+  guarantees common factual money queries hit the table even if Qwen ignores
+  optional tools; this was added after the first production smoke test exposed
+  that exact failure. The previous fast-path bug that treated "food last month"
+  as the current-month total is regression-tested. Backend full suite passes.
 
 ## 7. Open items / next steps
 

@@ -29,7 +29,13 @@ from app.repositories.mood_repo import MoodRepository
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
-from app.services.money_query import spending_coverage
+from app.services.money_query import (
+    MoneyQueryError,
+    format_money_answer,
+    plan_money_query,
+    query_money,
+    spending_coverage,
+)
 from app.services.openclaw import OpenClawClient, OpenClawTimeout, OpenClawUnavailable
 
 logger = logging.getLogger(__name__)
@@ -69,6 +75,9 @@ SYSTEM_PROMPT = (
     "dates such as last month — call query_money. It is a guarded read-only "
     "NL-to-query layer over stored transactions. Use its exact window and summary; "
     "a zero-count result means no matching stored rows, not missing permission.\n"
+    "- If DATA CONTEXT contains 'money_query_result', the backend already ran the "
+    "required guarded query. Answer directly from that result; never say transaction "
+    "detail is unavailable and do not ask the user to export it.\n"
     "- For 'right now', 'today', or 'last night' health questions — or when stored "
     "data is too stale — call live_health to pull live readings straight from the "
     "user's iPhone. If it returns an error that the server is unreachable, relay "
@@ -129,6 +138,22 @@ _SHORT_FOLLOW_UP = re.compile(
     r"^(?:why|how|what\s+about|and|but|can\s+you\s+explain|tell\s+me\s+more)\b",
     re.IGNORECASE,
 )
+_MONEY_QUERY_DOMAIN = re.compile(
+    r"\b(?:spend|spent|spending|expenses?|transactions?|purchases?|income|"
+    r"debits?|credits?|merchants?|payees?|bank|cards?)\b",
+    re.IGNORECASE,
+)
+_MONEY_QUERY_CUES = re.compile(
+    r"\b(?:last|past|days?|weeks?|years?|this\s+(?:week|year)|"
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+    r"nov(?:ember)?|dec(?:ember)?|between|from|since|until|during|"
+    r"in|before|after|on|at|to|via|using|by|per|categor(?:y|ies)|"
+    r"merchants?|payees?|account|card|source|breakdown|top|highest|"
+    r"largest|biggest|most|least|average|avg|count|transactions?|"
+    r"income|debits?|credits?)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_personal_data_question(message: str, history=()) -> bool:
@@ -148,6 +173,10 @@ def _is_personal_data_question(message: str, history=()) -> bool:
             if getattr(previous, "role", "") == "user":
                 return _is_personal_data_question(getattr(previous, "content", ""))
     return False
+
+
+def _needs_money_query(message: str) -> bool:
+    return bool(_MONEY_QUERY_DOMAIN.search(message) and _MONEY_QUERY_CUES.search(message))
 
 
 class ChatService:
@@ -256,6 +285,17 @@ class ChatService:
             cites.append(
                 Citation(metric="current_state", value=context["current_state"]["state"])
             )
+        money = context.get("money_query_result")
+        if money:
+            cites.append(
+                Citation(
+                    metric=(
+                        f"{money['mode']}_{money['window']['start']}_"
+                        f"{money['window']['end']}"
+                    ),
+                    value=str(money["summary"]["total"]),
+                )
+            )
         return cites
 
     def ask(self, req: ChatRequest) -> ChatResponse:
@@ -282,6 +322,17 @@ class ChatService:
                 citations=self._citations(context),
                 grounded=True,
             )
+
+        money_result = self._money_query_result(req.message)
+        if money_result is not None:
+            context["money_query_result"] = money_result
+            direct_money = format_money_answer(req.message, money_result)
+            if direct_money is not None:
+                return ChatResponse(
+                    answer=direct_money,
+                    citations=self._citations(context),
+                    grounded=True,
+                )
 
         messages = self._personal_messages(req, context)
 
@@ -334,7 +385,6 @@ class ChatService:
 
         context = self.build_context(req.context_days)
         has_data = self._context_has_data(context)
-        citations = [c.model_dump() for c in self._citations(context)]
         if not has_data:
             yield {
                 "type": "delta",
@@ -350,9 +400,27 @@ class ChatService:
         direct = self._direct_personal_answer(req.message, context)
         if direct is not None:
             yield {"type": "delta", "text": direct}
-            yield {"type": "done", "citations": citations, "grounded": True}
+            yield {
+                "type": "done",
+                "citations": [c.model_dump() for c in self._citations(context)],
+                "grounded": True,
+            }
             return
 
+        money_result = self._money_query_result(req.message)
+        if money_result is not None:
+            context["money_query_result"] = money_result
+            direct_money = format_money_answer(req.message, money_result)
+            if direct_money is not None:
+                yield {"type": "delta", "text": direct_money}
+                yield {
+                    "type": "done",
+                    "citations": [c.model_dump() for c in self._citations(context)],
+                    "grounded": True,
+                }
+                return
+
+        citations = [c.model_dump() for c in self._citations(context)]
         messages = self._personal_messages(req, context)
         emitted = False
         try:
@@ -387,6 +455,15 @@ class ChatService:
         )
         return messages
 
+    def _money_query_result(self, message: str) -> dict | None:
+        if not _needs_money_query(message):
+            return None
+        try:
+            return query_money(self.db, **plan_money_query(message))
+        except MoneyQueryError as exc:
+            logger.warning("Ask money query rejected: %s", exc)
+            return None
+
     @staticmethod
     def _context_has_data(context: dict) -> bool:
         totals = context["totals"]
@@ -414,18 +491,7 @@ class ChatService:
         ) and re.search(
             r"\b(?:how much|total|what did i|this month|today|yesterday)\b", text
         )
-        needs_money_query = re.search(
-            r"\b(?:last|past|days?|weeks?|years?|this\s+(?:week|year)|"
-            r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
-            r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
-            r"nov(?:ember)?|dec(?:ember)?|between|from|since|until|during|"
-            r"in|before|after|on|at|to|via|using|by|per|categor(?:y|ies)|"
-            r"merchants?|payees?|"
-            r"account|card|source|breakdown|top|highest|largest|most|least|"
-            r"average|avg|count|transactions?|income|debits?|credits?)\b",
-            text,
-        )
-        if spend_total_question and not needs_money_query:
+        if spend_total_question and not _needs_money_query(text):
             if not spending:
                 return "I don't have any spending transactions in this data window yet."
             daily = {row["day"]: row["spend"] for row in spending["recent_daily_spend"]}
