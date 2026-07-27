@@ -211,6 +211,20 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   history stops at a personal/general route boundary so an old sleep discussion
   cannot contaminate a new coding question. Keep these budgets aligned if changing
   the Android network timeout.
+- **Ask money questions use a guarded semantic query, not arbitrary model SQL
+  (2026-07-27).** `query_money` in `agent_tools.py` lets the model translate
+  natural-language questions into an allowlisted contract implemented by
+  `money_query.py`: mode, ISO date window, filters, grouping, sorting, and limit.
+  SQLAlchemy constructs the only DB query; the model never supplies executable
+  SQL, table names, columns, or functions. Keep this boundary. It supports
+  spending/income/all transactions; date/category/merchant/account/source/amount
+  filters; and day/week/month/category/merchant/account/source/direction groups.
+  "Spending" excludes transfers, reversals, and repaid lending, and effective
+  categories use the same user-label + override + deterministic categorizer as
+  the Money page. Statement detail rows are deliberately absent because they
+  explain bills but never enter Money spend. Simple today/yesterday/current-month
+  totals still take the deterministic fast path; qualified questions such as
+  "food last month" must reach `query_money`.
 - **Git from the Cowork sandbox can't delete `.git/*.lock` (EPERM).** A commit
   succeeds the first time but its lock-cleanup `unlink` is denied by the mount, so
   `.git/index.lock` + `.git/HEAD.lock` are left behind and **block every later
@@ -467,6 +481,15 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   tokens as well as `<think>` blocks. Android colors and system bars inherit the
   system light/dark setting. **Existing Jetson databases require both columns to be
   added manually because `create_all` does not ALTER tables.**
+- ✅ **Ask transaction-table querying (2026-07-27).** The existing bounded Ask
+  tool loop now advertises `query_money`, a guarded NL-to-query layer over stored
+  `transactions`. It answers exact arbitrary-period totals, category/merchant/
+  account/source breakdowns, rankings, income, and matching-row questions without
+  exposing raw SQL or write access. Historical transaction coverage is included
+  in the chat context so an older-period question can still enter the tool loop
+  when the current 30-day snapshot is empty. The previous fast-path bug that
+  treated "food last month" as the current-month total is regression-tested.
+  Backend full suite passes.
 
 ## 7. Open items / next steps
 
@@ -524,6 +547,7 @@ backend/app/api/routes/analytics.py      # /analytics/recompute (bg github scan)
 backend/app/services/apple_ingest.py     # Health Auto Export JSON -> records
 backend/app/services/phone_health_client.py  # TCP client to the iPhone's HAE server
 backend/app/services/agent_tools.py      # chat tools incl. live_health
+backend/app/services/money_query.py      # guarded semantic transaction queries for Ask
 backend/app/services/analytics.py        # recompute_day / run_nightly / baselines
 backend/app/repositories/health_repo.py  # bulk_insert (dedup), baseline_mean
 backend/app/models/health.py             # HealthRecord (free-form type) + HealthRecordType

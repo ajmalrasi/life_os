@@ -29,6 +29,7 @@ from app.repositories.mood_repo import MoodRepository
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
+from app.services.money_query import spending_coverage
 from app.services.openclaw import OpenClawClient, OpenClawTimeout, OpenClawUnavailable
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,11 @@ SYSTEM_PROMPT = (
     "- When you need more than it contains — older days, raw metrics, or commit "
     "detail — call the tools (git_log, github_events, health_summary) before "
     "answering. Don't guess when a tool can tell you.\n"
+    "- For transaction-table questions beyond a simple current total — including "
+    "categories, merchants, accounts, rankings, income, matching rows, or arbitrary "
+    "dates such as last month — call query_money. It is a guarded read-only "
+    "NL-to-query layer over stored transactions. Use its exact window and summary; "
+    "a zero-count result means no matching stored rows, not missing permission.\n"
     "- For 'right now', 'today', or 'last night' health questions — or when stored "
     "data is too stale — call live_health to pull live readings straight from the "
     "user's iPhone. If it returns an error that the server is unreachable, relay "
@@ -103,7 +109,8 @@ GENERAL_SYSTEM_PROMPT = (
 _PERSONAL_DATA_TERMS = re.compile(
     r"\b(?:sleep|recovery|heart\s*rate|hrv|spo2|steps?|workouts?|exercise|fitness|"
     r"mood|stress|energy|focus|burnout|wellness|health|score|state|spend(?:ing)?|"
-    r"expenses?|transactions?|bank|cards?|emi|commits?|github|execution|"
+    r"expenses?|transactions?|purchases?|income|debits?|credits?|merchants?|payees?|"
+    r"bank|cards?|emi|commits?|github|execution|"
     r"productiv(?:e|ity)|unproductive|procrastinat(?:e|ing|ion)|tired|fatigue|"
     r"performance|pulse|vitals?)\b",
     re.IGNORECASE,
@@ -168,6 +175,7 @@ class ChatService:
         spend_map = self.expenses.daily_spend(start, end)
         month_start = end.replace(day=1)
         month_spend_map = self.expenses.daily_spend(month_start, end)
+        money_coverage = spending_coverage(self.db)
 
         def avg(attr: str, rows) -> float | None:
             vals = [getattr(r, attr) for r in rows if getattr(r, attr) is not None]
@@ -220,6 +228,7 @@ class ChatService:
                 if spend_map
                 else None
             ),
+            "money_table_coverage": money_coverage,
             "discovered_patterns": [
                 {"summary": i.summary, "r": i.correlation, "n": i.sample_size}
                 for i in insight_rows
@@ -387,6 +396,7 @@ class ChatService:
                 totals.get("days_with_mood_checkin", 0) > 0,
                 totals.get("commits", 0) > 0,
                 context.get("spending") is not None,
+                context.get("money_table_coverage") is not None,
             )
         )
 
@@ -399,9 +409,23 @@ class ChatService:
         """
         text = message.casefold()
         spending = context.get("spending")
-        if re.search(r"\b(?:spend|spent|spending|expenses?)\b", text) and re.search(
+        spend_total_question = re.search(
+            r"\b(?:spend|spent|spending|expenses?)\b", text
+        ) and re.search(
             r"\b(?:how much|total|what did i|this month|today|yesterday)\b", text
-        ):
+        )
+        needs_money_query = re.search(
+            r"\b(?:last|past|days?|weeks?|years?|this\s+(?:week|year)|"
+            r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+            r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+            r"nov(?:ember)?|dec(?:ember)?|between|from|since|until|during|"
+            r"in|before|after|on|at|to|via|using|by|per|categor(?:y|ies)|"
+            r"merchants?|payees?|"
+            r"account|card|source|breakdown|top|highest|largest|most|least|"
+            r"average|avg|count|transactions?|income|debits?|credits?)\b",
+            text,
+        )
+        if spend_total_question and not needs_money_query:
             if not spending:
                 return "I don't have any spending transactions in this data window yet."
             daily = {row["day"]: row["spend"] for row in spending["recent_daily_spend"]}
@@ -411,7 +435,7 @@ class ChatService:
                 return f"You spent ₹{daily.get(today, 0):,} today ({today})."
             if "yesterday" in text:
                 return f"You spent ₹{daily.get(yesterday, 0):,} yesterday ({yesterday})."
-            if "month" in text:
+            if re.search(r"\b(?:this|current)\s+month\b", text):
                 return (
                     f"You spent ₹{spending['current_month_total']:,} this calendar month "
                     f"({spending['current_month']})."

@@ -9,6 +9,7 @@ import pytest
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
 from app.services.chat_service import MAX_AGENT_STEPS, ChatService, _is_personal_data_question
+from app.services.money_query import MoneyQueryError, query_money
 from app.services.openclaw import (
     OpenClawTimeout,
     _StreamingControlTokenFilter,
@@ -253,6 +254,37 @@ def test_spending_only_context_counts_as_personal_data():
     assert ChatService._context_has_data(context) is True
 
 
+def test_historical_money_coverage_keeps_table_questions_available(client):
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.models.transaction import Transaction
+
+    db = SessionLocal()
+    try:
+        db.add(
+            Transaction(
+                txn_date=date.today() - timedelta(days=120),
+                amount=Decimal("750.00"),
+                currency="INR",
+                direction="debit",
+                counterparty="OLD PURCHASE",
+                account="HDFC Savings ..7672",
+                source="upi",
+                gmail_message_id="old",
+                dedup_key="old",
+            )
+        )
+        db.commit()
+
+        context = ChatService(db).build_context(30)
+        assert context["spending"] is None
+        assert context["money_table_coverage"]["transaction_count"] == 1
+        assert ChatService._context_has_data(context) is True
+    finally:
+        db.close()
+
+
 def test_timeout_fallback_includes_calendar_month_spending():
     context = {
         "window": {"days": 30},
@@ -298,6 +330,14 @@ def test_direct_personal_answers_cover_spending_and_sleep_without_model():
     assert ChatService._direct_personal_answer("How is my sleep?", context) == (
         "Your latest sleep score is 51 on 2026-07-17; your 30-day average is 44.8."
     )
+    # Qualified/table questions must reach query_money, never the current-month
+    # total shortcut.
+    assert ChatService._direct_personal_answer(
+        "How much did I spend on food last month?", context
+    ) is None
+    assert ChatService._direct_personal_answer(
+        "How much did I spend in the last 7 days?", context
+    ) is None
 
 
 @pytest.mark.parametrize(
@@ -306,6 +346,8 @@ def test_direct_personal_answers_cover_spending_and_sleep_without_model():
         ("How was my sleep last night?", True),
         ("How am I doing this week?", True),
         ("How much did I spend this month?", True),
+        ("What were my top merchants last month?", True),
+        ("How much income did I receive this year?", True),
         ("Why am I unproductive?", True),
         ("What should I do today?", True),
         ("What is REM sleep?", False),
@@ -358,3 +400,137 @@ def test_agent_tools_read_real_data(client):
         assert "error" in err
     finally:
         db.close()
+
+
+def test_query_money_groups_effective_spending_and_excludes_transfers(client):
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.models.transaction import Transaction
+
+    db = SessionLocal()
+    try:
+        rows = [
+            Transaction(
+                txn_date=date(2026, 7, 2),
+                amount=Decimal("500.00"),
+                currency="INR",
+                direction="debit",
+                counterparty="ZOMATO",
+                account="HDFC Savings ..7672",
+                source="upi",
+                gmail_message_id="food",
+                dedup_key="food",
+            ),
+            Transaction(
+                txn_date=date(2026, 7, 3),
+                amount=Decimal("1200.00"),
+                currency="INR",
+                direction="debit",
+                counterparty="AMAZON",
+                spend_category_override="groceries",
+                account="HDFC Card ..1234",
+                source="card_live",
+                gmail_message_id="groceries",
+                dedup_key="groceries",
+            ),
+            Transaction(
+                txn_date=date(2026, 7, 4),
+                amount=Decimal("9000.00"),
+                currency="INR",
+                direction="debit",
+                counterparty="SELF TRANSFER",
+                category="transfer",
+                account="HDFC Savings ..7672",
+                source="upi",
+                gmail_message_id="transfer",
+                dedup_key="transfer",
+            ),
+            Transaction(
+                txn_date=date(2026, 7, 5),
+                amount=Decimal("2500.00"),
+                currency="INR",
+                direction="credit",
+                counterparty="REFUND",
+                account="HDFC Savings ..7672",
+                source="bank_live",
+                gmail_message_id="credit",
+                dedup_key="credit",
+            ),
+        ]
+        db.add_all(rows)
+        db.commit()
+
+        result = query_money(
+            db,
+            mode="spending",
+            start_date="2026-07-01",
+            end_date="2026-07-31",
+            group_by="category",
+            sort_by="total",
+        )
+
+        assert result["summary"] == {
+            "total": 1700,
+            "count": 2,
+            "average": 850,
+            "max": 1200,
+        }
+        assert result["matched_transactions"] == 2
+        assert result["rows"] == [
+            {
+                "group": "groceries",
+                "total": 1200,
+                "count": 1,
+                "average": 1200,
+                "max": 1200,
+            },
+            {
+                "group": "food",
+                "total": 500,
+                "count": 1,
+                "average": 500,
+                "max": 500,
+            },
+        ]
+
+        food = AgentTools(db).run(
+            "query_money",
+            {
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+                "category": "food",
+                "group_by": "none",
+            },
+        )
+        assert food["summary"]["total"] == 500
+        assert food["rows"][0]["counterparty"] == "ZOMATO"
+        assert food["rows"][0]["category"] == "food"
+    finally:
+        db.close()
+
+
+def test_query_money_rejects_invalid_contract_values(client):
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        with pytest.raises(MoneyQueryError, match="group_by"):
+            query_money(db, group_by="raw_sql")
+        with pytest.raises(MoneyQueryError, match="start_date"):
+            query_money(db, start_date="drop table transactions")
+        with pytest.raises(MoneyQueryError, match="limit"):
+            query_money(db, limit=5000)
+
+        # Tool dispatch degrades invalid model arguments to an error payload.
+        result = AgentTools(db).run("query_money", {"group_by": "raw_sql"})
+        assert "error" in result
+    finally:
+        db.close()
+
+
+def test_query_money_is_advertised_to_the_model():
+    schemas = {schema["function"]["name"]: schema for schema in agent_tools.TOOL_SCHEMAS}
+    assert "query_money" in schemas
+    params = schemas["query_money"]["function"]["parameters"]["properties"]
+    assert set(params["group_by"]["enum"]) >= {"month", "category", "counterparty", "account"}

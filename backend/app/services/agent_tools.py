@@ -22,6 +22,7 @@ from app.repositories.analytics_repo import ScoreRepository, StateRepository
 from app.repositories.github_repo import GithubRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.github_mcp_client import GitHubMcpClient
+from app.services.money_query import query_money
 from app.services.phone_health_client import (
     PhoneHealthClient,
     PhoneHealthUnavailable,
@@ -41,6 +42,86 @@ _DEFAULT_LIVE_METRICS = (
 
 # OpenAI-style function schemas advertised to the model.
 TOOL_SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "query_money",
+            "description": (
+                "Run a guarded read-only analytical query over the stored transactions "
+                "table. Use for exact spending/income questions that need arbitrary date "
+                "ranges, category/merchant/account/source filters, rankings, transaction "
+                "details, or day/week/month/category/merchant/account breakdowns. "
+                "Statement detail rows are not transactions and never count as spend. "
+                "For 'last month', send explicit start_date/end_date ISO dates from the "
+                "DATA CONTEXT current date. Effective categories match the Money page."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["spending", "income", "all"],
+                        "description": (
+                            "spending = real debits only (transfers/returns excluded); "
+                            "income = real credits; all = raw debit and credit rows."
+                        ),
+                        "default": "spending",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Inclusive ISO date YYYY-MM-DD. Defaults to 30 days.",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "Inclusive ISO date YYYY-MM-DD. Defaults to today.",
+                    },
+                    "group_by": {
+                        "type": "string",
+                        "enum": [
+                            "none", "day", "week", "month", "category",
+                            "counterparty", "account", "source", "direction",
+                        ],
+                        "description": (
+                            "Breakdown dimension. Use none for matching transaction rows."
+                        ),
+                        "default": "none",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Exact effective Money-page category, e.g. food.",
+                    },
+                    "counterparty_contains": {
+                        "type": "string",
+                        "description": "Case-insensitive merchant/payee text filter.",
+                    },
+                    "account_contains": {
+                        "type": "string",
+                        "description": "Case-insensitive bank/card/account text filter.",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Exact stored source such as upi or card_live.",
+                    },
+                    "min_amount": {"type": "number"},
+                    "max_amount": {"type": "number"},
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["total", "count", "average", "max", "date", "amount", "name"],
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "enum": ["asc", "desc"],
+                        "default": "desc",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum result rows (1-50).",
+                        "default": 10,
+                    },
+                },
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -198,6 +279,8 @@ class AgentTools:
                     metrics=args.get("metrics", ""),
                     hours=args.get("hours", 24),
                 )
+            if name == "query_money":
+                return query_money(self.db, **args)
             days = _clamp_days(args.get("days", 14))
             handler = {
                 "git_log": self.git_log,
