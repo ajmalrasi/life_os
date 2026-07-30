@@ -36,6 +36,9 @@ data class MoneyUiState(
     val selectedCategory: String? = null,
     /** Multi-select category filter; empty = show everything. */
     val categoryFilter: Set<String> = emptySet(),
+    /** Null = all spend; ALL_BANK_UPI_FILTER = every proven savings account;
+     * otherwise the canonical bank + account-suffix key. */
+    val bankUpiFilter: String? = null,
     // Demoted card-dues summary, loaded softly so a backend hiccup never blanks
     // the (offline, cache-driven) spend view.
     val totalDue: BigDecimal? = null,
@@ -150,6 +153,10 @@ class MoneyViewModel @Inject constructor(
 
     fun clearCategoryFilter() {
         _state.update { it.copy(categoryFilter = emptySet(), selectedCategory = null) }
+    }
+
+    fun setBankUpiFilter(filter: String?) {
+        _state.update { it.copy(bankUpiFilter = filter, selectedCategory = null) }
     }
 
     fun prevPeriod() {

@@ -35,6 +35,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -235,15 +237,34 @@ fun MoneyScreen(
                 !it.txnDate.isBefore(slice.start) && !it.txnDate.isAfter(slice.end)
         }
     }
-    val availableCategories = remember(sliceTxns) {
-        sliceTxns.groupBy { it.spendCategory!! }
+    val bankUpiAccounts = remember(state.transactions) {
+        bankUpiAccountOptions(state.transactions)
+    }
+    val bankUpiKeys = remember(bankUpiAccounts) { bankUpiAccounts.map { it.key }.toSet() }
+    val sourceFilteredTxns = remember(sliceTxns, state.bankUpiFilter, bankUpiKeys) {
+        when (val sourceFilter = state.bankUpiFilter) {
+            null -> sliceTxns
+            ALL_BANK_UPI_FILTER -> sliceTxns.filter {
+                it.bankUpiAccountKey(bankUpiKeys) != null
+            }
+            else -> sliceTxns.filter {
+                it.bankUpiAccountKey(bankUpiKeys) == sourceFilter
+            }
+        }
+    }
+    val availableCategories = remember(sourceFilteredTxns) {
+        sourceFilteredTxns.groupBy { it.spendCategory!! }
             .map { (cat, list) -> cat to list.fold(BigDecimal.ZERO) { a, t -> a + t.amount } }
             .sortedByDescending { it.second }
             .map { it.first }
     }
     val filter = state.categoryFilter
-    val spendTxns = remember(sliceTxns, filter) {
-        if (filter.isEmpty()) sliceTxns else sliceTxns.filter { it.spendCategory in filter }
+    val spendTxns = remember(sourceFilteredTxns, filter) {
+        if (filter.isEmpty()) {
+            sourceFilteredTxns
+        } else {
+            sourceFilteredTxns.filter { it.spendCategory in filter }
+        }
     }
     val total = remember(spendTxns) {
         spendTxns.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
@@ -349,7 +370,10 @@ fun MoneyScreen(
                 label = periodLabel(state.period, state.anchor, slice),
                 total = total,
                 txnCount = spendTxns.size,
-                filtered = filter.isNotEmpty(),
+                filtered = filter.isNotEmpty() || state.bankUpiFilter != null,
+                bankUpiFilter = state.bankUpiFilter,
+                bankUpiAccounts = bankUpiAccounts,
+                onBankUpiFilterChange = viewModel::setBankUpiFilter,
                 canGoPrev = canGoPrev,
                 canGoNext = canGoNext,
                 onPrev = viewModel::prevPeriod,
@@ -569,6 +593,9 @@ private fun SpendSummaryCard(
     total: BigDecimal,
     txnCount: Int,
     filtered: Boolean,
+    bankUpiFilter: String?,
+    bankUpiAccounts: List<BankUpiAccountOption>,
+    onBankUpiFilterChange: (String?) -> Unit,
     canGoPrev: Boolean,
     canGoNext: Boolean,
     onPrev: () -> Unit,
@@ -608,15 +635,82 @@ private fun SpendSummaryCard(
                 color = LifeOsColors.OnBackground,
                 fontWeight = FontWeight.Bold,
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    when {
+                        txnCount == 0 -> "No spend recorded"
+                        filtered -> "$txnCount transaction${if (txnCount == 1) "" else "s"} · filtered"
+                        else -> "$txnCount transaction${if (txnCount == 1) "" else "s"}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                BankUpiFilterMenu(
+                    selected = bankUpiFilter,
+                    accounts = bankUpiAccounts,
+                    onSelect = onBankUpiFilterChange,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BankUpiFilterMenu(
+    selected: String?,
+    accounts: List<BankUpiAccountOption>,
+    onSelect: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = when (selected) {
+        null -> "All spend"
+        ALL_BANK_UPI_FILTER -> "Bank UPI · All"
+        else -> accounts.firstOrNull { it.key == selected }?.let { "UPI · ${it.label}" }
+            ?: "Bank UPI"
+    }
+
+    Box {
+        Surface(
+            modifier = Modifier.clickable { expanded = true },
+            shape = RoundedCornerShape(50),
+            color = if (selected == null) LifeOsColors.SurfaceMuted else LifeOsColors.PrimarySoft,
+        ) {
             Text(
-                when {
-                    txnCount == 0 -> "No spend recorded"
-                    filtered -> "across $txnCount transaction${if (txnCount == 1) "" else "s"} (filtered)"
-                    else -> "across $txnCount transaction${if (txnCount == 1) "" else "s"}"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = LifeOsColors.OnSurfaceMuted,
+                "$selectedLabel ▾",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected == null) LifeOsColors.OnSurfaceMuted else LifeOsColors.Primary,
             )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("All spend") },
+                onClick = {
+                    expanded = false
+                    onSelect(null)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Bank UPI · All banks") },
+                onClick = {
+                    expanded = false
+                    onSelect(ALL_BANK_UPI_FILTER)
+                },
+            )
+            accounts.forEach { account ->
+                DropdownMenuItem(
+                    text = { Text("Bank UPI · ${account.label}") },
+                    onClick = {
+                        expanded = false
+                        onSelect(account.key)
+                    },
+                )
+            }
         }
     }
 }
@@ -1179,7 +1273,7 @@ private fun CreditCardCyclesCard(
     onOpenDetails: (Int) -> Unit,
     onOpenCurrentCycle: (String, String) -> Unit,
 ) {
-    var selectedView by remember { mutableStateOf(CardCycleView.CURRENT) }
+    var selectedView by remember { mutableStateOf<CardCycleView?>(null) }
     val dm = DateTimeFormatter.ofPattern("dd MMM")
     val actualConfirmedTotal = if (confirmedTotal > BigDecimal.ZERO) confirmedTotal else {
         confirmedCards.fold(BigDecimal.ZERO) { total, card ->
@@ -1217,7 +1311,13 @@ private fun CreditCardCyclesCard(
                     amount = actualConfirmedTotal.rupees(),
                     supporting = nextConfirmedDue?.let { "Next due ${it.format(dm)}" } ?: "No bill due",
                     selected = selectedView == CardCycleView.BILLED,
-                    onClick = { selectedView = CardCycleView.BILLED },
+                    onClick = {
+                        selectedView = if (selectedView == CardCycleView.BILLED) {
+                            null
+                        } else {
+                            CardCycleView.BILLED
+                        }
+                    },
                 )
                 CycleSummaryTile(
                     modifier = Modifier.weight(1f),
@@ -1225,7 +1325,13 @@ private fun CreditCardCyclesCard(
                     amount = currentSpendTotal.rupees(),
                     supporting = "Recorded through ${LocalDate.now().format(dm)}",
                     selected = selectedView == CardCycleView.CURRENT,
-                    onClick = { selectedView = CardCycleView.CURRENT },
+                    onClick = {
+                        selectedView = if (selectedView == CardCycleView.CURRENT) {
+                            null
+                        } else {
+                            CardCycleView.CURRENT
+                        }
+                    },
                 )
             }
 
@@ -1265,6 +1371,7 @@ private fun CreditCardCyclesCard(
                         color = LifeOsColors.OnSurfaceMuted,
                     )
                 }
+                null -> Unit
             }
         }
     }

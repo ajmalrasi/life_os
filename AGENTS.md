@@ -532,6 +532,17 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   live transactions, and tap-to-expand descriptions. The generated-statement
   path continues to open its existing statement breakdown page. No forecast or
   unrecorded charge is introduced.
+  **Compact Money + bank UPI filter (2026-07-30):** credit-card rows are closed
+  by default; the two billed/current totals remain visible and each tile toggles
+  only its own list. The monthly spend card now carries a compact source menu
+  without adding another page section: All spend, all bank-account UPI, or one
+  proven savings account (currently Axis `····4402` and HDFC `····7672`).
+  Bank UPI identity is strict: only `source='upi'` rows whose bank + suffix is
+  proven by an explicit Savings label qualify, so RuPay/credit-card UPI is
+  excluded. Legacy label drift such as HDFC `Card ..7672` is recovered only
+  when the same bank + suffix is proven as Savings elsewhere; unknown rows are
+  not guessed. The live July check showed all bank UPI ₹14,049.90 / 24 rows,
+  HDFC ₹12,269.90 / 20, and Axis ₹1,780 / 4.
 
 ## 7. Open items / next steps
 
