@@ -18,6 +18,7 @@ from app.schemas.statement import (
     CardStatementDetailsOut,
     CardStatementItemOut,
     CategorySpend,
+    CurrentCardCyclesOut,
     MonthTrend,
     SpendAnalysis,
     SpendTrends,
@@ -25,6 +26,7 @@ from app.schemas.statement import (
     StatementPaidUpdate,
 )
 from app.services.gmail_client import GmailClient
+from app.services.card_cycles import current_card_cycles
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.statement_collector import StatementCollector
 from app.services.statement_details import statement_breakdown
@@ -174,6 +176,12 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
         message=report.message,
         statements=[CardStatementOut.model_validate(s) for s in report.statements],
     )
+
+
+@router.get("/cycles/current", response_model=CurrentCardCyclesOut)
+def get_current_card_cycles(db: Session = Depends(get_db)) -> CurrentCardCyclesOut:
+    """Open per-card billing cycles, estimated before the next PDFs exist."""
+    return current_card_cycles(db)
 
 
 @router.get("/trends", response_model=SpendTrends)

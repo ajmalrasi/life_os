@@ -1,6 +1,7 @@
 package com.lifeos.app.data.repository
 
 import com.lifeos.app.data.local.CardStatementDao
+import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.TransactionDao
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
@@ -10,6 +11,7 @@ import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
+import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.Transaction
@@ -25,6 +27,7 @@ class MoneyRepositoryImpl @Inject constructor(
     private val api: LifeOsApi,
     private val transactionDao: TransactionDao,
     private val cardStatementDao: CardStatementDao,
+    private val currentCardCycleDao: CurrentCardCycleDao,
 ) : MoneyRepository {
 
     override fun observeTransactions(days: Int): Flow<List<Transaction>> {
@@ -35,9 +38,13 @@ class MoneyRepositoryImpl @Inject constructor(
     override fun observeStatements(months: Int): Flow<List<CardStatement>> =
         cardStatementDao.observeAll().map { list -> list.map { it.toDomain() } }
 
+    override fun observeCurrentCardCycles(): Flow<List<CurrentCardCycle>> =
+        currentCardCycleDao.observeAll().map { list -> list.map { it.toDomain() } }
+
     override suspend fun refresh(transactionDays: Int, statementMonths: Int) {
         val since = LocalDate.now().minusDays(transactionDays.toLong()).toString()
         val fresh = api.listTransactions(transactionDays)
+        val freshCycles = runCatching { api.currentCardCycles() }.getOrNull()
         // Reconcile, don't just append: a transaction the server deleted
         // (e.g. reprocessed under a new id) must disappear locally too, not
         // linger forever as a phantom duplicate alongside its replacement.
@@ -50,6 +57,12 @@ class MoneyRepositoryImpl @Inject constructor(
         // Mirror the server instead of appending forever. Statements can be
         // deliberately removed server-side and must not survive as stale cache.
         cardStatementDao.replaceAll(api.listStatements(statementMonths).map { it.toEntity() })
+        // Keep the previous cache during a rolling backend/app deployment where
+        // the new endpoint may briefly be unavailable. A successful empty
+        // response still clears stale cycles through replaceAll.
+        freshCycles?.let { response ->
+            currentCardCycleDao.replaceAll(response.cycles.map { it.toEntity() })
+        }
     }
 
     override suspend fun analysis(days: Int): SpendAnalysis = api.spendAnalysis(days).toDomain()

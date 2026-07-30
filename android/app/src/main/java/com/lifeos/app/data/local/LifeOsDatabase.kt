@@ -7,8 +7,9 @@ import androidx.room.RoomDatabase
     entities = [
         MoodEntity::class, ScoreEntity::class, StateEntity::class, InsightEntity::class,
         SynthesizedInsightEntity::class, TransactionEntity::class, CardStatementEntity::class,
+        CurrentCardCycleEntity::class,
     ],
-    version = 10, // v10: cache statement payment/detail parse state
+    version = 11, // v11: cache server-calculated open credit-card cycles
     exportSchema = false,
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -19,4 +20,5 @@ abstract class LifeOsDatabase : RoomDatabase() {
     abstract fun synthesizedInsightDao(): SynthesizedInsightDao
     abstract fun transactionDao(): TransactionDao
     abstract fun cardStatementDao(): CardStatementDao
+    abstract fun currentCardCycleDao(): CurrentCardCycleDao
 }

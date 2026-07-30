@@ -3,6 +3,7 @@ package com.lifeos.app.presentation.money
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
@@ -41,6 +42,8 @@ data class MoneyUiState(
     val nextDueDate: LocalDate? = null,
     /** Per-card statements with an outstanding due, soonest due date first. */
     val cardDues: List<CardStatement> = emptyList(),
+    /** Per-card open billing cycles, computed by the backend and cached in Room. */
+    val currentCardCycles: List<CurrentCardCycle> = emptyList(),
     val repaymentDebit: Transaction? = null,
     val repaymentCandidates: List<RepaymentCandidate> = emptyList(),
     val selectedRepaymentCreditId: Int? = null,
@@ -90,6 +93,11 @@ class MoneyViewModel @Inject constructor(
                         nextDueDate = active.mapNotNull { statement -> statement.dueDate }.minOrNull(),
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeCurrentCardCycles().collect { cycles ->
+                _state.update { it.copy(currentCardCycles = cycles) }
             }
         }
         load()

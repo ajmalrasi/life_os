@@ -497,6 +497,26 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   optional tools; this was added after the first production smoke test exposed
   that exact failure. The previous fast-path bug that treated "food last month"
   as the current-month total is regression-tested. Backend full suite passes.
+- ✅ **Open credit-card cycle estimates (2026-07-30).** Money now keeps three
+  accounting views separate: calendar-period spend, already-generated card
+  bills, and open billing cycles that will be paid later. The backend endpoint
+  `GET /statements/cycles/current` infers each card's live cycle from the exact
+  `period_start`/`period_end` cadence in stored statements, preserves
+  end-of-month schedules, projects the next due date from the observed bank
+  lag, and matches live transactions by bank + last-four identity (including
+  suffix-normalized SBI `70`/`1970`). Card payments/transfers/reconciled rows
+  are excluded, while genuine card refunds reduce the running amount. Explicit
+  Axis-style `N/M` principal+interest rows forecast only provably remaining
+  installments plus estimated GST; unsequenced "EMI" text is not guessed. Each
+  card exposes posted vs expected-EMI vs estimated totals and a historical
+  live-alert coverage rating, because production showed Axis 3068's prior bill
+  had ~₹24k in EMIs absent from live alerts. Android caches the server result in
+  Room v11 and shows a separate expandable **Credit card payments** panel:
+  **Already billed** (confirmed statement totals, tappable for breakdown) vs
+  **Building now** (per-card open-cycle estimates and explicit partial-coverage
+  warnings). The former bottom-only dues footer was folded into this panel;
+  calendar spend remains unchanged. Backend requires no schema migration.
+  Backend full suite and Android `assembleDebug` + unit tests pass.
 
 ## 7. Open items / next steps
 
@@ -555,6 +575,7 @@ backend/app/services/apple_ingest.py     # Health Auto Export JSON -> records
 backend/app/services/phone_health_client.py  # TCP client to the iPhone's HAE server
 backend/app/services/agent_tools.py      # chat tools incl. live_health
 backend/app/services/money_query.py      # guarded semantic transaction queries for Ask
+backend/app/services/card_cycles.py      # open per-card cycle + explicit EMI estimates
 backend/app/services/analytics.py        # recompute_day / run_nightly / baselines
 backend/app/repositories/health_repo.py  # bulk_insert (dedup), baseline_mean
 backend/app/models/health.py             # HealthRecord (free-form type) + HealthRecordType

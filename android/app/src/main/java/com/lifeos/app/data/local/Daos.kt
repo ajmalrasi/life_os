@@ -101,3 +101,21 @@ interface CardStatementDao {
     @Query("SELECT * FROM card_statements_cache ORDER BY statementDate DESC")
     fun observeAll(): Flow<List<CardStatementEntity>>
 }
+
+@Dao
+interface CurrentCardCycleDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CurrentCardCycleEntity>)
+
+    @Query("DELETE FROM current_card_cycles_cache")
+    suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(entities: List<CurrentCardCycleEntity>) {
+        clear()
+        upsertAll(entities)
+    }
+
+    @Query("SELECT * FROM current_card_cycles_cache ORDER BY cycleEnd, bank, cardLast4")
+    fun observeAll(): Flow<List<CurrentCardCycleEntity>>
+}

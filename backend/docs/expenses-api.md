@@ -110,6 +110,12 @@ per calendar month: `total_debits`, `total_credits`, `txn_count`, `by_category`,
 `total_due_all_cards`, `min_due_all_cards`, `next_due_date`, latest statement per
 card, `spend_by_category` (keyword categorizer in `app/api/routes/statements.py`),
 and `top_merchants` over the combined feed (`days` param, default 45).
+### `GET /statements/cycles/current` — open credit-card cycles before bill generation:
+per card, returns the inferred cycle start/end, likely statement and payment
+dates, posted charges/refunds, explicit remaining `N/M` EMIs, estimated total,
+transaction count, and last-statement alert-coverage confidence. Calendar spend
+is intentionally separate. Card payments, transfers, reconciled returns, and
+paired reversals do not enter the estimate; genuine card refunds reduce it.
 
 ## Payee labels API (`/payee-labels`)
 

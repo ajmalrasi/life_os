@@ -244,3 +244,26 @@ data class SpendAnalysis(
     val spendByCategory: List<CategorySpend>,
     val topMerchants: List<CategorySpend>,
 )
+
+/** One open credit-card billing cycle before its statement PDF exists. */
+data class CurrentCardCycle(
+    val key: String,
+    val bank: String,
+    val cardLabel: String,
+    val cardLast4: String,
+    val cycleStart: LocalDate,
+    val cycleEnd: LocalDate,
+    val expectedStatementDate: LocalDate?,
+    val expectedDueDate: LocalDate?,
+    val postedDebits: BigDecimal,
+    val postedCredits: BigDecimal,
+    val postedTotal: BigDecimal,
+    val expectedEmiTotal: BigDecimal,
+    val estimatedTotal: BigDecimal,
+    val expectedEmiCount: Int,
+    val transactionCount: Int,
+    val lastTransactionDate: LocalDate?,
+    val historicalCoverage: BigDecimal?,
+    val confidence: String,
+    val unconvertedTransactionCount: Int,
+)

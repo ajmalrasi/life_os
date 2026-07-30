@@ -4,6 +4,8 @@ import com.lifeos.app.data.remote.dto.DailyScoreDto
 import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CardStatementItemDto
+import com.lifeos.app.data.remote.dto.CurrentCardCycleDto
+import com.lifeos.app.data.remote.dto.ExpectedEmiDto
 import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.StatementBreakdownItemDto
 import com.lifeos.app.data.toDomain
@@ -82,5 +84,38 @@ class MappersTest {
         assertEquals("credit", details.items.single().direction)
         assertEquals(java.time.LocalTime.of(12, 29), details.items.single().txnTime)
         assertEquals(BigDecimal("-8000.00"), details.breakdown.single().total)
+    }
+
+    @Test
+    fun `current card cycle survives dto cache and domain mapping`() {
+        val dto = CurrentCardCycleDto(
+            bank = "axis",
+            cardLabel = "Axis Flipkart VISA",
+            cardLast4 = "3068",
+            cycleStart = "2026-07-16",
+            cycleEnd = "2026-08-15",
+            expectedStatementDate = "2026-08-15",
+            expectedDueDate = "2026-09-04",
+            postedDebits = "1000.00",
+            postedCredits = "100.00",
+            postedTotal = "900.00",
+            expectedEmiTotal = "24229.98",
+            estimatedTotal = "25129.98",
+            expectedEmis = listOf(ExpectedEmiDto("73084373", 3, 3, "9971.62")),
+            transactionCount = 2,
+            lastTransactionDate = "2026-07-21",
+            historicalCoverage = "0.20",
+            confidence = "partial",
+        )
+
+        val domain = dto.toEntity().toDomain()
+
+        assertEquals("axis:3068", domain.key)
+        assertEquals(LocalDate.parse("2026-07-16"), domain.cycleStart)
+        assertEquals(LocalDate.parse("2026-09-04"), domain.expectedDueDate)
+        assertEquals(BigDecimal("900.00"), domain.postedTotal)
+        assertEquals(BigDecimal("25129.98"), domain.estimatedTotal)
+        assertEquals(1, domain.expectedEmiCount)
+        assertEquals("partial", domain.confidence)
     }
 }

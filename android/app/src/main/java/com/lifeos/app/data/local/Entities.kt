@@ -89,3 +89,26 @@ data class CardStatementEntity(
     val detailsParserVersion: Int,
     val detailsParsedAt: String?,
 )
+
+@Entity(tableName = "current_card_cycles_cache")
+data class CurrentCardCycleEntity(
+    @PrimaryKey val key: String,
+    val bank: String,
+    val cardLabel: String,
+    val cardLast4: String,
+    val cycleStart: String,
+    val cycleEnd: String,
+    val expectedStatementDate: String?,
+    val expectedDueDate: String?,
+    val postedDebits: String,
+    val postedCredits: String,
+    val postedTotal: String,
+    val expectedEmiTotal: String,
+    val estimatedTotal: String,
+    val expectedEmiCount: Int,
+    val transactionCount: Int,
+    val lastTransactionDate: String?,
+    val historicalCoverage: String?,
+    val confidence: String,
+    val unconvertedTransactionCount: Int,
+)

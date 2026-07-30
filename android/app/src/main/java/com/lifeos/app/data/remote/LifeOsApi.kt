@@ -2,6 +2,7 @@ package com.lifeos.app.data.remote
 
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
+import com.lifeos.app.data.remote.dto.CurrentCardCyclesDto
 import com.lifeos.app.data.remote.dto.ChatRequestDto
 import com.lifeos.app.data.remote.dto.ChatResponseDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
@@ -129,6 +130,9 @@ interface LifeOsApi {
 
     @GET("statements/analysis")
     suspend fun spendAnalysis(@Query("days") days: Int): SpendAnalysisDto
+
+    @GET("statements/cycles/current")
+    suspend fun currentCardCycles(): CurrentCardCyclesDto
 
     @GET("statements/trends")
     suspend fun spendTrends(@Query("months") months: Int): SpendTrendsDto

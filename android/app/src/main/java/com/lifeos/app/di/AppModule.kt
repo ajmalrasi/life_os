@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.lifeos.app.data.local.CardStatementDao
+import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.InsightDao
 import com.lifeos.app.data.local.LifeOsDatabase
 import com.lifeos.app.data.local.SynthesizedInsightDao
@@ -64,4 +65,7 @@ object AppModule {
 
     @Provides
     fun cardStatementDao(db: LifeOsDatabase): CardStatementDao = db.cardStatementDao()
+
+    @Provides
+    fun currentCardCycleDao(db: LifeOsDatabase): CurrentCardCycleDao = db.currentCardCycleDao()
 }

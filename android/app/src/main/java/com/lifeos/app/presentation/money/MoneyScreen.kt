@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.components.LifeOsCard
@@ -352,6 +353,17 @@ fun MoneyScreen(
             )
         }
 
+        if (state.cardDues.isNotEmpty() || state.currentCardCycles.isNotEmpty()) {
+            item {
+                CreditCardCyclesCard(
+                    confirmedTotal = state.totalDue ?: BigDecimal.ZERO,
+                    confirmedCards = state.cardDues,
+                    currentCycles = state.currentCardCycles,
+                    onOpenDetails = onOpenStatement,
+                )
+            }
+        }
+
         if (availableCategories.isNotEmpty()) {
             item {
                 CategoryFilterRow(
@@ -392,18 +404,6 @@ fun MoneyScreen(
                     onBack = { viewModel.selectCategory(null) },
                     onMarkAsRepaid = viewModel::beginRepayment,
                     onEditCategory = viewModel::beginCategoryEdit,
-                )
-            }
-        }
-
-        // Demoted: card dues live at the very bottom, compact, never the headline.
-        state.totalDue?.takeIf { it > BigDecimal.ZERO }?.let { due ->
-            item {
-                DuesFooterCard(
-                    due,
-                    state.nextDueDate,
-                    state.cardDues,
-                    onOpenDetails = onOpenStatement,
                 )
             }
         }
@@ -1164,17 +1164,33 @@ private fun HoldToConfirmButton(
 }
 
 @Composable
-private fun DuesFooterCard(
-    totalDue: BigDecimal,
-    nextDueDate: LocalDate?,
-    cards: List<CardStatement>,
+private fun CreditCardCyclesCard(
+    confirmedTotal: BigDecimal,
+    confirmedCards: List<CardStatement>,
+    currentCycles: List<CurrentCardCycle>,
     onOpenDetails: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val expandable = cards.isNotEmpty()
+    val expandable = confirmedCards.isNotEmpty() || currentCycles.isNotEmpty()
     val dm = DateTimeFormatter.ofPattern("dd MMM")
-    LifeOsCard(modifier = Modifier.fillMaxWidth()) {
-        Column {
+    val month = DateTimeFormatter.ofPattern("MMM")
+    val actualConfirmedTotal = if (confirmedTotal > BigDecimal.ZERO) confirmedTotal else {
+        confirmedCards.fold(BigDecimal.ZERO) { total, card ->
+            total + (card.totalDue ?: BigDecimal.ZERO)
+        }
+    }
+    val postedTotal = currentCycles.fold(BigDecimal.ZERO) { total, cycle -> total + cycle.postedTotal }
+    val expectedEmiTotal = currentCycles.fold(BigDecimal.ZERO) { total, cycle ->
+        total + cycle.expectedEmiTotal
+    }
+    val estimatedTotal = postedTotal + expectedEmiTotal
+    val confirmedDueDates = confirmedCards.mapNotNull { it.dueDate }.distinct()
+    val estimatedDueDates = currentCycles.mapNotNull { it.expectedDueDate }.distinct()
+    val confirmedMonth = confirmedDueDates.minOrNull()?.format(month)
+    val estimatedMonth = estimatedDueDates.minOrNull()?.format(month)
+
+    LifeOsCard(modifier = Modifier.fillMaxWidth(), accent = LifeOsColors.Primary) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1182,93 +1198,222 @@ private fun DuesFooterCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
-                    Text(
-                        "Upcoming card dues",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = LifeOsColors.OnSurfaceMuted,
-                    )
-                    if (nextDueDate != null) {
-                        Text(
-                            "Next: ${nextDueDate.format(dm)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = LifeOsColors.OnSurfaceMuted,
-                        )
-                    }
-                }
+                Text(
+                    "CREDIT CARD PAYMENTS",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LifeOsColors.Primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        totalDue.rupees(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = LifeOsColors.OnSurfaceMuted,
-                    )
                     if (expandable) {
-                        Spacer(Modifier.width(4.dp))
                         Icon(
                             if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = if (expanded) "Hide per-card dues" else "Show per-card dues",
+                            contentDescription = if (expanded) "Hide credit card cycles" else "Show credit card cycles",
                             tint = LifeOsColors.OnSurfaceMuted,
                             modifier = Modifier.size(20.dp),
                         )
                     }
                 }
             }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CycleSummaryTile(
+                    modifier = Modifier.weight(1f),
+                    label = "Already billed",
+                    amount = actualConfirmedTotal.rupees(),
+                    supporting = confirmedMonth?.let { "Due $it" } ?: "No bill due",
+                    emphasized = false,
+                )
+                CycleSummaryTile(
+                    modifier = Modifier.weight(1f),
+                    label = "Building now",
+                    amount = "~${estimatedTotal.rupees()}",
+                    supporting = estimatedMonth?.let { "Likely pay $it" } ?: "Awaiting cycle data",
+                    emphasized = true,
+                )
+            }
+
+            Text(
+                if (expectedEmiTotal > BigDecimal.ZERO) {
+                    "${postedTotal.rupees()} posted + about ${expectedEmiTotal.rupees()} in known EMIs"
+                } else {
+                    "${postedTotal.rupees()} posted across open card cycles"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = LifeOsColors.OnSurfaceMuted,
+            )
+
             if (expanded) {
-                Spacer(Modifier.height(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    cards.forEach { card ->
-                        Surface(
-                            modifier = Modifier.clickable { onOpenDetails(card.id) },
-                            shape = RoundedCornerShape(14.dp),
-                            color = LifeOsColors.SurfaceMuted,
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                val dueSoon = card.dueDate?.let {
-                                    !it.isBefore(LocalDate.now()) && !it.isAfter(LocalDate.now().plusDays(7))
-                                } ?: false
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        card.cardLabel + (card.cardLast4?.let { " ····$it" } ?: ""),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = LifeOsColors.OnBackground,
-                                        maxLines = 1,
-                                    )
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        listOfNotNull(
-                                            card.dueDate?.let { "Due ${it.format(dm)}" },
-                                            card.bank.uppercase(),
-                                        ).joinToString(" · "),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (dueSoon) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
-                                        fontWeight = if (dueSoon) FontWeight.SemiBold else null,
-                                        maxLines = 1,
-                                    )
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    (card.totalDue ?: BigDecimal.ZERO).rupees(),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = LifeOsColors.OnBackground,
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Icon(
-                                    Icons.Rounded.ChevronRight,
-                                    contentDescription = "Open ${card.cardLabel} statement",
-                                    tint = LifeOsColors.OnSurfaceMuted,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
+                if (confirmedCards.isNotEmpty()) {
+                    Text(
+                        "BILLS ALREADY GENERATED",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        confirmedCards.forEach { card ->
+                            ConfirmedCardDueRow(card, dm, onOpenDetails)
                         }
                     }
                 }
+                if (currentCycles.isNotEmpty()) {
+                    Text(
+                        "OPEN BILLING CYCLES",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        currentCycles.forEach { cycle ->
+                            OpenCardCycleRow(cycle, dm)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CycleSummaryTile(
+    modifier: Modifier,
+    label: String,
+    amount: String,
+    supporting: String,
+    emphasized: Boolean,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = if (emphasized) LifeOsColors.Primary.copy(alpha = 0.10f) else LifeOsColors.SurfaceMuted,
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+            Text(
+                amount,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (emphasized) LifeOsColors.Primary else LifeOsColors.OnBackground,
+            )
+            Text(supporting, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+        }
+    }
+}
+
+@Composable
+private fun ConfirmedCardDueRow(
+    card: CardStatement,
+    dm: DateTimeFormatter,
+    onOpenDetails: (Int) -> Unit,
+) {
+    val dueSoon = card.dueDate?.let {
+        !it.isBefore(LocalDate.now()) && !it.isAfter(LocalDate.now().plusDays(7))
+    } ?: false
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable { onOpenDetails(card.id) },
+        shape = RoundedCornerShape(14.dp),
+        color = LifeOsColors.SurfaceMuted,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    card.cardLabel + (card.cardLast4?.let { " ····$it" } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LifeOsColors.OnBackground,
+                    maxLines = 1,
+                )
+                Text(
+                    card.dueDate?.let { "Due ${it.format(dm)}" } ?: "Due date not listed",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (dueSoon) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                    fontWeight = if (dueSoon) FontWeight.SemiBold else null,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                (card.totalDue ?: BigDecimal.ZERO).rupees(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = LifeOsColors.OnBackground,
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = "Open ${card.cardLabel} statement",
+                tint = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OpenCardCycleRow(cycle: CurrentCardCycle, dm: DateTimeFormatter) {
+    val warning = cycle.confidence == "partial" || cycle.confidence == "unknown"
+    val amountDetail = if (cycle.expectedEmiTotal > BigDecimal.ZERO) {
+        "${cycle.postedTotal.rupees()} posted + ${cycle.expectedEmiTotal.rupees()} expected EMI"
+    } else {
+        "${cycle.postedTotal.rupees()} posted"
+    }
+    val timing = listOfNotNull(
+        "${cycle.cycleStart.format(dm)} to ${cycle.cycleEnd.format(dm)}",
+        cycle.expectedDueDate?.let { "pay around ${it.format(dm)}" },
+    ).joinToString(" · ")
+    val coverage = when (cycle.confidence) {
+        "high" -> "Alert coverage matched the last bill closely"
+        "medium" -> "Most last-cycle charges were captured"
+        "partial" -> "Partial alert coverage; final bill may be higher"
+        else -> "No prior alert-coverage check yet"
+    }
+
+    Surface(shape = RoundedCornerShape(14.dp), color = LifeOsColors.SurfaceMuted) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${cycle.cardLabel} ····${cycle.cardLast4}",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LifeOsColors.OnBackground,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "~${cycle.estimatedTotal.rupees()}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = LifeOsColors.Primary,
+                )
+            }
+            Text(amountDetail, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+            Text(timing, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+            Text(
+                coverage,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (warning) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+            )
+            if (cycle.unconvertedTransactionCount > 0) {
+                Text(
+                    "${cycle.unconvertedTransactionCount} foreign-currency alert(s) await statement conversion",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LifeOsColors.Warning,
+                )
             }
         }
     }

@@ -3,6 +3,7 @@ package com.lifeos.app.domain.repository
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
+import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.ChatAnswer
 import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.ChatStreamEvent
@@ -77,6 +78,9 @@ interface MoneyRepository {
 
     /** Cached per-card statement summaries. */
     fun observeStatements(months: Int): Flow<List<CardStatement>>
+
+    /** Cached server-calculated open billing cycles for every known credit card. */
+    fun observeCurrentCardCycles(): Flow<List<CurrentCardCycle>>
 
     /** Pull fresh transactions + statement summaries from the backend into the cache. */
     suspend fun refresh(transactionDays: Int = 90, statementMonths: Int = 7)

@@ -1,6 +1,7 @@
 package com.lifeos.app.data
 
 import com.lifeos.app.data.local.CardStatementEntity
+import com.lifeos.app.data.local.CurrentCardCycleEntity
 import com.lifeos.app.data.local.InsightEntity
 import com.lifeos.app.data.local.MoodEntity
 import com.lifeos.app.data.local.ScoreEntity
@@ -9,6 +10,7 @@ import com.lifeos.app.data.local.SynthesizedInsightEntity
 import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
+import com.lifeos.app.data.remote.dto.CurrentCardCycleDto
 import com.lifeos.app.data.remote.dto.CategorySpendDto
 import com.lifeos.app.data.remote.dto.ChatMessageDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
@@ -29,6 +31,7 @@ import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CardStatementItem
+import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.StatementBreakdownItem
 import com.lifeos.app.domain.model.CategorySpend
 import com.lifeos.app.domain.model.ChatTurn
@@ -191,6 +194,50 @@ fun CardStatementDetailsDto.toDomain() = CardStatementDetails(
     breakdown = breakdown.map {
         StatementBreakdownItem(it.key, it.label, BigDecimal(it.total), it.count)
     },
+)
+
+fun CurrentCardCycleDto.toEntity() = CurrentCardCycleEntity(
+    key = "${bank.lowercase()}:$cardLast4",
+    bank = bank,
+    cardLabel = cardLabel,
+    cardLast4 = cardLast4,
+    cycleStart = cycleStart,
+    cycleEnd = cycleEnd,
+    expectedStatementDate = expectedStatementDate,
+    expectedDueDate = expectedDueDate,
+    postedDebits = postedDebits,
+    postedCredits = postedCredits,
+    postedTotal = postedTotal,
+    expectedEmiTotal = expectedEmiTotal,
+    estimatedTotal = estimatedTotal,
+    expectedEmiCount = expectedEmis.size,
+    transactionCount = transactionCount,
+    lastTransactionDate = lastTransactionDate,
+    historicalCoverage = historicalCoverage,
+    confidence = confidence,
+    unconvertedTransactionCount = unconvertedTransactionCount,
+)
+
+fun CurrentCardCycleEntity.toDomain() = CurrentCardCycle(
+    key = key,
+    bank = bank,
+    cardLabel = cardLabel,
+    cardLast4 = cardLast4,
+    cycleStart = LocalDate.parse(cycleStart),
+    cycleEnd = LocalDate.parse(cycleEnd),
+    expectedStatementDate = expectedStatementDate?.let(LocalDate::parse),
+    expectedDueDate = expectedDueDate?.let(LocalDate::parse),
+    postedDebits = BigDecimal(postedDebits),
+    postedCredits = BigDecimal(postedCredits),
+    postedTotal = BigDecimal(postedTotal),
+    expectedEmiTotal = BigDecimal(expectedEmiTotal),
+    estimatedTotal = BigDecimal(estimatedTotal),
+    expectedEmiCount = expectedEmiCount,
+    transactionCount = transactionCount,
+    lastTransactionDate = lastTransactionDate?.let(LocalDate::parse),
+    historicalCoverage = historicalCoverage?.let(::BigDecimal),
+    confidence = confidence,
+    unconvertedTransactionCount = unconvertedTransactionCount,
 )
 
 // --- Money: analysis / trends (computed server-side; mapped directly, not cached) ---
