@@ -178,7 +178,7 @@ private fun StatementDetailsContent(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Transactions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "${details.items.size} items",
+                        "${details.items.size} ${if (details.items.size == 1) "item" else "items"}",
                         style = MaterialTheme.typography.labelMedium,
                         color = LifeOsColors.OnSurfaceMuted,
                     )

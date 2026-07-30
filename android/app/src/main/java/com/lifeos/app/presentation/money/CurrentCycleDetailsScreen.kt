@@ -216,7 +216,7 @@ private fun CurrentCycleDetailsContent(
                 ) {
                     Text("Transactions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "${details.transactions.size} items",
+                        details.transactions.size.itemCountLabel(),
                         style = MaterialTheme.typography.labelMedium,
                         color = LifeOsColors.OnSurfaceMuted,
                     )
@@ -488,6 +488,8 @@ private fun Transaction.displayDescription(): String =
 
 private fun String.prettyCategory(): String =
     replace('_', ' ').replaceFirstChar { it.uppercase() }
+
+private fun Int.itemCountLabel(): String = "$this ${if (this == 1) "item" else "items"}"
 
 private fun BigDecimal.rupees(): String {
     val plain = setScale(0, RoundingMode.HALF_UP).toPlainString()
