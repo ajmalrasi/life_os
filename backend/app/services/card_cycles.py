@@ -20,6 +20,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.account_identity import normalize_account
 from app.models.card_statement import CardStatement, CardStatementItem
 from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
@@ -61,6 +62,13 @@ def _account_matches(account: str | None, bank: str, last4: str) -> bool:
         return False
     digits = match.group(1)
     return digits.endswith(last4) or last4.endswith(digits)
+
+
+def _canonical_last4(bank: str, last4: str) -> str:
+    """Expand a known short statement suffix such as SBI ``70`` to ``1970``."""
+    normalized = normalize_account(f"{bank} Card ..{last4}") or ""
+    match = _TRAILING_DIGITS.search(normalized)
+    return match.group(1) if match else last4
 
 
 def _included_amount(transaction: Transaction) -> Decimal | None:
@@ -282,7 +290,7 @@ def current_card_cycles(db: Session, as_of: date | None = None) -> CurrentCardCy
             CurrentCardCycleOut(
                 bank=latest.bank,
                 card_label=latest.card_label,
-                card_last4=last4,
+                card_last4=_canonical_last4(latest.bank, last4),
                 cycle_start=cycle_start,
                 cycle_end=cycle_end,
                 expected_statement_date=statement_date,

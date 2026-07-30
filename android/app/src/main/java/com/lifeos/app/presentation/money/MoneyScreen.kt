@@ -137,6 +137,13 @@ private fun prettyCategory(category: String): String = when (category.lowercase(
     else -> category.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
+private fun compactCardLabel(label: String, last4: String): String {
+    val compact = label.replace(Regex("\\s+"), " ")
+        .replace(Regex("\\s+credit card$", RegexOption.IGNORE_CASE), "")
+        .trim()
+    return "$compact ····$last4"
+}
+
 private val EDITABLE_CATEGORIES = listOf(
     "internet", "utilities", "food", "groceries", "fuel", "travel", "shopping",
     "subscriptions", "entertainment", "medical", "education", "rent", "emi",
@@ -1386,7 +1393,7 @@ private fun OpenCardCycleRow(cycle: CurrentCardCycle, dm: DateTimeFormatter) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${cycle.cardLabel} ····${cycle.cardLast4}",
+                    compactCardLabel(cycle.cardLabel, cycle.cardLast4),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,

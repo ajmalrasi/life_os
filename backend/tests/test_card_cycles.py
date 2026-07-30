@@ -222,3 +222,27 @@ def test_current_cycles_endpoint_returns_empty_shape(client):
     assert response.status_code == 200
     assert response.json()["cycles"] == []
     assert response.json()["estimated_total"] == "0"
+
+
+def test_current_cycle_exposes_canonical_sbi_last_four(client):
+    with SessionLocal() as db:
+        statement = StatementRepository(db).add_statement(
+            ParsedStatement(
+                bank="sbi",
+                card_label="SBI Card",
+                card_last4="70",
+                statement_date=date(2026, 7, 24),
+                period_start=date(2026, 6, 25),
+                period_end=date(2026, 7, 24),
+                due_date=date(2026, 8, 13),
+                total_due=Decimal("100"),
+                min_due=Decimal("10"),
+                total_spend=Decimal("100"),
+            ),
+            "sbi-latest",
+        )
+        assert statement.id is not None
+        db.commit()
+        result = current_card_cycles(db, as_of=date(2026, 7, 30))
+
+    assert result.cycles[0].card_last4 == "1970"
