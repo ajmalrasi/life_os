@@ -177,3 +177,48 @@ def current_card_cycles(db: Session, as_of: date | None = None) -> CurrentCardCy
         net_cycle_total=current_spend_total - refund_total,
         cycles=cycles,
     )
+
+
+def current_card_cycle_details(
+    db: Session,
+    bank: str,
+    card_last4: str,
+    as_of: date | None = None,
+) -> tuple[CurrentCardCycleOut, list[Transaction]] | None:
+    """Return one exact cycle plus only the rows included in its totals."""
+    summary = current_card_cycles(db, as_of=as_of)
+    cycle = next(
+        (
+            item
+            for item in summary.cycles
+            if item.bank.casefold() == bank.casefold()
+            and (
+                item.card_last4.endswith(card_last4)
+                or card_last4.endswith(item.card_last4)
+            )
+        ),
+        None,
+    )
+    if cycle is None:
+        return None
+
+    rows = list(
+        db.execute(
+            select(Transaction)
+            .where(
+                Transaction.txn_date >= cycle.cycle_start,
+                Transaction.txn_date <= summary.as_of,
+                Transaction.source.in_(ExpenseRepository.LIVE_SOURCES),
+                Transaction.currency == "INR",
+                Transaction.direction.in_(("debit", "credit")),
+            )
+            .order_by(Transaction.txn_date.desc(), Transaction.id.desc())
+        ).scalars()
+    )
+    included = [
+        transaction
+        for transaction in rows
+        if _account_matches(transaction.account, cycle.bank, cycle.card_last4)
+        and _is_cycle_activity(transaction)
+    ]
+    return cycle, included

@@ -260,3 +260,8 @@ data class CurrentCardCycle(
     val lastTransactionDate: LocalDate?,
     val unconvertedTransactionCount: Int,
 )
+
+data class CurrentCardCycleDetails(
+    val cycle: CurrentCardCycle,
+    val transactions: List<Transaction>,
+)

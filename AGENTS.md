@@ -523,6 +523,15 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   cycle fields. The Room v12 APK was installed on Samsung `RZCX60SNHHE`; the
   collapsed exact total and all expanded per-card amounts, cycle ranges, billing
   dates, long HDFC labels, and canonical SBI `····1970` were visually verified.
+  **Interaction and detail pass (2026-07-30):** the two summary tiles now act as
+  selectors, so Money shows either generated bills or current cycles rather than
+  both lists at once. Both paths use the same compact clickable card-row design.
+  Every current-cycle row opens a dedicated page backed by
+  `GET /statements/cycles/current/{bank}/{card_last4}` with the exact cycle start,
+  billing end date, recorded spend, refunds/net, category breakdown, sortable
+  live transactions, and tap-to-expand descriptions. The generated-statement
+  path continues to open its existing statement breakdown page. No forecast or
+  unrecorded charge is introduced.
 
 ## 7. Open items / next steps
 

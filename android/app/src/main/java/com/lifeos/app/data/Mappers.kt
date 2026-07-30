@@ -11,6 +11,7 @@ import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
 import com.lifeos.app.data.remote.dto.CurrentCardCycleDto
+import com.lifeos.app.data.remote.dto.CurrentCardCycleDetailsDto
 import com.lifeos.app.data.remote.dto.CategorySpendDto
 import com.lifeos.app.data.remote.dto.ChatMessageDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
@@ -32,6 +33,7 @@ import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CardStatementItem
 import com.lifeos.app.domain.model.CurrentCardCycle
+import com.lifeos.app.domain.model.CurrentCardCycleDetails
 import com.lifeos.app.domain.model.StatementBreakdownItem
 import com.lifeos.app.domain.model.CategorySpend
 import com.lifeos.app.domain.model.ChatTurn
@@ -224,6 +226,11 @@ fun CurrentCardCycleEntity.toDomain() = CurrentCardCycle(
     transactionCount = transactionCount,
     lastTransactionDate = lastTransactionDate?.let(LocalDate::parse),
     unconvertedTransactionCount = unconvertedTransactionCount,
+)
+
+fun CurrentCardCycleDetailsDto.toDomain() = CurrentCardCycleDetails(
+    cycle = cycle.toEntity().toDomain(),
+    transactions = transactions.map { it.toDomain() },
 )
 
 // --- Money: analysis / trends (computed server-side; mapped directly, not cached) ---

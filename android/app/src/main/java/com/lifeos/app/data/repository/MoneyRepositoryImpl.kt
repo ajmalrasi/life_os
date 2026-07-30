@@ -12,6 +12,7 @@ import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CurrentCardCycle
+import com.lifeos.app.domain.model.CurrentCardCycleDetails
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.Transaction
@@ -40,6 +41,11 @@ class MoneyRepositoryImpl @Inject constructor(
 
     override fun observeCurrentCardCycles(): Flow<List<CurrentCardCycle>> =
         currentCardCycleDao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun currentCardCycleDetails(
+        bank: String,
+        cardLast4: String,
+    ): CurrentCardCycleDetails = api.currentCardCycleDetails(bank, cardLast4).toDomain()
 
     override suspend fun refresh(transactionDays: Int, statementMonths: Int) {
         val since = LocalDate.now().minusDays(transactionDays.toLong()).toString()

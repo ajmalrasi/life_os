@@ -327,3 +327,9 @@ data class CurrentCardCyclesDto(
     @SerialName("net_cycle_total") val netCycleTotal: String,
     val cycles: List<CurrentCardCycleDto> = emptyList(),
 )
+
+@Serializable
+data class CurrentCardCycleDetailsDto(
+    val cycle: CurrentCardCycleDto,
+    val transactions: List<TransactionDto> = emptyList(),
+)

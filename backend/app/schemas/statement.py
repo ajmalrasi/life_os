@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.expense import TransactionOut
+
 
 class CardStatementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -76,6 +78,11 @@ class CurrentCardCyclesOut(BaseModel):
     refund_total: Decimal
     net_cycle_total: Decimal
     cycles: list[CurrentCardCycleOut]
+
+
+class CurrentCardCycleDetailsOut(BaseModel):
+    cycle: CurrentCardCycleOut
+    transactions: list[TransactionOut]
 
 
 class StatementPaidUpdate(BaseModel):

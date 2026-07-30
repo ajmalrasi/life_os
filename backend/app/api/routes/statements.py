@@ -18,6 +18,7 @@ from app.schemas.statement import (
     CardStatementDetailsOut,
     CardStatementItemOut,
     CategorySpend,
+    CurrentCardCycleDetailsOut,
     CurrentCardCyclesOut,
     MonthTrend,
     SpendAnalysis,
@@ -26,7 +27,8 @@ from app.schemas.statement import (
     StatementPaidUpdate,
 )
 from app.services.gmail_client import GmailClient
-from app.services.card_cycles import current_card_cycles
+from app.schemas.expense import TransactionOut
+from app.services.card_cycles import current_card_cycle_details, current_card_cycles
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.statement_collector import StatementCollector
 from app.services.statement_details import statement_breakdown
@@ -182,6 +184,32 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
 def get_current_card_cycles(db: Session = Depends(get_db)) -> CurrentCardCyclesOut:
     """Exact recorded spend inside each card's active billing cycle."""
     return current_card_cycles(db)
+
+
+@router.get(
+    "/cycles/current/{bank}/{card_last4}",
+    response_model=CurrentCardCycleDetailsOut,
+)
+def get_current_card_cycle_details(
+    bank: str,
+    card_last4: str,
+    db: Session = Depends(get_db),
+) -> CurrentCardCycleDetailsOut:
+    """Recorded transactions and exact dates for one active card cycle."""
+    result = current_card_cycle_details(db, bank, card_last4)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Current card cycle not found")
+    cycle, transactions = result
+    categorize = build_categorizer(db)
+    rows: list[TransactionOut] = []
+    for transaction in transactions:
+        output = TransactionOut.model_validate(transaction)
+        output.spend_category = (
+            transaction.spend_category_override
+            or categorize(transaction.counterparty or "")
+        )
+        rows.append(output)
+    return CurrentCardCycleDetailsOut(cycle=cycle, transactions=rows)
 
 
 @router.get("/trends", response_model=SpendTrends)

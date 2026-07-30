@@ -5,8 +5,10 @@ import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CardStatementItemDto
 import com.lifeos.app.data.remote.dto.CurrentCardCycleDto
+import com.lifeos.app.data.remote.dto.CurrentCardCycleDetailsDto
 import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.StatementBreakdownItemDto
+import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toDto
 import com.lifeos.app.data.toEntity
@@ -108,5 +110,38 @@ class MappersTest {
         assertEquals(BigDecimal("1000.00"), domain.currentSpend)
         assertEquals(BigDecimal("100.00"), domain.refunds)
         assertEquals(BigDecimal("900.00"), domain.netCycleAmount)
+    }
+
+    @Test
+    fun `current cycle details preserve exact transaction breakdown`() {
+        val details = CurrentCardCycleDetailsDto(
+            cycle = CurrentCardCycleDto(
+                bank = "axis",
+                cardLabel = "Axis Flipkart VISA",
+                cardLast4 = "3068",
+                cycleStart = "2026-07-16",
+                cycleEnd = "2026-08-15",
+                currentSpend = "1000.00",
+                refunds = "100.00",
+                netCycleAmount = "900.00",
+                transactionCount = 2,
+            ),
+            transactions = listOf(
+                TransactionDto(
+                    id = 9,
+                    txnDate = "2026-07-20",
+                    amount = "1000.00",
+                    direction = "debit",
+                    counterparty = "STORE",
+                    spendCategory = "shopping",
+                    account = "Axis Card ..3068",
+                    source = "card_live",
+                )
+            ),
+        ).toDomain()
+
+        assertEquals(LocalDate.parse("2026-08-15"), details.cycle.cycleEnd)
+        assertEquals(BigDecimal("1000.00"), details.transactions.single().amount)
+        assertEquals("shopping", details.transactions.single().spendCategory)
     }
 }

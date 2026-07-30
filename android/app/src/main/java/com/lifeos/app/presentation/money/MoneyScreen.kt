@@ -31,8 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
@@ -214,10 +212,12 @@ private fun periodLabel(period: SpendPeriod, anchor: LocalDate, slice: PeriodSli
 }
 
 private data class CategoryTotal(val category: String, val total: BigDecimal, val count: Int)
+private enum class CardCycleView { BILLED, CURRENT }
 
 @Composable
 fun MoneyScreen(
     onOpenStatement: (Int) -> Unit = {},
+    onOpenCurrentCycle: (String, String) -> Unit = { _, _ -> },
     viewModel: MoneyViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -367,6 +367,7 @@ fun MoneyScreen(
                     confirmedCards = state.cardDues,
                     currentCycles = state.currentCardCycles,
                     onOpenDetails = onOpenStatement,
+                    onOpenCurrentCycle = onOpenCurrentCycle,
                 )
             }
         }
@@ -1176,9 +1177,9 @@ private fun CreditCardCyclesCard(
     confirmedCards: List<CardStatement>,
     currentCycles: List<CurrentCardCycle>,
     onOpenDetails: (Int) -> Unit,
+    onOpenCurrentCycle: (String, String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val expandable = confirmedCards.isNotEmpty() || currentCycles.isNotEmpty()
+    var selectedView by remember { mutableStateOf(CardCycleView.CURRENT) }
     val dm = DateTimeFormatter.ofPattern("dd MMM")
     val actualConfirmedTotal = if (confirmedTotal > BigDecimal.ZERO) confirmedTotal else {
         confirmedCards.fold(BigDecimal.ZERO) { total, card ->
@@ -1194,9 +1195,7 @@ private fun CreditCardCyclesCard(
     LifeOsCard(modifier = Modifier.fillMaxWidth(), accent = LifeOsColors.Primary) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .let { m -> if (expandable) m.clickable { expanded = !expanded } else m },
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1206,16 +1205,6 @@ private fun CreditCardCyclesCard(
                     color = LifeOsColors.Primary,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (expandable) {
-                        Icon(
-                            if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = if (expanded) "Hide credit card cycles" else "Show credit card cycles",
-                            tint = LifeOsColors.OnSurfaceMuted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
             }
 
             Row(
@@ -1227,29 +1216,21 @@ private fun CreditCardCyclesCard(
                     label = "Already billed",
                     amount = actualConfirmedTotal.rupees(),
                     supporting = nextConfirmedDue?.let { "Next due ${it.format(dm)}" } ?: "No bill due",
-                    emphasized = false,
+                    selected = selectedView == CardCycleView.BILLED,
+                    onClick = { selectedView = CardCycleView.BILLED },
                 )
                 CycleSummaryTile(
                     modifier = Modifier.weight(1f),
                     label = "Current cycle spend",
                     amount = currentSpendTotal.rupees(),
                     supporting = "Recorded through ${LocalDate.now().format(dm)}",
-                    emphasized = true,
+                    selected = selectedView == CardCycleView.CURRENT,
+                    onClick = { selectedView = CardCycleView.CURRENT },
                 )
             }
 
-            Text(
-                if (refundTotal > BigDecimal.ZERO) {
-                    "${currentSpendTotal.rupees()} recorded spend · ${refundTotal.rupees()} refunds"
-                } else {
-                    "${currentSpendTotal.rupees()} recorded across ${currentCycles.size} active card cycles"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = LifeOsColors.OnSurfaceMuted,
-            )
-
-            if (expanded) {
-                if (confirmedCards.isNotEmpty()) {
+            when (selectedView) {
+                CardCycleView.BILLED -> {
                     Text(
                         "BILLS ALREADY GENERATED",
                         style = MaterialTheme.typography.labelSmall,
@@ -1262,7 +1243,7 @@ private fun CreditCardCyclesCard(
                         }
                     }
                 }
-                if (currentCycles.isNotEmpty()) {
+                CardCycleView.CURRENT -> {
                     Text(
                         "CURRENT BILLING CYCLES",
                         style = MaterialTheme.typography.labelSmall,
@@ -1271,9 +1252,18 @@ private fun CreditCardCyclesCard(
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         currentCycles.forEach { cycle ->
-                            OpenCardCycleRow(cycle, dm)
+                            CurrentCardCycleRow(cycle, dm, onOpenCurrentCycle)
                         }
                     }
+                    Text(
+                        if (refundTotal > BigDecimal.ZERO) {
+                            "${currentSpendTotal.rupees()} recorded spend · ${refundTotal.rupees()} refunds"
+                        } else {
+                            "${currentSpendTotal.rupees()} recorded across ${currentCycles.size} active card cycles"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
                 }
             }
         }
@@ -1286,12 +1276,13 @@ private fun CycleSummaryTile(
     label: String,
     amount: String,
     supporting: String,
-    emphasized: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        color = if (emphasized) LifeOsColors.Primary.copy(alpha = 0.10f) else LifeOsColors.SurfaceMuted,
+        color = if (selected) LifeOsColors.Primary.copy(alpha = 0.12f) else LifeOsColors.SurfaceMuted,
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
@@ -1299,7 +1290,7 @@ private fun CycleSummaryTile(
                 amount,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (emphasized) LifeOsColors.Primary else LifeOsColors.OnBackground,
+                color = if (selected) LifeOsColors.Primary else LifeOsColors.OnBackground,
             )
             Text(supporting, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
         }
@@ -1359,58 +1350,52 @@ private fun ConfirmedCardDueRow(
 }
 
 @Composable
-private fun OpenCardCycleRow(cycle: CurrentCardCycle, dm: DateTimeFormatter) {
-    val amountDetail = if (cycle.refunds > BigDecimal.ZERO) {
-        "${cycle.currentSpend.rupees()} spend · ${cycle.refunds.rupees()} refunds · ${cycle.netCycleAmount.rupees()} net"
-    } else {
-        "${cycle.transactionCount} recorded transaction${if (cycle.transactionCount == 1) "" else "s"}"
-    }
-
-    Surface(shape = RoundedCornerShape(14.dp), color = LifeOsColors.SurfaceMuted) {
-        Column(
+private fun CurrentCardCycleRow(
+    cycle: CurrentCardCycle,
+    dm: DateTimeFormatter,
+    onOpenDetails: (String, String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable {
+            onOpenDetails(cycle.bank, cycle.cardLast4)
+        },
+        shape = RoundedCornerShape(14.dp),
+        color = LifeOsColors.SurfaceMuted,
+    ) {
+        Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     compactCardLabel(cycle.cardLabel, cycle.cardLast4),
-                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = LifeOsColors.OnBackground,
                     maxLines = 1,
                 )
-                Spacer(Modifier.width(10.dp))
                 Text(
-                    cycle.currentSpend.rupees(),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = LifeOsColors.Primary,
-                )
-            }
-            Text(amountDetail, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
-            Text(
-                "Billing cycle: ${cycle.cycleStart.format(dm)} to ${cycle.cycleEnd.format(dm)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = LifeOsColors.OnSurfaceMuted,
-            )
-            Text(
-                "Billing date: ${cycle.cycleEnd.format(dm)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = LifeOsColors.OnSurfaceMuted,
-                fontWeight = FontWeight.SemiBold,
-            )
-            if (cycle.unconvertedTransactionCount > 0) {
-                Text(
-                    "${cycle.unconvertedTransactionCount} foreign-currency alert(s) shown separately from INR spend",
+                    "Cycle ${cycle.cycleStart.format(dm)} to ${cycle.cycleEnd.format(dm)} · Bills ${cycle.cycleEnd.format(dm)}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = LifeOsColors.Warning,
+                    color = LifeOsColors.OnSurfaceMuted,
+                    maxLines = 1,
                 )
             }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                cycle.currentSpend.rupees(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = LifeOsColors.OnBackground,
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = "Open ${cycle.cardLabel} current cycle",
+                tint = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

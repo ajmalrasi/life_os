@@ -122,6 +122,13 @@ def test_current_cycle_sums_only_recorded_spend_and_refunds(client):
     assert cycle.transaction_count == 2
     assert cycle.last_transaction_date == date(2026, 7, 21)
 
+    details = client.get("/statements/cycles/current/axis/3068")
+    assert details.status_code == 200
+    body = details.json()
+    assert body["cycle"]["cycle_end"] == "2026-08-15"
+    assert [row["amount"] for row in body["transactions"]] == ["100.00", "1000.00"]
+    assert all(row["spend_category"] for row in body["transactions"])
+
 
 def test_cycle_cadence_preserves_exact_month_end(client):
     with SessionLocal() as db:
@@ -159,6 +166,7 @@ def test_current_cycles_endpoint_returns_empty_shape(client):
     assert response.status_code == 200
     assert response.json()["cycles"] == []
     assert response.json()["current_spend_total"] == "0"
+    assert client.get("/statements/cycles/current/axis/3068").status_code == 404
 
 
 def test_current_cycle_exposes_canonical_sbi_last_four(client):

@@ -51,6 +51,7 @@ import androidx.navigation.navArgument
 import com.lifeos.app.presentation.chat.ChatScreen
 import com.lifeos.app.presentation.dashboard.DashboardScreen
 import com.lifeos.app.presentation.insights.InsightsScreen
+import com.lifeos.app.presentation.money.CurrentCycleDetailsScreen
 import com.lifeos.app.presentation.money.MoneyScreen
 import com.lifeos.app.presentation.money.StatementDetailsScreen
 import com.lifeos.app.presentation.mood.MoodScreen
@@ -68,6 +69,7 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
 
 private val primaryDestinations = Destination.entries.filter { it != Destination.SETTINGS }
 private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
+private const val CURRENT_CYCLE_DETAILS_ROUTE = "cycle/{bank}/{cardLast4}"
 
 @Composable
 fun LifeOsApp(startTab: String? = null) {
@@ -91,7 +93,9 @@ fun LifeOsApp(startTab: String? = null) {
         containerColor = LifeOsColors.Background,
         bottomBar = {
             val secondaryScreenOpen = current?.hierarchy?.any {
-                it.route == Destination.SETTINGS.route || it.route == STATEMENT_DETAILS_ROUTE
+                it.route == Destination.SETTINGS.route ||
+                    it.route == STATEMENT_DETAILS_ROUTE ||
+                    it.route == CURRENT_CYCLE_DETAILS_ROUTE
             } == true
             if (!secondaryScreenOpen) {
                 LifeOsBottomNavigation(
@@ -117,7 +121,12 @@ fun LifeOsApp(startTab: String? = null) {
             }
             composable(Destination.MOOD.route) { MoodScreen() }
             composable(Destination.MONEY.route) {
-                MoneyScreen(onOpenStatement = { id -> navController.navigate("statement/$id") })
+                MoneyScreen(
+                    onOpenStatement = { id -> navController.navigate("statement/$id") },
+                    onOpenCurrentCycle = { bank, cardLast4 ->
+                        navController.navigate("cycle/$bank/$cardLast4")
+                    },
+                )
             }
             composable(Destination.INSIGHTS.route) { InsightsScreen() }
             composable(Destination.CHAT.route) { ChatScreen() }
@@ -129,6 +138,15 @@ fun LifeOsApp(startTab: String? = null) {
                 arguments = listOf(navArgument("statementId") { type = NavType.IntType }),
             ) {
                 StatementDetailsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = CURRENT_CYCLE_DETAILS_ROUTE,
+                arguments = listOf(
+                    navArgument("bank") { type = NavType.StringType },
+                    navArgument("cardLast4") { type = NavType.StringType },
+                ),
+            ) {
+                CurrentCycleDetailsScreen(onBack = { navController.popBackStack() })
             }
         }
     }
