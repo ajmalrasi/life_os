@@ -1180,21 +1180,16 @@ private fun CreditCardCyclesCard(
     var expanded by remember { mutableStateOf(false) }
     val expandable = confirmedCards.isNotEmpty() || currentCycles.isNotEmpty()
     val dm = DateTimeFormatter.ofPattern("dd MMM")
-    val month = DateTimeFormatter.ofPattern("MMM")
     val actualConfirmedTotal = if (confirmedTotal > BigDecimal.ZERO) confirmedTotal else {
         confirmedCards.fold(BigDecimal.ZERO) { total, card ->
             total + (card.totalDue ?: BigDecimal.ZERO)
         }
     }
-    val postedTotal = currentCycles.fold(BigDecimal.ZERO) { total, cycle -> total + cycle.postedTotal }
-    val expectedEmiTotal = currentCycles.fold(BigDecimal.ZERO) { total, cycle ->
-        total + cycle.expectedEmiTotal
+    val currentSpendTotal = currentCycles.fold(BigDecimal.ZERO) { total, cycle ->
+        total + cycle.currentSpend
     }
-    val estimatedTotal = postedTotal + expectedEmiTotal
-    val confirmedDueDates = confirmedCards.mapNotNull { it.dueDate }.distinct()
-    val estimatedDueDates = currentCycles.mapNotNull { it.expectedDueDate }.distinct()
-    val confirmedMonth = confirmedDueDates.minOrNull()?.format(month)
-    val estimatedMonth = estimatedDueDates.minOrNull()?.format(month)
+    val refundTotal = currentCycles.fold(BigDecimal.ZERO) { total, cycle -> total + cycle.refunds }
+    val nextConfirmedDue = confirmedCards.mapNotNull { it.dueDate }.minOrNull()
 
     LifeOsCard(modifier = Modifier.fillMaxWidth(), accent = LifeOsColors.Primary) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1206,7 +1201,7 @@ private fun CreditCardCyclesCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "CREDIT CARD PAYMENTS",
+                    "CREDIT CARD CYCLES",
                     style = MaterialTheme.typography.labelMedium,
                     color = LifeOsColors.Primary,
                     fontWeight = FontWeight.SemiBold,
@@ -1231,23 +1226,23 @@ private fun CreditCardCyclesCard(
                     modifier = Modifier.weight(1f),
                     label = "Already billed",
                     amount = actualConfirmedTotal.rupees(),
-                    supporting = confirmedMonth?.let { "Due $it" } ?: "No bill due",
+                    supporting = nextConfirmedDue?.let { "Next due ${it.format(dm)}" } ?: "No bill due",
                     emphasized = false,
                 )
                 CycleSummaryTile(
                     modifier = Modifier.weight(1f),
-                    label = "Building now",
-                    amount = "~${estimatedTotal.rupees()}",
-                    supporting = estimatedMonth?.let { "Likely pay $it" } ?: "Awaiting cycle data",
+                    label = "Current cycle spend",
+                    amount = currentSpendTotal.rupees(),
+                    supporting = "Recorded through ${LocalDate.now().format(dm)}",
                     emphasized = true,
                 )
             }
 
             Text(
-                if (expectedEmiTotal > BigDecimal.ZERO) {
-                    "${postedTotal.rupees()} posted + about ${expectedEmiTotal.rupees()} in known EMIs"
+                if (refundTotal > BigDecimal.ZERO) {
+                    "${currentSpendTotal.rupees()} recorded spend · ${refundTotal.rupees()} refunds"
                 } else {
-                    "${postedTotal.rupees()} posted across open card cycles"
+                    "${currentSpendTotal.rupees()} recorded across ${currentCycles.size} active card cycles"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = LifeOsColors.OnSurfaceMuted,
@@ -1269,7 +1264,7 @@ private fun CreditCardCyclesCard(
                 }
                 if (currentCycles.isNotEmpty()) {
                     Text(
-                        "OPEN BILLING CYCLES",
+                        "CURRENT BILLING CYCLES",
                         style = MaterialTheme.typography.labelSmall,
                         color = LifeOsColors.OnSurfaceMuted,
                         fontWeight = FontWeight.SemiBold,
@@ -1365,21 +1360,10 @@ private fun ConfirmedCardDueRow(
 
 @Composable
 private fun OpenCardCycleRow(cycle: CurrentCardCycle, dm: DateTimeFormatter) {
-    val warning = cycle.confidence == "partial" || cycle.confidence == "unknown"
-    val amountDetail = if (cycle.expectedEmiTotal > BigDecimal.ZERO) {
-        "${cycle.postedTotal.rupees()} posted + ${cycle.expectedEmiTotal.rupees()} expected EMI"
+    val amountDetail = if (cycle.refunds > BigDecimal.ZERO) {
+        "${cycle.currentSpend.rupees()} spend · ${cycle.refunds.rupees()} refunds · ${cycle.netCycleAmount.rupees()} net"
     } else {
-        "${cycle.postedTotal.rupees()} posted"
-    }
-    val timing = listOfNotNull(
-        "${cycle.cycleStart.format(dm)} to ${cycle.cycleEnd.format(dm)}",
-        cycle.expectedDueDate?.let { "pay around ${it.format(dm)}" },
-    ).joinToString(" · ")
-    val coverage = when (cycle.confidence) {
-        "high" -> "Alert coverage matched the last bill closely"
-        "medium" -> "Most last-cycle charges were captured"
-        "partial" -> "Partial alert coverage; final bill may be higher"
-        else -> "No prior alert-coverage check yet"
+        "${cycle.transactionCount} recorded transaction${if (cycle.transactionCount == 1) "" else "s"}"
     }
 
     Surface(shape = RoundedCornerShape(14.dp), color = LifeOsColors.SurfaceMuted) {
@@ -1402,22 +1386,27 @@ private fun OpenCardCycleRow(cycle: CurrentCardCycle, dm: DateTimeFormatter) {
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "~${cycle.estimatedTotal.rupees()}",
+                    cycle.currentSpend.rupees(),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = LifeOsColors.Primary,
                 )
             }
             Text(amountDetail, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
-            Text(timing, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
             Text(
-                coverage,
+                "Billing cycle: ${cycle.cycleStart.format(dm)} to ${cycle.cycleEnd.format(dm)}",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (warning) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                color = LifeOsColors.OnSurfaceMuted,
+            )
+            Text(
+                "Billing date: ${cycle.cycleEnd.format(dm)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = LifeOsColors.OnSurfaceMuted,
+                fontWeight = FontWeight.SemiBold,
             )
             if (cycle.unconvertedTransactionCount > 0) {
                 Text(
-                    "${cycle.unconvertedTransactionCount} foreign-currency alert(s) await statement conversion",
+                    "${cycle.unconvertedTransactionCount} foreign-currency alert(s) shown separately from INR spend",
                     style = MaterialTheme.typography.labelSmall,
                     color = LifeOsColors.Warning,
                 )

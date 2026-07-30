@@ -5,7 +5,6 @@ import com.lifeos.app.data.remote.dto.CardStatementDetailsDto
 import com.lifeos.app.data.remote.dto.CardStatementDto
 import com.lifeos.app.data.remote.dto.CardStatementItemDto
 import com.lifeos.app.data.remote.dto.CurrentCardCycleDto
-import com.lifeos.app.data.remote.dto.ExpectedEmiDto
 import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.StatementBreakdownItemDto
 import com.lifeos.app.data.toDomain
@@ -94,28 +93,20 @@ class MappersTest {
             cardLast4 = "3068",
             cycleStart = "2026-07-16",
             cycleEnd = "2026-08-15",
-            expectedStatementDate = "2026-08-15",
-            expectedDueDate = "2026-09-04",
-            postedDebits = "1000.00",
-            postedCredits = "100.00",
-            postedTotal = "900.00",
-            expectedEmiTotal = "24229.98",
-            estimatedTotal = "25129.98",
-            expectedEmis = listOf(ExpectedEmiDto("73084373", 3, 3, "9971.62")),
+            currentSpend = "1000.00",
+            refunds = "100.00",
+            netCycleAmount = "900.00",
             transactionCount = 2,
             lastTransactionDate = "2026-07-21",
-            historicalCoverage = "0.20",
-            confidence = "partial",
         )
 
         val domain = dto.toEntity().toDomain()
 
         assertEquals("axis:3068", domain.key)
         assertEquals(LocalDate.parse("2026-07-16"), domain.cycleStart)
-        assertEquals(LocalDate.parse("2026-09-04"), domain.expectedDueDate)
-        assertEquals(BigDecimal("900.00"), domain.postedTotal)
-        assertEquals(BigDecimal("25129.98"), domain.estimatedTotal)
-        assertEquals(1, domain.expectedEmiCount)
-        assertEquals("partial", domain.confidence)
+        assertEquals(LocalDate.parse("2026-08-15"), domain.cycleEnd)
+        assertEquals(BigDecimal("1000.00"), domain.currentSpend)
+        assertEquals(BigDecimal("100.00"), domain.refunds)
+        assertEquals(BigDecimal("900.00"), domain.netCycleAmount)
     }
 }

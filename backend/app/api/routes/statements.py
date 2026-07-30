@@ -180,7 +180,7 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
 
 @router.get("/cycles/current", response_model=CurrentCardCyclesOut)
 def get_current_card_cycles(db: Session = Depends(get_db)) -> CurrentCardCyclesOut:
-    """Open per-card billing cycles, estimated before the next PDFs exist."""
+    """Exact recorded spend inside each card's active billing cycle."""
     return current_card_cycles(db)
 
 

@@ -9,7 +9,7 @@ import androidx.room.RoomDatabase
         SynthesizedInsightEntity::class, TransactionEntity::class, CardStatementEntity::class,
         CurrentCardCycleEntity::class,
     ],
-    version = 11, // v11: cache server-calculated open credit-card cycles
+    version = 12, // v12: exact tracked card-cycle spend; no forecasts
     exportSchema = false,
 )
 abstract class LifeOsDatabase : RoomDatabase() {

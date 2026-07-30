@@ -305,40 +305,25 @@ data class SpendAnalysisDto(
 )
 
 @Serializable
-data class ExpectedEmiDto(
-    val reference: String,
-    @SerialName("next_installment") val nextInstallment: Int,
-    @SerialName("total_installments") val totalInstallments: Int,
-    @SerialName("estimated_amount") val estimatedAmount: String,
-)
-
-@Serializable
 data class CurrentCardCycleDto(
     val bank: String,
     @SerialName("card_label") val cardLabel: String,
     @SerialName("card_last4") val cardLast4: String,
     @SerialName("cycle_start") val cycleStart: String,
     @SerialName("cycle_end") val cycleEnd: String,
-    @SerialName("expected_statement_date") val expectedStatementDate: String? = null,
-    @SerialName("expected_due_date") val expectedDueDate: String? = null,
-    @SerialName("posted_debits") val postedDebits: String,
-    @SerialName("posted_credits") val postedCredits: String,
-    @SerialName("posted_total") val postedTotal: String,
-    @SerialName("expected_emi_total") val expectedEmiTotal: String,
-    @SerialName("estimated_total") val estimatedTotal: String,
-    @SerialName("expected_emis") val expectedEmis: List<ExpectedEmiDto> = emptyList(),
+    @SerialName("current_spend") val currentSpend: String,
+    val refunds: String,
+    @SerialName("net_cycle_amount") val netCycleAmount: String,
     @SerialName("transaction_count") val transactionCount: Int,
     @SerialName("last_transaction_date") val lastTransactionDate: String? = null,
-    @SerialName("historical_coverage") val historicalCoverage: String? = null,
-    val confidence: String,
     @SerialName("unconverted_transaction_count") val unconvertedTransactionCount: Int = 0,
 )
 
 @Serializable
 data class CurrentCardCyclesDto(
     @SerialName("as_of") val asOf: String,
-    @SerialName("posted_total") val postedTotal: String,
-    @SerialName("expected_emi_total") val expectedEmiTotal: String,
-    @SerialName("estimated_total") val estimatedTotal: String,
+    @SerialName("current_spend_total") val currentSpendTotal: String,
+    @SerialName("refund_total") val refundTotal: String,
+    @SerialName("net_cycle_total") val netCycleTotal: String,
     val cycles: List<CurrentCardCycleDto> = emptyList(),
 )

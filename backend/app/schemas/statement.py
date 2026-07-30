@@ -56,39 +56,25 @@ class CardStatementDetailsOut(BaseModel):
     breakdown: list[StatementBreakdownItem]
 
 
-class ExpectedEmiOut(BaseModel):
-    reference: str
-    next_installment: int
-    total_installments: int
-    estimated_amount: Decimal
-
-
 class CurrentCardCycleOut(BaseModel):
     bank: str
     card_label: str
     card_last4: str
     cycle_start: date
     cycle_end: date
-    expected_statement_date: date | None
-    expected_due_date: date | None
-    posted_debits: Decimal
-    posted_credits: Decimal
-    posted_total: Decimal
-    expected_emi_total: Decimal
-    estimated_total: Decimal
-    expected_emis: list[ExpectedEmiOut]
+    current_spend: Decimal
+    refunds: Decimal
+    net_cycle_amount: Decimal
     transaction_count: int
     last_transaction_date: date | None
-    historical_coverage: Decimal | None
-    confidence: str
     unconverted_transaction_count: int = 0
 
 
 class CurrentCardCyclesOut(BaseModel):
     as_of: date
-    posted_total: Decimal
-    expected_emi_total: Decimal
-    estimated_total: Decimal
+    current_spend_total: Decimal
+    refund_total: Decimal
+    net_cycle_total: Decimal
     cycles: list[CurrentCardCycleOut]
 
 
