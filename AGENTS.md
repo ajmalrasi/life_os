@@ -516,7 +516,13 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   calendar spend remains unchanged. Backend requires no schema migration.
   Backend full suite and Android `assembleDebug` + unit tests pass. The exact
   production open-cycle spend at implementation time is ₹26,974.65, while
-  generated August bills total ₹64,397.79.
+  generated August bills total ₹64,397.79. **Corrected, deployed, and installed
+  2026-07-30 (commit `8a3f0fd`):** the earlier forecasting implementation was
+  removed at the user's request. Jetson production output now contains only
+  `current_spend_total`, `refund_total`, `net_cycle_total`, and exact per-card
+  cycle fields. The Room v12 APK was installed on Samsung `RZCX60SNHHE`; the
+  collapsed exact total and all expanded per-card amounts, cycle ranges, billing
+  dates, long HDFC labels, and canonical SBI `····1970` were visually verified.
 
 ## 7. Open items / next steps
 
