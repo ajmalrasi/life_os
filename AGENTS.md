@@ -516,7 +516,14 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   **Building now** (per-card open-cycle estimates and explicit partial-coverage
   warnings). The former bottom-only dues footer was folded into this panel;
   calendar spend remains unchanged. Backend requires no schema migration.
-  Backend full suite and Android `assembleDebug` + unit tests pass.
+  Backend full suite and Android `assembleDebug` + unit tests pass. **Deployed
+  and installed 2026-07-30:** commits `bbf0eb4` + `a3c238c` are on `main`; the
+  Jetson API is healthy and its production response is ₹26,974.65 posted +
+  ₹24,229.98 expected EMI = ~₹51,204.63 building, while generated August bills
+  total ₹64,397.79. Room v11 APK installed successfully on Samsung
+  `RZCX60SNHHE`; collapsed summary, expanded generated-bill rows, all eight open
+  cycle rows, HDFC last-four visibility, warning colors, and canonical SBI
+  `····1970` were visually verified on the real device.
 
 ## 7. Open items / next steps
 
