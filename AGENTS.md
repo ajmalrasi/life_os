@@ -557,7 +557,10 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   cash-outflow view. This filter is intentionally presentation-only: statements,
   card cycles, stored transactions, and Ask remain complete. The ₹65,632 August
   EMI is a real 2026-08-03 live HDFC Savings UPI mandate to Poonawalla Fincorp
-  (`transactions.id=1410`, override `emi`), not a statement duplicate.
+  (`transactions.id=1410`, override `emi`), not a statement duplicate. Agoda's
+  Razorpay handle ends `@mairtel`; the subscription rule now requires a true
+  `airtel` word boundary so Agoda correctly resolves to `travel` instead of a
+  false Airtel subscription.
 
 ## 7. Open items / next steps
 

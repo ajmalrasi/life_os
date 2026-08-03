@@ -78,6 +78,12 @@ def test_emi_precedes_shopping_merchant_keywords(client):
     assert categorize("ORDINARY DEPT STORE PURCHASE") == "shopping"
 
 
+def test_agoda_gateway_handle_is_travel_not_airtel_subscription(client):
+    with SessionLocal() as db:
+        categorize = build_categorizer(db)
+    assert categorize("agodacompanypteltdwxk.rzp@mairtel") == "travel"
+
+
 def test_priority_orders_rules(client):
     _add_label(pattern="rasi", category="broad", match_type="substring", priority=200)
     _add_label(pattern="ajmal rasi", category="specific", match_type="substring", priority=10)

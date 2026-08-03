@@ -47,7 +47,7 @@ _CATEGORY_RULES: list[tuple[str, re.Pattern]] = [
     ("food", re.compile(r"zomato|swiggy|kfc|restaurant|cafe|hotel|bakery|kitchen|chicking|food", re.I)),
     ("groceries", re.compile(r"grocery|hypermarket|supermarket|mart|fresh|traders", re.I)),
     ("shopping", re.compile(r"flipkart|myntra|amazon|decathlon|snitch|store", re.I)),
-    ("subscriptions", re.compile(r"anthropic|cursor|apple|youtube|google|netflix|zee|spotify|adobe|prime|jio|airtel", re.I)),
+    ("subscriptions", re.compile(r"anthropic|cursor|apple|youtube|google|netflix|zee|spotify|adobe|prime|jio|\bairtel\b", re.I)),
     ("investments", re.compile(r"zerodha|broking|groww|smallcase|mutual\s*fund", re.I)),
     ("entertainment", re.compile(r"bookmyshow|cinema|pvr|inox|movie", re.I)),
     ("emi_fees", re.compile(r"gst|igst|fee|interest|surcharge|markup", re.I)),
