@@ -1089,7 +1089,10 @@ private fun TransactionDetailDialog(
         },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = onEditCategory) { Text("Edit category") }
+                Row {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = onEditCategory) { Text("Edit category") }
+                }
                 if (transaction.direction == "debit") {
                     Row {
                         TextButton(onClick = onMarkAsRefunded) { Text("Mark refunded") }
@@ -1097,9 +1100,6 @@ private fun TransactionDetailDialog(
                     }
                 }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }
