@@ -58,6 +58,20 @@ Pass `null` to clear the override and return to payee-label/keyword categorizati
 This never changes the separate reconciliation `category`, so excluded transfers,
 reversals, and repayments remain excluded.
 
+### Repayments and merchant refunds
+
+- `GET /expenses/{id}/repayment-candidates` ranks later, exact-amount credits
+  that may return a debit.
+- `POST /expenses/repayments` pairs a confirmed debit and credit; both remain
+  stored but stop affecting totals. `DELETE /expenses/repayments/{id}` undoes it.
+- `POST /expenses/refunds` with `{"debit_transaction_id":123}` handles a
+  merchant refund when no incoming credit alert reached LifeOS. It preserves
+  the debit, records an audited `merchant_refund` adjustment, and excludes the
+  purchase from spend. `DELETE /expenses/refunds/{id}` restores its prior state.
+
+Manual decisions are retained during Gmail rebuilds, including their source
+transactions, so an idempotent reparse cannot erase user-confirmed accounting.
+
 ### `POST /expenses/sync`
 Read only *new* emails (since the stored cursor), parse, upsert, and return the
 rows added **this run**. Idempotent — a repeat call with no new mail returns

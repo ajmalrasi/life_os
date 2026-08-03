@@ -20,6 +20,8 @@ from app.schemas.expense import (
     RepaymentCandidateOut,
     RepaymentCreate,
     RepaymentOut,
+    RefundCreate,
+    RefundOut,
 )
 from app.services.expense_collector import ExpenseCollector
 from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankParser
@@ -27,6 +29,7 @@ from app.services.gmail_client import GmailClient
 from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.repayments import RepaymentError, RepaymentService
+from app.services.refunds import RefundError, RefundService
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -72,6 +75,22 @@ def _repayment_out(reconciliation, db: Session) -> RepaymentOut:
 
 
 def _repayment_http_error(exc: RepaymentError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
+def _refund_out(adjustment, db: Session) -> RefundOut:
+    debit = RefundService(db).transaction_for(adjustment)
+    return RefundOut(
+        id=adjustment.id,
+        kind=adjustment.kind,
+        source=adjustment.source,
+        debit=_to_out([debit], db)[0],
+        created_at=adjustment.created_at,
+        undone_at=adjustment.undone_at,
+    )
+
+
+def _refund_http_error(exc: RefundError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
@@ -158,6 +177,28 @@ def undo_repayment(repayment_id: int, db: Session = Depends(get_db)) -> Repaymen
         db.rollback()
         raise _repayment_http_error(exc) from exc
     return _repayment_out(reconciliation, db)
+
+
+@router.post("/refunds", response_model=RefundOut, status_code=201)
+def create_refund(payload: RefundCreate, db: Session = Depends(get_db)) -> RefundOut:
+    """Manually exclude a merchant debit whose refund has no ingested credit alert."""
+    try:
+        adjustment = RefundService(db).create(payload.debit_transaction_id)
+    except RefundError as exc:
+        db.rollback()
+        raise _refund_http_error(exc) from exc
+    return _refund_out(adjustment, db)
+
+
+@router.delete("/refunds/{refund_id}", response_model=RefundOut)
+def undo_refund(refund_id: int, db: Session = Depends(get_db)) -> RefundOut:
+    """Restore a manually refunded debit to its previous spend classification."""
+    try:
+        adjustment = RefundService(db).undo(refund_id)
+    except RefundError as exc:
+        db.rollback()
+        raise _refund_http_error(exc) from exc
+    return _refund_out(adjustment, db)
 
 
 @router.post("/sync", response_model=ExpenseSyncResult)

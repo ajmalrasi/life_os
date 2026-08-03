@@ -17,6 +17,7 @@ from app.models.raw_bank_email import RawBankEmail
 from app.models.sync_state import CollectorState
 from app.models.synthesized_insight import SynthesizedInsight
 from app.models.transaction import Transaction
+from app.models.transaction_adjustment import TransactionAdjustment
 from app.models.transaction_reconciliation import TransactionReconciliation
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "Insight",
     "SynthesizedInsight",
     "Transaction",
+    "TransactionAdjustment",
     "TransactionReconciliation",
     "CollectorState",
     "PayeeLabel",

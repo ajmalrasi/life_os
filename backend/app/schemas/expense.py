@@ -66,6 +66,19 @@ class RepaymentOut(BaseModel):
     undone_at: datetime | None = None
 
 
+class RefundCreate(BaseModel):
+    debit_transaction_id: int
+
+
+class RefundOut(BaseModel):
+    id: int
+    kind: str
+    source: str
+    debit: TransactionOut
+    created_at: datetime
+    undone_at: datetime | None = None
+
+
 class ExpenseSyncResult(BaseModel):
     parsers_run: int
     emails_scanned: int

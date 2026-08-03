@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.account_identity import normalize_account
 from app.models.sync_state import CollectorState
 from app.models.transaction import Transaction
+from app.models.transaction_adjustment import TransactionAdjustment
 from app.models.transaction_reconciliation import TransactionReconciliation
 from app.services.expense_parsers.base import ParsedTxn
 
@@ -222,6 +223,8 @@ class ExpenseRepository:
             select(TransactionReconciliation.credit_transaction_id)
         )
         conditions.append(Transaction.id.notin_(linked_ids))
+        adjusted_ids = select(TransactionAdjustment.transaction_id)
+        conditions.append(Transaction.id.notin_(adjusted_ids))
         result = self.db.execute(delete(Transaction).where(*conditions))
         return result.rowcount or 0
 

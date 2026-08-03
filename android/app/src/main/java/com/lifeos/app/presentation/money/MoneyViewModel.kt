@@ -7,6 +7,7 @@ import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
+import com.lifeos.app.domain.model.Refund
 import com.lifeos.app.domain.repository.MoneyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,8 @@ import javax.inject.Inject
 
 /** How the spend view is bucketed. All are always selectable. */
 enum class SpendPeriod { DAY, WEEK, MONTH, SIX_MONTHS, YEAR, CUSTOM }
+
+internal val EMI_SPEND_CATEGORIES = setOf("emi", "emi_fees")
 
 data class MoneyUiState(
     val loading: Boolean = true,
@@ -36,6 +39,8 @@ data class MoneyUiState(
     val selectedCategory: String? = null,
     /** Multi-select category filter; empty = show everything. */
     val categoryFilter: Set<String> = emptySet(),
+    /** EMI remains recorded but is hidden from the everyday-spend view by default. */
+    val includeEmi: Boolean = false,
     /** Null = all spend; ALL_BANK_UPI_FILTER = every proven savings account;
      * otherwise the canonical bank + account-suffix key. */
     val bankUpiFilter: String? = null,
@@ -55,6 +60,11 @@ data class MoneyUiState(
     val repaymentError: String? = null,
     /** One-shot event consumed after its Undo snackbar is handled. */
     val completedRepayment: Repayment? = null,
+    val refundDebit: Transaction? = null,
+    val refundSaving: Boolean = false,
+    val refundError: String? = null,
+    /** One-shot event consumed after its Undo snackbar is handled. */
+    val completedRefund: Refund? = null,
     val categoryEditTransaction: Transaction? = null,
     val categorySaving: Boolean = false,
     val categoryError: String? = null,
@@ -153,6 +163,23 @@ class MoneyViewModel @Inject constructor(
 
     fun clearCategoryFilter() {
         _state.update { it.copy(categoryFilter = emptySet(), selectedCategory = null) }
+    }
+
+    fun toggleIncludeEmi() {
+        _state.update {
+            val include = !it.includeEmi
+            it.copy(
+                includeEmi = include,
+                categoryFilter = if (include) {
+                    it.categoryFilter
+                } else {
+                    it.categoryFilter - EMI_SPEND_CATEGORIES
+                },
+                selectedCategory = it.selectedCategory.takeIf { selected ->
+                    include || selected == null || selected !in EMI_SPEND_CATEGORIES
+                },
+            )
+        }
     }
 
     fun setBankUpiFilter(filter: String?) {
@@ -267,6 +294,57 @@ class MoneyViewModel @Inject constructor(
 
     fun consumeCompletedRepayment() {
         _state.update { it.copy(completedRepayment = null) }
+    }
+
+    fun beginRefund(debit: Transaction) {
+        if (debit.direction != "debit") return
+        _state.update {
+            it.copy(refundDebit = debit, refundSaving = false, refundError = null)
+        }
+    }
+
+    fun dismissRefund() {
+        if (_state.value.refundSaving) return
+        _state.update { it.copy(refundDebit = null, refundError = null) }
+    }
+
+    fun confirmRefund() {
+        val debitId = _state.value.refundDebit?.id ?: return
+        if (_state.value.refundSaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(refundSaving = true, refundError = null) }
+            val result = runCatching { repository.markAsRefunded(debitId) }
+            _state.update {
+                if (result.isSuccess) {
+                    it.copy(
+                        refundDebit = null,
+                        refundSaving = false,
+                        completedRefund = result.getOrThrow(),
+                    )
+                } else {
+                    it.copy(
+                        refundSaving = false,
+                        refundError = result.exceptionOrNull()?.message
+                            ?: "Couldn't mark this transaction as refunded",
+                    )
+                }
+            }
+        }
+    }
+
+    fun undoRefund(refundId: Int) {
+        viewModelScope.launch {
+            val result = runCatching { repository.undoRefund(refundId) }
+            if (result.isFailure) {
+                _state.update {
+                    it.copy(error = result.exceptionOrNull()?.message ?: "Couldn't undo refund")
+                }
+            }
+        }
+    }
+
+    fun consumeCompletedRefund() {
+        _state.update { it.copy(completedRefund = null) }
     }
 
     fun beginCategoryEdit(transaction: Transaction) {

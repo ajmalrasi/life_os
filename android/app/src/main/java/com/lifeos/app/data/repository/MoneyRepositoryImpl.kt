@@ -5,6 +5,7 @@ import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.TransactionDao
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
+import com.lifeos.app.data.remote.dto.RefundCreateDto
 import com.lifeos.app.data.remote.dto.StatementPaidUpdateDto
 import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
 import com.lifeos.app.data.toDomain
@@ -18,6 +19,7 @@ import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
+import com.lifeos.app.domain.model.Refund
 import com.lifeos.app.domain.repository.MoneyRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -89,6 +91,18 @@ class MoneyRepositoryImpl @Inject constructor(
 
     override suspend fun undoRepayment(repaymentId: Int): Repayment =
         api.undoRepayment(repaymentId).toDomain()
+
+    override suspend fun markAsRefunded(debitId: Int): Refund {
+        val response = api.markAsRefunded(RefundCreateDto(debitId))
+        transactionDao.upsertAll(listOf(response.debit.toEntity()))
+        return response.toDomain()
+    }
+
+    override suspend fun undoRefund(refundId: Int): Refund {
+        val response = api.undoRefund(refundId)
+        transactionDao.upsertAll(listOf(response.debit.toEntity()))
+        return response.toDomain()
+    }
 
     override suspend fun updateTransactionCategory(
         transactionId: Int,

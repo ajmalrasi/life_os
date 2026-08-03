@@ -23,6 +23,8 @@ import com.lifeos.app.data.remote.dto.RecomputeResultDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
 import com.lifeos.app.data.remote.dto.RepaymentDto
+import com.lifeos.app.data.remote.dto.RefundCreateDto
+import com.lifeos.app.data.remote.dto.RefundDto
 import com.lifeos.app.data.remote.dto.SpendAnalysisDto
 import com.lifeos.app.data.remote.dto.SpendTrendsDto
 import com.lifeos.app.data.remote.dto.StatementSyncResultDto
@@ -105,6 +107,12 @@ interface LifeOsApi {
 
     @DELETE("expenses/repayments/{repaymentId}")
     suspend fun undoRepayment(@Path("repaymentId") repaymentId: Int): RepaymentDto
+
+    @POST("expenses/refunds")
+    suspend fun markAsRefunded(@Body body: RefundCreateDto): RefundDto
+
+    @DELETE("expenses/refunds/{refundId}")
+    suspend fun undoRefund(@Path("refundId") refundId: Int): RefundDto
 
     @PATCH("expenses/{transactionId}/category")
     suspend fun updateTransactionCategory(

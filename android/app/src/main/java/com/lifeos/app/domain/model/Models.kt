@@ -169,6 +169,11 @@ data class Repayment(
     val credit: Transaction,
 )
 
+data class Refund(
+    val id: Int,
+    val debit: Transaction,
+)
+
 /** One monthly credit-card statement summary. */
 data class CardStatement(
     val id: Int,

@@ -201,6 +201,17 @@ data class RepaymentDto(
 )
 
 @Serializable
+data class RefundCreateDto(
+    @SerialName("debit_transaction_id") val debitTransactionId: Int,
+)
+
+@Serializable
+data class RefundDto(
+    val id: Int,
+    val debit: TransactionDto,
+)
+
+@Serializable
 data class ExpenseSyncResultDto(
     @SerialName("parsers_run") val parsersRun: Int = 0,
     @SerialName("emails_scanned") val emailsScanned: Int = 0,

@@ -543,6 +543,21 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   when the same bank + suffix is proven as Savings elsewhere; unknown rows are
   not guessed. The live July check showed all bank UPI ₹14,049.90 / 24 rows,
   HDFC ₹12,269.90 / 20, and Axis ₹1,780 / 4.
+- ✅ **Manual merchant refunds + everyday-spend EMI view (2026-08-04).** A debit
+  can now be marked refunded even when the bank/app showed the refund but Gmail
+  supplied no incoming credit alert. `POST /expenses/refunds` records a
+  `merchant_refund` in the new `transaction_adjustments` audit table, preserves
+  the original transaction, tags it `reversed_debit`, and excludes it from
+  spend; `DELETE /expenses/refunds/{id}` restores the prior category for Undo.
+  Rebuild deletion preserves adjusted source rows. Android exposes the action
+  from transaction details with the same 1.5-second hold safety used for manual
+  repayments and an Undo snackbar. Separately, the main Money spend view keeps
+  `emi` and `emi_fees` transactions recorded but excludes them by default; the
+  summary says `EMI excluded` and an `Include EMI` chip restores the full
+  cash-outflow view. This filter is intentionally presentation-only: statements,
+  card cycles, stored transactions, and Ask remain complete. The ₹65,632 August
+  EMI is a real 2026-08-03 live HDFC Savings UPI mandate to Poonawalla Fincorp
+  (`transactions.id=1410`, override `emi`), not a statement duplicate.
 
 ## 7. Open items / next steps
 

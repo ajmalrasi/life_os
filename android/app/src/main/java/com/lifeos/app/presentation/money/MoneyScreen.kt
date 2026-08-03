@@ -216,6 +216,15 @@ private fun periodLabel(period: SpendPeriod, anchor: LocalDate, slice: PeriodSli
 private data class CategoryTotal(val category: String, val total: BigDecimal, val count: Int)
 private enum class CardCycleView { BILLED, CURRENT }
 
+internal fun filterEmiTransactions(
+    transactions: List<Transaction>,
+    includeEmi: Boolean,
+): List<Transaction> = if (includeEmi) {
+    transactions
+} else {
+    transactions.filterNot { it.spendCategory in EMI_SPEND_CATEGORIES }
+}
+
 @Composable
 fun MoneyScreen(
     onOpenStatement: (Int) -> Unit = {},
@@ -252,18 +261,24 @@ fun MoneyScreen(
             }
         }
     }
-    val availableCategories = remember(sourceFilteredTxns) {
-        sourceFilteredTxns.groupBy { it.spendCategory!! }
+    val hasEmi = remember(sourceFilteredTxns) {
+        sourceFilteredTxns.any { it.spendCategory in EMI_SPEND_CATEGORIES }
+    }
+    val emiFilteredTxns = remember(sourceFilteredTxns, state.includeEmi) {
+        filterEmiTransactions(sourceFilteredTxns, state.includeEmi)
+    }
+    val availableCategories = remember(emiFilteredTxns) {
+        emiFilteredTxns.groupBy { it.spendCategory!! }
             .map { (cat, list) -> cat to list.fold(BigDecimal.ZERO) { a, t -> a + t.amount } }
             .sortedByDescending { it.second }
             .map { it.first }
     }
     val filter = state.categoryFilter
-    val spendTxns = remember(sourceFilteredTxns, filter) {
+    val spendTxns = remember(emiFilteredTxns, filter) {
         if (filter.isEmpty()) {
-            sourceFilteredTxns
+            emiFilteredTxns
         } else {
-            sourceFilteredTxns.filter { it.spendCategory in filter }
+            emiFilteredTxns.filter { it.spendCategory in filter }
         }
     }
     val total = remember(spendTxns) {
@@ -318,6 +333,16 @@ fun MoneyScreen(
         )
     }
 
+    state.refundDebit?.let { debit ->
+        RefundDialog(
+            debit = debit,
+            saving = state.refundSaving,
+            error = state.refundError,
+            onConfirm = viewModel::confirmRefund,
+            onDismiss = viewModel::dismissRefund,
+        )
+    }
+
     LaunchedEffect(state.completedRepayment?.id) {
         val repayment = state.completedRepayment ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
@@ -329,6 +354,19 @@ fun MoneyScreen(
             viewModel.undoRepayment(repayment.id)
         }
         viewModel.consumeCompletedRepayment()
+    }
+
+    LaunchedEffect(state.completedRefund?.id) {
+        val refund = state.completedRefund ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "Refund saved. The purchase is excluded from spend.",
+            actionLabel = "Undo",
+            withDismissAction = true,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            viewModel.undoRefund(refund.id)
+        }
+        viewModel.consumeCompletedRefund()
     }
 
     Box(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
@@ -371,6 +409,7 @@ fun MoneyScreen(
                 total = total,
                 txnCount = spendTxns.size,
                 filtered = filter.isNotEmpty() || state.bankUpiFilter != null,
+                emiExcluded = hasEmi && !state.includeEmi,
                 bankUpiFilter = state.bankUpiFilter,
                 bankUpiAccounts = bankUpiAccounts,
                 onBankUpiFilterChange = viewModel::setBankUpiFilter,
@@ -396,11 +435,14 @@ fun MoneyScreen(
             }
         }
 
-        if (availableCategories.isNotEmpty()) {
+        if (availableCategories.isNotEmpty() || hasEmi) {
             item {
                 CategoryFilterRow(
                     categories = availableCategories,
                     selected = filter,
+                    hasEmi = hasEmi,
+                    includeEmi = state.includeEmi,
+                    onToggleEmi = viewModel::toggleIncludeEmi,
                     onToggle = viewModel::toggleCategoryFilter,
                     onClear = viewModel::clearCategoryFilter,
                 )
@@ -435,6 +477,7 @@ fun MoneyScreen(
                     txns = drillDownRows,
                     onBack = { viewModel.selectCategory(null) },
                     onMarkAsRepaid = viewModel::beginRepayment,
+                    onMarkAsRefunded = viewModel::beginRefund,
                     onEditCategory = viewModel::beginCategoryEdit,
                 )
             }
@@ -525,6 +568,9 @@ private fun CustomRangeDialog(
 private fun CategoryFilterRow(
     categories: List<String>,
     selected: Set<String>,
+    hasEmi: Boolean,
+    includeEmi: Boolean,
+    onToggleEmi: () -> Unit,
     onToggle: (String) -> Unit,
     onClear: () -> Unit,
 ) {
@@ -541,6 +587,15 @@ private fun CategoryFilterRow(
             showDot = false,
             onClick = onClear,
         )
+        if (hasEmi) {
+            FilterChip(
+                label = "Include EMI",
+                active = includeEmi,
+                color = categoryColor("emi"),
+                showDot = true,
+                onClick = onToggleEmi,
+            )
+        }
         categories.forEach { cat ->
             FilterChip(
                 label = prettyCategory(cat),
@@ -593,6 +648,7 @@ private fun SpendSummaryCard(
     total: BigDecimal,
     txnCount: Int,
     filtered: Boolean,
+    emiExcluded: Boolean,
     bankUpiFilter: String?,
     bankUpiAccounts: List<BankUpiAccountOption>,
     onBankUpiFilterChange: (String?) -> Unit,
@@ -642,7 +698,12 @@ private fun SpendSummaryCard(
             ) {
                 Text(
                     when {
+                        txnCount == 0 && emiExcluded -> "No everyday spend · EMI excluded"
                         txnCount == 0 -> "No spend recorded"
+                        emiExcluded && filtered ->
+                            "$txnCount transaction${if (txnCount == 1) "" else "s"} · EMI excluded · filtered"
+                        emiExcluded ->
+                            "$txnCount transaction${if (txnCount == 1) "" else "s"} · EMI excluded"
                         filtered -> "$txnCount transaction${if (txnCount == 1) "" else "s"} · filtered"
                         else -> "$txnCount transaction${if (txnCount == 1) "" else "s"}"
                     },
@@ -815,6 +876,7 @@ private fun DrillDownCard(
     txns: List<Transaction>,
     onBack: () -> Unit,
     onMarkAsRepaid: (Transaction) -> Unit,
+    onMarkAsRefunded: (Transaction) -> Unit,
     onEditCategory: (Transaction) -> Unit,
 ) {
     var sortKey by remember { mutableStateOf(TxnSortKey.DATE) }
@@ -838,6 +900,10 @@ private fun DrillDownCard(
             onMarkAsRepaid = {
                 selectedTxn = null
                 onMarkAsRepaid(txn)
+            },
+            onMarkAsRefunded = {
+                selectedTxn = null
+                onMarkAsRefunded(txn)
             },
         )
     }
@@ -983,6 +1049,7 @@ private fun TransactionDetailDialog(
     onDismiss: () -> Unit,
     onEditCategory: () -> Unit,
     onMarkAsRepaid: () -> Unit,
+    onMarkAsRefunded: () -> Unit,
 ) {
     val whenText = transaction.txnAt
         ?.atZone(ZoneId.systemDefault())
@@ -1014,17 +1081,20 @@ private fun TransactionDetailDialog(
                     color = LifeOsColors.OnSurfaceMuted,
                 )
                 Text(
-                    "If this money was returned, pair it with the incoming payment. The bank records will be kept.",
+                    "For a merchant refund, you can exclude this purchase even if no bank credit alert reached LifeOS. For money returned by a person, pair both payments.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = LifeOsColors.OnSurfaceMuted,
                 )
             }
         },
         confirmButton = {
-            Row {
+            Column(horizontalAlignment = Alignment.End) {
                 TextButton(onClick = onEditCategory) { Text("Edit category") }
                 if (transaction.direction == "debit") {
-                    TextButton(onClick = onMarkAsRepaid) { Text("Mark as repaid") }
+                    Row {
+                        TextButton(onClick = onMarkAsRefunded) { Text("Mark refunded") }
+                        TextButton(onClick = onMarkAsRepaid) { Text("Mark as repaid") }
+                    }
                 }
             }
         },
@@ -1089,6 +1159,49 @@ private fun CategoryEditDialog(
             TextButton(onClick = { onSave(selected) }, enabled = !saving) {
                 Text(if (saving) "Saving…" else "Save")
             }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun RefundDialog(
+    debit: Transaction,
+    saving: Boolean,
+    error: String?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Mark this purchase as refunded?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "${debit.amount.money(debit.currency)} at " +
+                        (debit.counterparty?.takeIf { it.isNotBlank() } ?: "this merchant"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "The original bank record will stay in LifeOS, but it will no longer count toward spend. Use this only after the merchant has confirmed the refund.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.Warning)
+                }
+            }
+        },
+        confirmButton = {
+            HoldToConfirmButton(
+                enabled = true,
+                saving = saving,
+                semanticsLabel = "Confirm merchant refund",
+                onConfirm = onConfirm,
+            )
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
@@ -1194,6 +1307,7 @@ private fun RepaymentDialog(
             HoldToConfirmButton(
                 enabled = selectedCreditId != null && !loading,
                 saving = saving,
+                semanticsLabel = "Confirm repayment",
                 onConfirm = onConfirm,
             )
         },
@@ -1207,6 +1321,7 @@ private fun RepaymentDialog(
 private fun HoldToConfirmButton(
     enabled: Boolean,
     saving: Boolean,
+    semanticsLabel: String,
     onConfirm: () -> Unit,
 ) {
     var holding by remember { mutableStateOf(false) }
@@ -1231,7 +1346,7 @@ private fun HoldToConfirmButton(
             .height(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .semantics {
-                onLongClick(label = "Confirm repayment") {
+                onLongClick(label = semanticsLabel) {
                     if (canConfirm) onConfirm()
                     canConfirm
                 }

@@ -17,6 +17,7 @@ import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
 import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
+import com.lifeos.app.domain.model.Refund
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.SynthesizedInsight
@@ -110,6 +111,12 @@ interface MoneyRepository {
 
     /** Restore both transactions to their previous classifications. */
     suspend fun undoRepayment(repaymentId: Int): Repayment
+
+    /** Reversibly exclude a merchant debit when its refund credit was not ingested. */
+    suspend fun markAsRefunded(debitId: Int): Refund
+
+    /** Restore a manually refunded debit to its previous classification. */
+    suspend fun undoRefund(refundId: Int): Refund
 
     /** Persist a category for one transaction; null restores automatic categorization. */
     suspend fun updateTransactionCategory(transactionId: Int, category: String?): Transaction

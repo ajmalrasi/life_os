@@ -358,6 +358,69 @@ def test_manual_repayment_rejects_different_amounts(client):
     assert "same amount" in response.json()["detail"]
 
 
+def test_manual_merchant_refund_excludes_debit_and_is_undoable(client):
+    from app.database import SessionLocal
+    from app.models.transaction import Transaction
+    from app.models.transaction_adjustment import TransactionAdjustment
+    from app.repositories.expense_repo import ExpenseRepository
+
+    with SessionLocal() as db:
+        debit = Transaction(
+            txn_date=date(2026, 8, 1),
+            amount=Decimal("1725.65"),
+            currency="INR",
+            direction="debit",
+            counterparty="Agoda Company Pte Ltd",
+            account="HDFC RuPay CC ..5473",
+            source="upi",
+            gmail_message_id="agoda-debit",
+            dedup_key="upi:test:agoda-debit",
+        )
+        db.add(debit)
+        db.commit()
+        debit_id = debit.id
+
+    created_response = client.post(
+        "/expenses/refunds", json={"debit_transaction_id": debit_id}
+    )
+    assert created_response.status_code == 201
+    refund = created_response.json()
+    assert refund["kind"] == "merchant_refund"
+    assert refund["debit"]["category"] == "reversed_debit"
+    assert refund["debit"]["spend_category"] is None
+
+    duplicate_response = client.post(
+        "/expenses/refunds", json={"debit_transaction_id": debit_id}
+    )
+    assert duplicate_response.status_code == 409
+
+    # A live-email rebuild cannot erase the source row behind the audit entry.
+    with SessionLocal() as db:
+        deleted = ExpenseRepository(db).delete_since(date(2026, 8, 1), sources=("upi",))
+        db.commit()
+        assert deleted == 0
+        assert db.get(Transaction, debit_id) is not None
+
+    undo_response = client.delete(f"/expenses/refunds/{refund['id']}")
+    assert undo_response.status_code == 200
+    assert undo_response.json()["undone_at"] is not None
+    assert undo_response.json()["debit"]["category"] is None
+    assert undo_response.json()["debit"]["spend_category"] is not None
+
+    with SessionLocal() as db:
+        audit = db.get(TransactionAdjustment, refund["id"])
+        assert audit is not None and audit.undone_at is not None
+
+
+def test_manual_merchant_refund_rejects_credit(client):
+    _, credit_id = _insert_repayment_rows()
+    response = client.post(
+        "/expenses/refunds", json={"debit_transaction_id": credit_id}
+    )
+    assert response.status_code == 422
+    assert "debit" in response.json()["detail"]
+
+
 # Real HDFC Diners "A payment was made" alert body (HTML), trimmed.
 _HDFC_DINERS_HTML = """
 <html><body>

@@ -24,6 +24,7 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentDto
+import com.lifeos.app.data.remote.dto.RefundDto
 import com.lifeos.app.data.remote.dto.SpendAnalysisDto
 import com.lifeos.app.data.remote.dto.SpendTrendsDto
 import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
@@ -46,6 +47,7 @@ import com.lifeos.app.domain.model.MonthSpend
 import com.lifeos.app.domain.model.MoodCheckin
 import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
+import com.lifeos.app.domain.model.Refund
 import com.lifeos.app.domain.model.SpendAnalysis
 import com.lifeos.app.domain.model.SpendTrends
 import com.lifeos.app.domain.model.SynthesizedInsight
@@ -154,6 +156,10 @@ fun RepaymentDto.toDomain() = Repayment(
     id = id,
     debit = debit.toDomain(),
     credit = credit.toDomain(),
+)
+fun RefundDto.toDomain() = Refund(
+    id = id,
+    debit = debit.toDomain(),
 )
 
 // --- Money: card statements ---
