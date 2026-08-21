@@ -35,7 +35,8 @@ from app.database import SessionLocal  # noqa: E402
 from app.repositories.payee_label_repo import PayeeLabelRepository  # noqa: E402
 
 # (pattern, category, match_type, note). Confirmed by the user as lawyer fees —
-# explicitly NOT lending — so they belong in their own spend category.
+# explicitly NOT lending. ``legal_fees`` is the compatible storage key; the app
+# presents it as the broader, durable "Professional services" category.
 SEED_LABELS: list[tuple[str, str, str, str]] = [
     ("SANTHOSH", "legal_fees", "substring", "lawyer fee (user-confirmed)"),
     ("SREEPRAKASH", "legal_fees", "substring", "lawyer fee (user-confirmed)"),

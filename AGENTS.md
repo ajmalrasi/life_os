@@ -561,6 +561,23 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   Razorpay handle ends `@mairtel`; the subscription rule now requires a true
   `airtel` word boundary so Agoda correctly resolves to `travel` instead of a
   false Airtel subscription.
+- ✅ **Money-first Android redesign (2026-08-21).** Money is now the app's start
+  destination and the five-item bottom dock is gone. A top-right LifeOS sheet
+  keeps Today, Pulse, Insights, Ask, and Settings available without competing
+  with the daily workflow. Money has persistent Overview / Transactions / Cards
+  sections: Overview shows period spend, today, prior-period comparison, bills,
+  recent activity, and top categories; Transactions is a flat date-grouped feed
+  with one filter sheet; Cards keeps billed and current-cycle rows visible.
+  Section state survives statement/current-cycle detail navigation, and widget
+  opens explicitly reset Money to Overview. Large occasional expenses no longer
+  need to collapse into `other`: `vehicle`, `insurance`, and `taxes` are editable
+  and LLM/deterministic categories. The compatible `legal_fees` storage key is
+  displayed as the broader **Professional services** category so old lawyer
+  labels stay grouped with any later accountant/consultant expense. Android was
+  built, installed, and visually verified on Samsung `RZCX60SNHHE` in light and
+  dark modes; Overview, filters, transaction actions, Cards detail return, and
+  More were exercised against real cached data, and all four Compose device
+  tests pass.
 
 ## 7. Open items / next steps
 

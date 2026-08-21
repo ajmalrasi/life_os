@@ -84,6 +84,21 @@ def test_agoda_gateway_handle_is_travel_not_airtel_subscription(client):
     assert categorize("agodacompanypteltdwxk.rzp@mairtel") == "travel"
 
 
+def test_durable_large_expense_categories(client):
+    with SessionLocal() as db:
+        categorize = build_categorizer(db)
+    assert categorize("CAR SERVICE AND WHEEL ALIGNMENT") == "vehicle"
+    assert categorize("ICICI LOMBARD INSURANCE PREMIUM") == "insurance"
+    assert categorize("INCOME TAX CHALLAN PAYMENT") == "taxes"
+
+
+def test_statement_gst_remains_a_fee_but_explicit_gst_payment_is_tax(client):
+    with SessionLocal() as db:
+        categorize = build_categorizer(db)
+    assert categorize("GST ON CARD INTEREST") == "emi_fees"
+    assert categorize("GST PAYMENT GOVERNMENT CHALLAN") == "taxes"
+
+
 def test_priority_orders_rules(client):
     _add_label(pattern="rasi", category="broad", match_type="substring", priority=200)
     _add_label(pattern="ajmal rasi", category="specific", match_type="substring", priority=10)
