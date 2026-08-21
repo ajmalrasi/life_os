@@ -61,6 +61,16 @@ def test_classify_payee_parses_valid_response():
     assert result.confidence == "high"
 
 
+def test_classify_payee_accepts_durable_large_expense_categories():
+    for category in ("vehicle", "insurance", "taxes", "legal_fees"):
+        client = _FakeClient([
+            json.dumps({"category": category, "confidence": "high", "reason": "clear payee"})
+        ])
+        result = classify_payee("CLEAR PAYEE", client=client)
+        assert result is not None
+        assert result.category == category
+
+
 def test_classify_payee_returns_none_when_unavailable():
     assert classify_payee("SOME PAYEE", client=_FakeClient(fail=True)) is None
 

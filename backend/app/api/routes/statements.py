@@ -43,6 +43,8 @@ _CATEGORY_RULES: list[tuple[str, re.Pattern]] = [
     # "DEPT STORES", which otherwise mislabels the installment as shopping.
     ("emi", re.compile(r"\bemi\b|\binstal+ment\b|\binstallment\b|\bflexipay\b", re.I)),
     ("fuel", re.compile(r"petro|fuel|hpcl|bpcl", re.I)),
+    ("vehicle", re.compile(r"car\s*(service|repair|wash)|vehicle|automotive|garage|tyres?|tires?|wheel\s*alignment|motor\s*works", re.I)),
+    ("insurance", re.compile(r"insurance|policy\s*premium|lic\s+of\s+india|lombard|acko", re.I)),
     ("wallet_load", re.compile(r"mobikwik|paytm wallet|wallet load", re.I)),
     ("food", re.compile(r"zomato|swiggy|kfc|restaurant|cafe|hotel|bakery|kitchen|chicking|food", re.I)),
     ("groceries", re.compile(r"grocery|hypermarket|supermarket|mart|fresh|traders", re.I)),
@@ -50,6 +52,9 @@ _CATEGORY_RULES: list[tuple[str, re.Pattern]] = [
     ("subscriptions", re.compile(r"anthropic|cursor|apple|youtube|google|netflix|zee|spotify|adobe|prime|jio|\bairtel\b", re.I)),
     ("investments", re.compile(r"zerodha|broking|groww|smallcase|mutual\s*fund", re.I)),
     ("entertainment", re.compile(r"bookmyshow|cinema|pvr|inox|movie", re.I)),
+    # Explicit tax payments take precedence over the generic GST/fee rule;
+    # ordinary card-statement GST and surcharge lines remain EMI fees.
+    ("taxes", re.compile(r"income\s*tax|property\s*tax|advance\s*tax|self\s*assessment\s*tax|tax\s*payment|gst\s*payment|tax\s*dept|government\s*fee|govt\s*fee|challan|municipal", re.I)),
     ("emi_fees", re.compile(r"gst|igst|fee|interest|surcharge|markup", re.I)),
     ("travel", re.compile(r"bus|irctc|uber|ola|rapido|airline|flight|agoda|makemytrip|goibibo|oyo|redbus", re.I)),
 ]

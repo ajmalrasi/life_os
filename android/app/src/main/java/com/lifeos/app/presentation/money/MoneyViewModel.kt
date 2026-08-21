@@ -9,6 +9,7 @@ import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.Refund
 import com.lifeos.app.domain.repository.MoneyRepository
+import com.lifeos.app.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,11 +23,16 @@ import javax.inject.Inject
 /** How the spend view is bucketed. All are always selectable. */
 enum class SpendPeriod { DAY, WEEK, MONTH, SIX_MONTHS, YEAR, CUSTOM }
 
+/** Stable local destinations inside the Money-first experience. */
+enum class MoneySection { OVERVIEW, TRANSACTIONS, CARDS }
+
 internal val EMI_SPEND_CATEGORIES = setOf("emi", "emi_fees")
 
 data class MoneyUiState(
     val loading: Boolean = true,
     val error: String? = null,
+    val section: MoneySection = MoneySection.OVERVIEW,
+    val lastSyncAt: Long? = null,
     val period: SpendPeriod = SpendPeriod.MONTH,
     /** The period currently in view; moved by [prevPeriod]/[nextPeriod]. */
     val anchor: LocalDate = LocalDate.now(),
@@ -73,12 +79,18 @@ data class MoneyUiState(
 @HiltViewModel
 class MoneyViewModel @Inject constructor(
     private val repository: MoneyRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MoneyUiState())
     val state: StateFlow<MoneyUiState> = _state.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            settingsRepository.lastSyncAt.collect { lastSyncAt ->
+                _state.update { it.copy(lastSyncAt = lastSyncAt) }
+            }
+        }
         viewModelScope.launch {
             repository.observeTransactions(TRANSACTION_WINDOW_DAYS).collect { txns ->
                 _state.update { it.copy(transactions = txns) }
@@ -114,6 +126,10 @@ class MoneyViewModel @Inject constructor(
             }
         }
         load()
+    }
+
+    fun setSection(section: MoneySection) {
+        _state.update { it.copy(section = section, selectedCategory = null) }
     }
 
     /** Refresh the cache from the backend; dues load softly and never fail the

@@ -44,7 +44,8 @@ _MAX_PAYEES_PER_RUN = 20
 
 ALLOWED_CATEGORIES = [
     "fuel", "wallet_load", "food", "groceries", "shopping", "subscriptions",
-    "investments", "entertainment", "emi", "emi_fees", "travel", "legal_fees", "other",
+    "investments", "entertainment", "emi", "emi_fees", "travel", "vehicle",
+    "insurance", "taxes", "legal_fees", "other",
 ]
 
 _SCHEMA = {
@@ -67,7 +68,13 @@ _SYSTEM_PROMPT = (
     'contains letters like "fee" or "emi" (e.g. a person named "Rafeeque" is '
     "not an EMI).\n"
     '- "legal_fees" is for payments to a lawyer/legal counsel, not a '
-    "coincidental name match.\n"
+    'coincidental name match. In the app it is presented more broadly as '
+    '"Professional services" so accounting and similar expert services may '
+    "also use it when the payee is clear.\n"
+    '- "vehicle" is for vehicle service, repairs, tyres, and maintenance; '
+    'fuel remains "fuel", and taxis/rides remain "travel".\n'
+    '- "insurance" is for policy premiums. "taxes" is for an explicit tax or '
+    'government payment, not a bank GST, interest, surcharge, or fee line.\n'
     "- If the payee string carries no real signal (a bare UPI handle, a "
     'generic QR ID), say so honestly with category "other" and confidence '
     '"low" rather than guessing.\n'

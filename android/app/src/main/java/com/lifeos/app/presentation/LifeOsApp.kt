@@ -1,23 +1,13 @@
 package com.lifeos.app.presentation
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsBottomHeight
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -25,28 +15,30 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.lifeos.app.presentation.chat.ChatScreen
 import com.lifeos.app.presentation.dashboard.DashboardScreen
@@ -67,21 +59,35 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
-private val primaryDestinations = Destination.entries.filter { it != Destination.SETTINGS }
+private val moreDestinations = listOf(
+    Destination.DASHBOARD,
+    Destination.MOOD,
+    Destination.INSIGHTS,
+    Destination.CHAT,
+    Destination.SETTINGS,
+)
 private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
 private const val CURRENT_CYCLE_DETAILS_ROUTE = "cycle/{bank}/{cardLast4}"
+internal const val DEFAULT_DESTINATION_ROUTE = "money"
 
 @Composable
-fun LifeOsApp(startTab: String? = null) {
+fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L) {
     val navController = rememberNavController()
-    val backStack by navController.currentBackStackEntryAsState()
-    val current = backStack?.destination
+    var showMore by remember { mutableStateOf(false) }
+    var moneyOverviewRequest by remember { mutableStateOf(0L) }
 
-    // Deep-link: if launched from a notification targeting a tab, navigate once.
-    LaunchedEffect(startTab) {
-        val dest = Destination.entries.firstOrNull { it.route == startTab }
-        if (dest != null) {
-            navController.navigate(dest.route) {
+    // Deep links still reach the quieter LifeOS areas, but Money remains under
+    // them on the back stack and is the app's normal home.
+    LaunchedEffect(startTab, openRequestId) {
+        val destination = Destination.entries.firstOrNull { it.route == startTab }
+        if (destination == Destination.MONEY) {
+            navController.navigate(Destination.MONEY.route) {
+                popUpTo(navController.graph.findStartDestination().id)
+                launchSingleTop = true
+            }
+            moneyOverviewRequest = openRequestId
+        } else if (destination != null) {
+            navController.navigate(destination.route) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 launchSingleTop = true
                 restoreState = true
@@ -90,44 +96,28 @@ fun LifeOsApp(startTab: String? = null) {
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         containerColor = LifeOsColors.Background,
-        bottomBar = {
-            val secondaryScreenOpen = current?.hierarchy?.any {
-                it.route == Destination.SETTINGS.route ||
-                    it.route == STATEMENT_DETAILS_ROUTE ||
-                    it.route == CURRENT_CYCLE_DETAILS_ROUTE
-            } == true
-            if (!secondaryScreenOpen) {
-                LifeOsBottomNavigation(
-                    selectedRoute = current?.route,
-                    onDestinationSelected = { dest ->
-                        navController.navigate(dest.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                )
-            }
-        },
-    ) { padding ->
+    ) { contentPadding ->
         NavHost(
             navController = navController,
-            startDestination = Destination.DASHBOARD.route,
-            modifier = Modifier.padding(padding),
+            startDestination = DEFAULT_DESTINATION_ROUTE,
+            modifier = Modifier.padding(contentPadding),
         ) {
-            composable(Destination.DASHBOARD.route) {
-                DashboardScreen(onOpenSettings = { navController.navigate(Destination.SETTINGS.route) })
-            }
-            composable(Destination.MOOD.route) { MoodScreen() }
             composable(Destination.MONEY.route) {
                 MoneyScreen(
+                    overviewRequestId = moneyOverviewRequest,
+                    onOpenMore = { showMore = true },
                     onOpenStatement = { id -> navController.navigate("statement/$id") },
                     onOpenCurrentCycle = { bank, cardLast4 ->
                         navController.navigate("cycle/$bank/$cardLast4")
                     },
                 )
             }
+            composable(Destination.DASHBOARD.route) {
+                DashboardScreen(onOpenSettings = { navController.navigate(Destination.SETTINGS.route) })
+            }
+            composable(Destination.MOOD.route) { MoodScreen() }
             composable(Destination.INSIGHTS.route) { InsightsScreen() }
             composable(Destination.CHAT.route) { ChatScreen() }
             composable(Destination.SETTINGS.route) {
@@ -150,84 +140,89 @@ fun LifeOsApp(startTab: String? = null) {
             }
         }
     }
+
+    if (showMore) {
+        LifeOsMoreSheet(
+            onDismiss = { showMore = false },
+            onDestinationSelected = { destination ->
+                showMore = false
+                navController.navigate(destination.route) { launchSingleTop = true }
+            },
+        )
+    }
 }
 
-/**
- * A flat, full-width dock that continues behind Android's native navigation
- * controls. Each destination owns an equal-width tap target; selection is
- * communicated with a slim marker, brighter icon, and stronger label.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LifeOsBottomNavigation(
-    selectedRoute: String?,
+internal fun LifeOsMoreSheet(
+    onDismiss: () -> Unit,
     onDestinationSelected: (Destination) -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = LifeOsColors.NavigationSurface,
-        shadowElevation = 8.dp,
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = LifeOsColors.SurfaceElevated,
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(78.dp)
-                    .padding(horizontal = 6.dp),
-            ) {
-                primaryDestinations.forEach { destination ->
-                    val selected = destination.route == selectedRoute
-                    val contentColor by animateColorAsState(
-                        targetValue = if (selected) {
-                            LifeOsColors.NavigationSelected
-                        } else {
-                            LifeOsColors.NavigationUnselected
-                        },
-                        label = "bottom_navigation_color",
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .selectable(
-                                selected = selected,
-                                onClick = { onDestinationSelected(destination) },
-                                role = Role.Tab,
-                            ),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+                .navigationBarsPadding(),
+        ) {
+            Text(
+                "LifeOS",
+                style = MaterialTheme.typography.headlineMedium,
+                color = LifeOsColors.OnBackground,
+            )
+            Text(
+                "Everything outside your daily Money view",
+                style = MaterialTheme.typography.bodySmall,
+                color = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+            )
+            moreDestinations.forEachIndexed { index, destination ->
+                TextButton(
+                    onClick = { onDestinationSelected(destination) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .width(28.dp)
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(
-                                    if (selected) LifeOsColors.NavigationIndicator else Color.Transparent
-                                ),
-                        )
-                        Spacer(Modifier.height(8.dp))
                         Icon(
                             imageVector = destination.icon,
-                            contentDescription = destination.label,
+                            contentDescription = null,
                             modifier = Modifier.size(22.dp),
-                            tint = contentColor,
+                            tint = LifeOsColors.Primary,
                         )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            text = destination.label,
-                            color = contentColor,
-                            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                destination.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = LifeOsColors.OnBackground,
+                            )
+                            Text(
+                                destinationSupportingText(destination),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
                     }
                 }
+                if (index != moreDestinations.lastIndex) {
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                }
             }
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsBottomHeight(WindowInsets.navigationBars),
-            )
         }
     }
+}
+
+private fun destinationSupportingText(destination: Destination): String = when (destination) {
+    Destination.DASHBOARD -> "Daily scores"
+    Destination.MOOD -> "Mood check-in"
+    Destination.INSIGHTS -> "Patterns and trends"
+    Destination.CHAT -> "Grounded answers"
+    Destination.SETTINGS -> "Sync and preferences"
+    Destination.MONEY -> "Spending and cards"
 }
