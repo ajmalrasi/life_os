@@ -20,8 +20,8 @@ RUN apk add --no-cache curl tar \
 FROM golang:1.26-alpine AS gog-keyring-helper
 WORKDIR /src
 COPY tools/gogkeyring/go.mod ./
-RUN go mod download
 COPY tools/gogkeyring/main.go ./
+RUN go mod tidy
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gog-keyring-secret .
 
 # Stage 2: LifeOS backend
