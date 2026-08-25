@@ -11,7 +11,9 @@ import com.lifeos.app.data.toDomain
 import com.lifeos.app.domain.model.ConnectedMailAccount
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetAddress
@@ -65,7 +67,7 @@ class MailConnectionManager @Inject constructor(
                 val sessionId = requireNotNull(start.sessionId)
                 val sessionSecret = requireNotNull(start.sessionSecret)
                 openBrowser(authorizationUrl)
-                receiveAndComplete(server, sessionId, sessionSecret)
+                receiveAndComplete(server, sessionId, sessionSecret, purpose)
             }
         }
     } catch (error: HttpException) {
@@ -97,6 +99,7 @@ class MailConnectionManager @Inject constructor(
         server: ServerSocket,
         sessionId: String,
         sessionSecret: String,
+        purpose: String,
     ): ConnectedMailAccount {
         server.accept().use { socket ->
             socket.soTimeout = 5_000
@@ -110,9 +113,7 @@ class MailConnectionManager @Inject constructor(
 
             val callbackUrl = "http://$LOOPBACK_HOST:${server.localPort}$target"
             val account = try {
-                api.completeMailConnection(
-                    MailConnectionCompleteDto(sessionId, sessionSecret, callbackUrl),
-                ).toDomain()
+                completeWithRetry(sessionId, sessionSecret, callbackUrl, purpose)
             } catch (error: Throwable) {
                 runCatching { writeBrowserResponse(socket, connected = false) }
                 throw error
@@ -122,6 +123,36 @@ class MailConnectionManager @Inject constructor(
             runCatching { writeBrowserResponse(socket, connected = true) }
             return account
         }
+    }
+
+    private suspend fun completeWithRetry(
+        sessionId: String,
+        sessionSecret: String,
+        callbackUrl: String,
+        purpose: String,
+    ): ConnectedMailAccount {
+        var lastNetworkError: IOException? = null
+        repeat(COMPLETE_ATTEMPTS) { attempt ->
+            try {
+                return api.completeMailConnection(
+                    MailConnectionCompleteDto(sessionId, sessionSecret, callbackUrl),
+                ).toDomain()
+            } catch (error: HttpException) {
+                // If the prior response was lost after the Jetson saved the token, the
+                // retry sees a consumed session. Recover from the durable account state.
+                if (lastNetworkError != null && error.code() == 404) {
+                    runCatching { api.listMailAccounts().map { it.toDomain() } }
+                        .getOrNull()
+                        ?.firstOrNull { purpose in it.purposes && it.authorized }
+                        ?.let { return it }
+                }
+                throw error
+            } catch (error: IOException) {
+                lastNetworkError = error
+                if (attempt < COMPLETE_ATTEMPTS - 1) delay(COMPLETE_RETRY_DELAY_MILLIS)
+            }
+        }
+        throw requireNotNull(lastNetworkError)
     }
 
     private fun writeBrowserResponse(socket: java.net.Socket, connected: Boolean) {
@@ -160,6 +191,8 @@ class MailConnectionManager @Inject constructor(
         const val LOOPBACK_HOST = "127.0.0.1"
         const val CALLBACK_PATH = "/oauth2/callback"
         const val AUTH_TIMEOUT_MILLIS = 5 * 60 * 1_000
+        const val COMPLETE_ATTEMPTS = 3
+        const val COMPLETE_RETRY_DELAY_MILLIS = 2_000L
     }
 }
 
