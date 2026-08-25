@@ -19,11 +19,13 @@ _MEETING_DOMAINS = (
 )
 _SCHEDULING_DOMAINS = ("calendly.com", "cal.com", "goodtime.io", "hirevue.com", "schedule")
 _MONTH = r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+_CLOCK = r"(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm))"
+_TIMEZONE = r"(?:India Standard Time|IST|UTC|GMT|PST|PDT|EST|EDT)"
 _DATE_TIME = re.compile(
     rf"(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)?,?\s*"
     rf"(?:{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?|\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH})"
-    rf"(?:,?\s+\d{{4}})?(?:\s+(?:at\s+)?\d{{1,2}}(?::\d{{2}})?\s*(?:am|pm))?"
-    rf"(?:\s+(?:IST|UTC|GMT|PST|PDT|EST|EDT))?",
+    rf"(?:,?\s+\d{{4}})?(?:\s+(?:at\s+)?{_CLOCK})?"
+    rf"(?:\s+{_TIMEZONE})?",
     re.I,
 )
 _NUMERIC_DATE_TIME = re.compile(
@@ -32,6 +34,12 @@ _NUMERIC_DATE_TIME = re.compile(
 )
 _TIME_ONLY = re.compile(r"\b(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b", re.I)
 _TZINFOS = {"IST": 19800, "UTC": 0, "GMT": 0, "PST": -28800, "PDT": -25200, "EST": -18000, "EDT": -14400}
+_TIME_RANGE_ON_DATE = re.compile(
+    rf"\bfrom\s+(?P<start>{_CLOCK})\s*(?P<start_tz>{_TIMEZONE})?\s+"
+    rf"to\s+(?P<end>{_CLOCK})\s*(?P<end_tz>{_TIMEZONE})?\s+on\s+"
+    rf"(?P<date>(?:{_MONTH}\s+\d{{1,2}}|\d{{1,2}}\s+{_MONTH})(?:,?\s+\d{{4}})?)",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +75,7 @@ def received_at(message: MailMessage) -> datetime:
 def _parse_candidate(candidate: str, base: datetime) -> datetime | None:
     try:
         default = base.astimezone(_IST).replace(second=0, microsecond=0)
+        candidate = re.sub(r"\bIndia Standard Time\b", "IST", candidate, flags=re.I)
         parsed = date_parser.parse(
             re.sub(r"(?<=\d)(?:st|nd|rd|th)\b", "", candidate, flags=re.I),
             fuzzy=True,
@@ -91,12 +100,28 @@ def _find_datetime(text: str, base: datetime) -> datetime | None:
         return local.replace(hour=clock.hour, minute=clock.minute, second=0, microsecond=0).astimezone(timezone.utc)
     for pattern in (_DATE_TIME, _NUMERIC_DATE_TIME):
         for match in pattern.finditer(text):
-            if not re.search(r"\d{1,2}(?::\d{2})?\s*(?:am|pm)", match.group(0), re.I):
+            if not re.search(_CLOCK, match.group(0), re.I):
                 continue
             parsed = _parse_candidate(match.group(0), base)
             if parsed:
                 return parsed
     return None
+
+
+def _find_time_range(text: str, base: datetime) -> tuple[datetime, datetime] | None:
+    """Read time-first ranges such as "from 5 PM to 6 PM on 26 Aug 2026"."""
+    match = _TIME_RANGE_ON_DATE.search(text)
+    if not match:
+        return None
+    start_tz = match.group("start_tz") or match.group("end_tz") or "IST"
+    end_tz = match.group("end_tz") or start_tz
+    start = _parse_candidate(f'{match.group("date")} {match.group("start")} {start_tz}', base)
+    end = _parse_candidate(f'{match.group("date")} {match.group("end")} {end_tz}', base)
+    if start is None or end is None:
+        return None
+    if end <= start:
+        end += timedelta(days=1)
+    return start, end
 
 
 def _due_datetime(text: str, base: datetime) -> datetime | None:
@@ -169,10 +194,25 @@ def extract(message: MailMessage, invite: CalendarInvite | None = None) -> Extra
             re.I,
         )
     )
-    event_start = invite.start if invite else (
-        _find_datetime(combined, base) if event_context and not scheduling_request else None
+    explicit_range = (
+        _find_time_range(combined, base)
+        if event_context and not scheduling_request and invite is None
+        else None
     )
-    event_end = invite.end if invite else (event_start + _duration(combined) if event_start else None)
+    event_start = invite.start if invite else (
+        explicit_range[0]
+        if explicit_range
+        else _find_datetime(combined, base)
+        if event_context and not scheduling_request
+        else None
+    )
+    event_end = invite.end if invite else (
+        explicit_range[1]
+        if explicit_range
+        else event_start + _duration(combined)
+        if event_start
+        else None
+    )
     action_text = None
     if action_url and not event_start:
         action_text = "Choose a time"

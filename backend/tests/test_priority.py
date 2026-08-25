@@ -93,7 +93,44 @@ def test_job_digest_and_application_receipt_are_suppressed():
     )
     result = classify(digest)
     assert result.importance == "suppressed"
-    assert result.evidence == ["bulk_or_application_receipt"]
+    assert result.evidence == ["bulk_or_routine_mail"]
+
+
+def test_promotions_and_generic_job_board_mail_are_suppressed():
+    promotion = _message(
+        subject="ENDS TONIGHT: End of Summer Flash Sale",
+        text="Hi Ajmal, please review our coupon and shop now for up to 60% off.",
+    )
+    promotion = MailMessage(
+        **{**promotion.__dict__, "from_addr": 'Deals <no-reply@email.store.example>'}
+    )
+    job_alert = _message(
+        subject="Recruiters are searching for roles similar to yours",
+        text="Hi Ajmal, review recommended jobs and express early interest.",
+    )
+    job_alert = MailMessage(
+        **{**job_alert.__dict__, "from_addr": 'Job Alert <jobalert@naukri.com>'}
+    )
+
+    assert classify(promotion).importance == "suppressed"
+    assert classify(job_alert).importance == "suppressed"
+
+
+def test_anarock_time_first_interview_range_is_scheduled():
+    result = classify(
+        _message(
+            subject="Online Interview - Ajmal Rasi with ANAROCK",
+            text=(
+                "Hi Ajmal Rasi, your Online Interview is scheduled from 5:00 PM "
+                "India Standard Time to 6:00 PM India Standard Time on 26 Aug 2026."
+            ),
+        )
+    )
+
+    assert result.importance == "high"
+    assert result.state == "scheduled"
+    assert result.details.event_start.isoformat() == "2026-08-26T11:30:00+00:00"
+    assert result.details.event_end.isoformat() == "2026-08-26T12:30:00+00:00"
 
 
 def test_direct_personal_request_is_actionable():
@@ -200,6 +237,28 @@ def test_new_message_in_same_thread_updates_one_priority_item(client, monkeypatc
         assert item.subject == "Interview rescheduled"
         assert item.meeting_url == "https://meet.google.com/new-room"
         assert len(service.priority.history(item.id)) == 2
+
+
+def test_full_sync_reclassifies_and_hides_existing_noise(client, monkeypatch):
+    provider = FakeProvider("career@example.com", [_message()])
+    with SessionLocal() as db:
+        MailAccountRepository(db).register("career@example.com", "priority", "Career inbox")
+        service = PrioritySyncService(db)
+        monkeypatch.setattr(service, "_provider", lambda _account: provider)
+        assert service.sync().items_new == 1
+
+        promotional = _message(
+            subject="Weekly job alert",
+            text="Hi Ajmal, recommended jobs for you. Review the latest openings.",
+        )
+        provider.messages = {promotional.message_id: promotional}
+        report = service.sync(full=True)
+
+        assert report.items_updated == 1
+        item = db.query(PriorityItem).one()
+        assert item.importance == "suppressed"
+
+    assert client.get("/priority").json() == []
 
 
 def test_account_auth_error_is_reported_without_becoming_empty_success(client, monkeypatch):

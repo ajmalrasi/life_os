@@ -21,6 +21,17 @@ class PriorityRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def get_for_thread(
+        self, account: MailAccount, message_row: MailMessageRecord
+    ) -> PriorityItem | None:
+        thread_key = message_row.provider_thread_id or f"message:{message_row.provider_message_id}"
+        return self.db.execute(
+            select(PriorityItem).where(
+                PriorityItem.mail_account_id == account.id,
+                PriorityItem.thread_key == thread_key,
+            )
+        ).scalar_one_or_none()
+
     def upsert(
         self,
         account: MailAccount,
@@ -28,12 +39,7 @@ class PriorityRepository:
         classification: PriorityClassification,
     ) -> tuple[PriorityItem, bool, bool]:
         thread_key = message_row.provider_thread_id or f"message:{message_row.provider_message_id}"
-        item = self.db.execute(
-            select(PriorityItem).where(
-                PriorityItem.mail_account_id == account.id,
-                PriorityItem.thread_key == thread_key,
-            )
-        ).scalar_one_or_none()
+        item = self.get_for_thread(account, message_row)
         created = item is None
         d = classification.details
         values = {
@@ -135,6 +141,8 @@ class PriorityRepository:
         visible: list[PriorityItem] = []
         expired_snooze = False
         for item in rows:
+            if item.effective_importance == "suppressed":
+                continue
             if item.user_state == "snoozed" and (
                 item.snoozed_until is None or _utc(item.snoozed_until) <= current
             ):

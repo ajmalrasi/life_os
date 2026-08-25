@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from email.utils import parseaddr
 
 from app.mail.models import MailMessage
 from app.priority.calendar import CalendarInvite
@@ -16,16 +17,18 @@ _INTERVIEW = re.compile(
     r"\b(?:interview|screening call|technical round|hiring manager|recruiter call|phone screen)\b",
     re.I,
 )
-_RECRUITER = re.compile(r"\b(?:recruiter|recruiting|talent acquisition|hiring team|opportunity)\b", re.I)
-_APPOINTMENT = re.compile(r"\b(?:appointment|consultation|reservation|meeting confirmed)\b", re.I)
+_RECRUITER = re.compile(r"\b(?:recruiter|recruiting|talent acquisition|hiring team)\b", re.I)
+_APPOINTMENT = re.compile(r"\b(?:appointment|consultation|meeting confirmed)\b", re.I)
 _SECURITY = re.compile(r"\b(?:security alert|unusual sign[ -]?in|password reset|verify your identity|account locked)\b", re.I)
-_TRAVEL = re.compile(r"\b(?:flight|boarding|hotel|booking confirmed|itinerary|check[ -]?in)\b", re.I)
-_DOCUMENT = re.compile(r"\b(?:document|signature|sign(?:ed|ing)?|attachment|required form|offer letter)\b", re.I)
+_TRAVEL = re.compile(r"\b(?:booking|reservation|flight) (?:is )?confirmed\b|\bitinerary\b|\bboarding pass\b|\bcheck[ -]?in (?:opens?|reminder)\b", re.I)
+_DOCUMENT = re.compile(r"\b(?:documents? (?:needed|required)|signature required|required form|offer letter|please (?:send|sign|submit).{0,40}(?:document|form))\b", re.I)
 _ACTION = re.compile(r"\b(?:please|could you|kindly|action required|respond|reply|confirm|choose|select|schedule|submit|complete|send|sign)\b", re.I)
 _CANCEL = re.compile(r"\b(?:cancelled|canceled|will not take place|interview cancellation)\b", re.I)
 _RESCHEDULE = re.compile(r"\b(?:rescheduled|new time|time has changed|updated invitation)\b", re.I)
 _BULK = re.compile(
-    r"\b(?:jobs? (?:alert|digest)|recommended jobs?|jobs? for you|weekly digest|newsletter|top picks|new openings)\b",
+    r"\b(?:jobs? (?:alert|digest)|recommended jobs?|jobs? for you|weekly (?:digest|report)|newsletter|"
+    r"top picks|new openings|top employers|recruiters are searching|roles similar to yours|"
+    r"price drops?|flash sale|mega sale|special offers?|coupon|discount|unlock interviews|walk[ -]?in drive)\b",
     re.I,
 )
 _APPLICATION_RECEIPT = re.compile(
@@ -33,6 +36,40 @@ _APPLICATION_RECEIPT = re.compile(
     re.I,
 )
 _EDUCATIONAL = re.compile(r"\b(?:interview tips|prepare for interviews?|interview questions?|webinar)\b", re.I)
+_PROMOTIONAL = re.compile(
+    r"\b(?:sale (?:is )?(?:live|starts|ends)|up to \d+% off|shop now|book now|buy now|"
+    r"limited[ -]?time (?:deal|offer)|recommended for you|selected for you|free shipping|"
+    r"new tutorial|streaming this week|unsubscribe)\b",
+    re.I,
+)
+_ROUTINE_TRANSACTION = re.compile(
+    r"\b(?:order (?:has been )?(?:confirmed|delivered|shipped)|payment successful|"
+    r"rate your (?:delivery|experience)|replied to your review|weekly (?:stats|progress report))\b",
+    re.I,
+)
+_CONFIRMED_INTERVIEW = re.compile(
+    r"\b(?:your .{0,30}interview|interview (?:is |has been )?(?:scheduled|confirmed|rescheduled|cancelled|canceled)|"
+    r"interview (?:invitation|details)|online interview|technical interview|screening (?:call|interview))\b",
+    re.I,
+)
+_DIRECT_REQUEST = re.compile(
+    r"\b(?:please|could you|kindly|action required)\b.{0,100}\b(?:reply|confirm|send|submit|complete|sign|select|choose|schedule)\b",
+    re.I | re.S,
+)
+_ACCOUNT_CONSEQUENCE = re.compile(
+    r"\b(?:account|wallet|card|policy|subscription).{0,80}\b(?:inactive|suspended|locked|expire|expires|overdue|closed)\b",
+    re.I | re.S,
+)
+_GENERIC_SENDER = re.compile(
+    r"(?:^|[._+\-])(?:no-?reply|do-?not-?reply|notifications?|alerts?|updates?|news(?:letter)?|"
+    r"marketing|promotions?|offers?|deals?|support|info|hello|shop|payments?|careers?|"
+    r"opportunities|mailer|contactus)(?:$|[._+\-])",
+    re.I,
+)
+_BULK_DOMAINS = (
+    "naukri.com", "naukrigulf.com", "foundit.in", "monsterindia.com", "shine.com",
+    "jobleads.com", "flipboard.com", "stackcommerce.com", "udemymail.com",
+)
 
 
 @dataclass(frozen=True)
@@ -48,16 +85,32 @@ class PriorityClassification:
 
 
 def _direct_human(message: MailMessage) -> bool:
-    sender = message.from_addr.casefold()
+    name, address = parseaddr(message.from_addr)
+    sender = address.casefold()
     headers = message.headers
-    if any(token in sender for token in ("no-reply", "noreply", "donotreply", "notifications@", "mailer-daemon")):
+    local, _, domain = sender.partition("@")
+    if not local or not domain or _GENERIC_SENDER.search(local):
+        return False
+    if any(domain == blocked or domain.endswith(f".{blocked}") for blocked in _BULK_DOMAINS):
         return False
     if headers.get("list-unsubscribe") or headers.get("list-id"):
         return False
     precedence = headers.get("precedence", "").casefold()
     if precedence in {"bulk", "list", "junk"}:
         return False
-    return bool(message.to_addrs or re.search(r"\b(?:hi|hello|dear)\b", message.text[:300], re.I))
+    generic_name = re.search(r"\b(?:team|support|newsletter|alerts?|notifications?|careers?)\b", name, re.I)
+    salutation = re.search(r"\b(?:hi|hello|dear)\s+(?:ajmal\b|mr\.?\s+ajmal\b)", message.text[:400], re.I)
+    personal_address = bool(re.fullmatch(r"[a-z][a-z0-9]*(?:[._-][a-z][a-z0-9]*){0,3}", local, re.I))
+    return bool(message.to_addrs and not generic_name and (salutation or personal_address))
+
+
+def _automated_or_bulk_sender(message: MailMessage) -> bool:
+    _, address = parseaddr(message.from_addr)
+    local, _, domain = address.casefold().partition("@")
+    return bool(
+        _GENERIC_SENDER.search(local)
+        or any(domain == blocked or domain.endswith(f".{blocked}") for blocked in _BULK_DOMAINS)
+    )
 
 
 def classify(message: MailMessage, invite: CalendarInvite | None = None) -> PriorityClassification:
@@ -70,6 +123,56 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
     recruiter = bool(_RECRUITER.search(text))
     direct = _direct_human(message)
     calendar = invite is not None
+    security = bool(_SECURITY.search(text))
+    travel = bool(_TRAVEL.search(text))
+    appointment = bool(_APPOINTMENT.search(text))
+    document = bool(_DOCUMENT.search(text))
+    direct_request = bool(direct and _DIRECT_REQUEST.search(text))
+    confirmed_interview = bool(interview and (_CONFIRMED_INTERVIEW.search(text) or details.event_start))
+    consequence_deadline = bool(details.due_at and _ACCOUNT_CONSEQUENCE.search(text))
+    bulk_noise = bool(
+        _BULK.search(text)
+        or _APPLICATION_RECEIPT.search(text)
+        or _EDUCATIONAL.search(text)
+        or _PROMOTIONAL.search(text)
+        or _ROUTINE_TRANSACTION.search(text)
+        or _automated_or_bulk_sender(message)
+    )
+    protected_priority = bool(
+        calendar or security or confirmed_interview or travel or consequence_deadline
+        or (appointment and details.event_start)
+    )
+
+    if bulk_noise and not protected_priority:
+        return PriorityClassification(
+            importance="suppressed",
+            labels=[],
+            state="informational",
+            confidence=0.96,
+            summary=message.subject or "Bulk mail",
+            why_important="Automated, promotional, or routine mail without a personal action.",
+            evidence=["bulk_or_routine_mail"],
+            details=details,
+        )
+
+    strong_priority = bool(
+        protected_priority
+        or direct_request
+        or (document and (direct or details.due_at))
+        or (interview and direct and not _EDUCATIONAL.search(text))
+        or (recruiter and direct and _ACTION.search(text))
+    )
+    if not strong_priority:
+        return PriorityClassification(
+            importance="suppressed",
+            labels=[],
+            state="informational",
+            confidence=0.9,
+            summary=message.subject or "Email",
+            why_important="No concrete personal action, confirmed schedule, or high-priority signal was found.",
+            evidence=["no_priority_signal"],
+            details=details,
+        )
 
     if interview:
         labels.extend(("work", "interview"))
@@ -77,16 +180,16 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
     if recruiter:
         labels.extend(("work", "recruiter"))
         evidence.append("recruiting_sender_or_language")
-    if _APPOINTMENT.search(text):
+    if appointment:
         labels.append("appointment")
         evidence.append("appointment_language")
-    if _SECURITY.search(text):
+    if security:
         labels.append("security")
         evidence.append("security_action_language")
-    if _TRAVEL.search(text):
+    if travel:
         labels.append("travel")
         evidence.append("travel_confirmation_language")
-    if _DOCUMENT.search(text):
+    if document:
         labels.append("document")
         evidence.append("document_language")
     if details.due_at:
@@ -99,42 +202,6 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
         if not ({"work", "interview", "recruiter"} & set(labels)):
             labels.append("personal")
 
-    strong_priority = bool(labels) or calendar or details.action_text is not None
-    bulk_noise = bool(_BULK.search(text) or _APPLICATION_RECEIPT.search(text) or _EDUCATIONAL.search(text))
-    if bulk_noise and not (calendar or (interview and _ACTION.search(text))):
-        return PriorityClassification(
-            importance="suppressed",
-            labels=[],
-            state="informational",
-            confidence=0.96,
-            summary=message.subject or "Bulk mail",
-            why_important="Bulk notification without a personal action.",
-            evidence=["bulk_or_application_receipt"],
-            details=details,
-        )
-    if not strong_priority and (_ACTION.search(text) or re.search(r"\b(?:invitation|request|important update)\b", text, re.I)):
-        return PriorityClassification(
-            importance="review",
-            labels=[],
-            state="needs_action" if _ACTION.search(text) else "informational",
-            confidence=0.45,
-            summary=details.preview[:260] or message.subject or "Message to review",
-            why_important="This may contain a personal request, but the signals are ambiguous.",
-            evidence=["ambiguous_priority_signal"],
-            details=details,
-        )
-    if not strong_priority:
-        return PriorityClassification(
-            importance="suppressed",
-            labels=[],
-            state="informational",
-            confidence=0.82,
-            summary=message.subject or "Email",
-            why_important="No direct action, schedule, or personal-priority signal was found.",
-            evidence=["no_priority_signal"],
-            details=details,
-        )
-
     unique_labels = [label for label in dict.fromkeys(labels) if label in ALLOWED_LABELS]
     if _CANCEL.search(text) or (invite and invite.status == "cancelled"):
         state = "cancelled"
@@ -144,7 +211,7 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
         evidence.append("event_time_extracted")
         if _RESCHEDULE.search(text):
             evidence.append("reschedule_language")
-    elif details.action_text or _ACTION.search(text):
+    elif details.action_text or direct_request or (interview and not details.event_start):
         state = "needs_action"
         evidence.append("explicit_action_request")
     else:

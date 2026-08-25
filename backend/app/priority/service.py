@@ -152,6 +152,12 @@ class PrioritySyncService:
             row, created = self.intake.add_metadata(account.id, meta)
             if created:
                 report.emails_found += 1
+            elif full:
+                # Full sync is also the safe reclassification path after rules
+                # change. Bodies are not retained, so fetch them again from the
+                # provider while preserving any user-owned item overrides.
+                row.processing_state = "pending"
+                row.last_error = None
             epoch = self._meta_epoch(meta)
             max_cursor = max(max_cursor, epoch)
             if row.received_at is None and epoch:
@@ -172,6 +178,11 @@ class PrioritySyncService:
                 if classification.importance == "review" and self.settings.priority_llm_enabled:
                     classification = review_ambiguous(message, classification)
                 if classification.importance == "suppressed":
+                    existing = self.priority.get_for_thread(account, row)
+                    if existing is not None:
+                        _, _, changed = self.priority.upsert(account, row, classification)
+                        if changed:
+                            report.items_updated += 1
                     self.intake.mark_processed(row, "suppressed", classification.details.preview)
                     report.emails_processed += 1
                     continue
