@@ -1,332 +1,319 @@
 # LifeOS
 
-> A personal operating system that continuously analyzes your life patterns to understand *why* you perform, procrastinate, thrive, or burn out.
+LifeOS is a private, local-first personal intelligence system. It combines an
+Android app with a FastAPI/PostgreSQL backend to turn health, mood, money,
+important email, and GitHub activity into daily scores, patterns, and grounded
+answers.
 
-LifeOS is **not** a fitness app or a budgeting app. It is a private, local-first personal intelligence system that correlates health, behavior, finances, location, and project activity to surface causal insights about your life.
+The production system runs on a Jetson Orin Nano and a Samsung Android phone.
+Apple Health data comes from an iPhone/Apple Watch through Health Auto Export.
+Core processing and primary storage stay on the Jetson; Gmail and GitHub are
+read-only source integrations, and no cloud LLM is used.
 
-```
-"Productivity increases 31% when sleep exceeds 7.2 hours."
-"Food delivery spending spikes during low recovery periods."
-"Road trips correlate with improved mood for the following 3 days."
-```
+## What it does
 
----
+| Area | Current capability |
+|---|---|
+| **Money** | Money-first Android home with Overview, Transactions, and Cards; calendar-period spend, filters and sorting, categories, a home-screen spend widget, exact generated bills, and recorded spend in open card cycles |
+| **Transactions** | Incremental read-only Gmail ingestion for bank/card/UPI alerts, deterministic and local-model parsing, account normalization, manual category overrides, audited repayment pairing, and audited merchant-refund adjustments with Undo |
+| **Statements** | HDFC, Axis, ICICI, and SBI credit-card PDF summaries and details; due tracking and paid state; ordinary statement rows explain bills without entering spend; statement-only EMI/fee rows can fill gaps in live alerts |
+| **Priority** | A focused multi-account Gmail workspace for direct actions, deadlines, interviews, appointments, travel, and security notices, with thread history, snooze/done state, feedback, and safe handoff to Gmail or the Android calendar |
+| **Health** | Apple Health history and live Health Auto Export ingestion for sleep, vitals, activity, and workouts; sleep, recovery, fitness, wellness, consistency, and burnout analytics |
+| **Pulse** | Daily mood, energy, focus, and stress check-in with an optional local reminder |
+| **Execution** | GitHub commits, pull requests, and issues discovered by author and rolled into daily execution scores |
+| **Insights** | Deterministic correlations plus grounded, best-effort local-model narratives and cross-domain synthesis |
+| **Ask** | Streaming chat that routes general questions separately from personal questions and can use bounded health, execution, insight, and guarded money-query tools |
 
-## Vision & Design
-
-**Principles:**
-- **Local-first:** Android + Jetson backend + PostgreSQL + local ollama. No cloud.
-- **Grounded intelligence:** Scores are deterministic formulas. Chat answers cite real metrics — no invented numbers.
-- **Passive observation:** Signals from Health Connect, git repos, and APIs — not manual forms.
-- **Incremental phases:** Ship a working MVP, then add finance, location, device activity.
-
----
+The Android app opens to **Money**. A left navigation drawer provides seven
+destinations: Money, Priority, Today, Pulse, Insights, Ask, and Settings.
 
 ## Architecture
 
-```
-┌─────────────────────────┐         ┌──────────────────────────────┐
-│   Android App           │         │   Jetson Orin Nano (server)  │
-│   (Jetpack Compose)     │  HTTP   │                              │
-│                         │ ──────▶ │   FastAPI Backend            │
-│  • Health Connect       │         │   ├─ Scoring Engine          │
-│  • Mood check-in        │ ◀────── │   ├─ Correlation Engine      │
-│  • GitHub activity      │  JSON   │   ├─ State Engine            │
-│  • Chat (grounded)      │         │   └─ ollama client ────┐     │
-│  • Room offline cache   │         │                        │     │
-└─────────────────────────┘         │   PostgreSQL           ▼     │
-                                     │                   ollama LLM  │
-                                     │              (qwen3.5:4b)    │
-                                     └──────────────────────────────┘
+```mermaid
+flowchart LR
+    AW["Apple Watch / iPhone"] -->|"Health Auto Export REST push"| API
+    Gmail["Gmail accounts"] -->|"read-only gog OAuth"| API
+    GitHub["GitHub"] -->|"embedded MCP server, read-only"| API
+    Phone["Android app\nCompose + Room"] <-->|"LAN HTTP / NDJSON"| API["FastAPI API\nJetson Orin Nano"]
+    API <--> DB["PostgreSQL 16"]
+    API -->|"OpenAI-compatible API"| LLM["MLC-LLM\nQwen 4B"]
 ```
 
-- **Frontend:** Android (Jetpack Compose, Material 3, Health Connect, Retrofit, Room) — offline-first.
-- **Backend:** FastAPI + PostgreSQL, Dockerized.
-- **LLM Layer:** ollama (qwen3.5:4b) running locally on Jetson; preloaded at boot. The backend grounds every answer in real data and cites supporting metrics.
-- **Privacy:** Everything runs on your Android device + Jetson + local PostgreSQL. No cloud dependency.
+- **Android:** Kotlin, Jetpack Compose, Material 3, Hilt, Retrofit, Room,
+  DataStore, and WorkManager. Room keeps the main screens useful between
+  refreshes.
+- **Backend:** FastAPI, SQLAlchemy, PostgreSQL 16, and Docker Compose.
+- **Local model:** LifeOS Ask calls the MLC-LLM server directly at port `11434`.
+  The legacy `OPENCLAW_*` configuration names remain, but the OpenClaw gateway
+  on port `18789` is not part of the request path.
+- **Time:** production day aggregation uses `Asia/Kolkata`. Audit timestamps are
+  stored as real UTC instants.
+- **Trust boundary:** the API is unauthenticated and intended for a trusted LAN.
+  Do not expose port `8000` directly to the public internet.
 
----
+## Data flows
 
-## Project Status (June 2026)
+### Apple Health
 
-### ✅ DONE (Phase 1 MVP + Completion)
+Health Connect ingestion has been removed from the Android app. Apple Health is
+the single health source so activity is not counted once from Apple and again
+from Samsung/Health Connect.
 
-**Infrastructure & Deployment**
-| Item | Status | Details |
-|------|--------|---------|
-| Backend (FastAPI + Postgres) | ✅ Live | `docker compose` on Jetson, healthy, reachable on `192.168.3.30:8000` |
-| Local LLM (ollama + qwen3.5:4b) | ✅ Live | Preloaded at boot, pinned in GPU (2.97 GB VRAM), accessible on `:11434` |
-| End-to-end chat pipeline | ✅ Working | Backend → ollama → grounded answers with citations |
-| Android app | ✅ Built & ready | Sync button, Pulse check-in, chat, offline Room cache |
+There are three supported paths:
 
-**Backend Features**
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Health Connect ingest | ✅ | `POST /health/batch` idempotent by `source_id` |
-| Mood / Pulse API | ✅ | One-tap emoji: mood, energy, focus, stress (1–5 each day) |
-| Wellness score | ✅ | 0–100 from Pulse fields, surfaced on dashboard + correlations |
-| GitHub API execution collector | ✅ | Commits, PRs, issues via github-mcp-server (needs `GITHUB_TOKEN` + `GITHUB_REPOS` in `.env`) |
-| Scoring engine | ✅ | Sleep, Recovery, Execution, Consistency, Burnout (5 daily scores) |
-| State engine | ✅ | 7 life states (Peak Performance, Burnout, Avoidance, etc.) + confidence |
-| Correlation / insights | ✅ | Lagged Pearson pattern discovery, human-readable summaries |
-| Grounded chat | ✅ | ollama via OpenAI-compatible API + fallback data summary |
-| Notifications | ✅ | Burnout, peak, avoidance, inactivity nudges (rule-based) |
-| Nightly recompute | ✅ | `POST /analytics/recompute` orchestrates scoring + state + insights |
-| Tests | ✅ | 44 unit + integration tests (43 pass) |
+1. **Live push:** Health Auto Export posts summarized daily metrics to
+   `POST /health/auto-export`. This is the unattended source of truth.
+2. **Historical backfill:** `backend/scripts/import_apple_health.py` streams a
+   large Apple `export.zip` or `export.xml` into the idempotent
+   `POST /health/batch` endpoint.
+3. **Live Ask tool:** `phone_health_client.py` can query Health Auto Export's
+   foreground TCP server for questions about the most recent readings.
 
-**Android Features**
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Jetpack Compose UI | ✅ | Bottom nav: Today, Pulse, Insights, Ask, Settings |
-| Health Connect sync | ✅ | Manual button + `HealthSyncWorker` (nightly via WorkManager) |
-| One-tap Pulse | ✅ | Emoji selector → mood/energy/focus/stress, logged to backend |
-| Score cards | ✅ | Sleep, Recovery, Execution, Wellness displayed on Today |
-| Insights list | ✅ | Correlation cards (patterns discovered on backend) |
-| Grounded chat | ✅ | Ask tab, suggestion chips, metric citations |
-| Evening Pulse nudge | ✅ | `PulseReminderWorker` fires nightly ~9 PM (configurable) |
-| Offline Room cache | ✅ | Scores, states, insights, mood persisted locally |
-| Configurable backend URL | ✅ | Settings screen to set LAN IP (e.g., `http://192.168.3.30:8000/`) |
+For the Health Auto Export automation, use JSON, **Summarize Data = ON**, daily
+grouping, **Since Last Sync**, and a frequent cadence while the iPhone is on the
+home Wi-Fi. Include every metric LifeOS should own, including activity/workouts
+if desired. Apple only lets the automation read HealthKit while the phone is
+unlocked. The TCP server is optional, foreground-only, and benefits from a DHCP
+reservation for the iPhone.
 
----
+Example backfill commands:
 
-### 🟡 PARTIAL (Skeleton code, needs Firebase setup)
+```bash
+# Parse only; no server writes
+python backend/scripts/import_apple_health.py \
+  --zip /path/to/export.zip --dry-run
 
-| Item | Status | What's needed |
-|------|--------|---------------|
-| **FCM push notifications** | 🟡 Skeleton | Backend code exists (`fcm.py`, device token endpoints, notifications); Android receiver exists. Needs:<br/>• `google-auth==2.38.0` in `backend/requirements.txt` (uncomment line 13)<br/>• Firebase service-account JSON at path specified in `FIREBASE_CREDENTIALS_PATH`<br/>• `app/google-services.json` in Android<br/>• Uncomment `google-services` plugin in Android gradle files |
+# Import into a reachable LifeOS API
+python backend/scripts/import_apple_health.py \
+  --zip /path/to/export.zip --api-url http://192.168.3.30:8000
+```
 
-### ⚠️ Known Issues
+Imports and live pushes use different `source_id` prefixes. Do not overlap a
+historical import window with a live-export window or the same night can be
+counted twice.
 
-| Issue | Status | Fix |
-|-------|--------|-----|
-| `test_wellness_clamps_out_of_range` fails | ⚠️ Test logic wrong | Test expects `0.0` but clamp-to-valid-range yields `20.0`; assertion is incorrect, not code |
+### Money and credit cards
 
----
+The backend reads Gmail through the `gog` CLI included in the API image. OAuth
+tokens and the Google client secret remain in gog's encrypted file keyring; they
+are not stored in Android, Postgres, the image, or `.env`. Android Settings owns
+the normal **Money email** connection and reauthorization flow.
 
-### ❌ NOT DONE (Phase 2+)
+Live alerts are the source of normal purchases. Credit-card statement line items
+are stored separately as explanatory detail and never enter Money spend. Only
+EMI principal/interest/processing-fee rows that live alerts may miss can enter the
+transaction table as `statement_emi`. Savings/current-account statement parsing
+is intentionally disabled.
 
-| Phase | Scope | Status |
-|-------|-------|--------|
-| **Phase 2 — Finance** | Bank SMS/CSV import, categorization, Financial Discipline score | ❌ Not built |
-| **Phase 3 — Location** | Significant places, exploration/isolation scores | ❌ Not built |
-| **Phase 4 — Device activity** | Screen time, app classification, creation vs consumption | ❌ Not built |
-| **Phase 5 — Advanced** | Richer state model, learned patterns, proactive push | ❌ Not built |
-| **Alembic migrations** | Schema version control | ❌ Uses `create_all` on startup |
-| **CI/CD pipeline** | GitHub Actions or similar | ❌ |
+Money keeps three views separate:
 
----
+- calendar-period spending;
+- already-generated card bills; and
+- recorded transactions in each currently open card cycle.
 
-## Quick Start
+Current-cycle totals are not forecasts. They do not invent expected EMIs, fees,
+subscriptions, or future bill totals.
+
+See [Expenses API](backend/docs/expenses-api.md) for the full accounting contract.
+
+### Priority mail
+
+Priority uses a separate Gmail purpose and can use a different account from
+Money. Structured invites and deterministic extraction run first; routine
+newsletters, receipts, digests, and generic notices are suppressed. Ambiguous
+local-model review is off by default so background mail polling does not compete
+with Ask.
+
+LifeOS never sends or modifies email. Calendar actions open Android's standard
+calendar or the original invite, leaving the final save/accept action to the
+user. See [Priority mail operations](backend/docs/priority-mail.md).
+
+### Ask, scores, and insights
+
+Daily scores and state classification are deterministic. Ask adds a bounded
+local-model layer with citations and streams NDJSON events to Android. Personal
+and general conversations are routed separately so old personal context does not
+leak into unrelated questions.
+
+Money questions use an allowlisted semantic query contract. The model never
+supplies executable SQL, table names, columns, or functions; SQLAlchemy builds
+the only database query. Common factual questions are prefetched
+deterministically so correctness does not depend on the model choosing a tool.
+
+## Quick start
 
 ### Prerequisites
-- Android phone (with Health Connect support for health data)
-- Jetson Orin Nano (or Mac) running the backend + ollama
-- Same Wi-Fi network (backend on LAN)
 
-### Backend Setup
-
-1. **Clone the repo on your Jetson:**
-   ```bash
-   git clone git@github.com:ajmalrasi/life_os.git ~/life_os
-   cd ~/life_os/backend
-   ```
-
-2. **Configure `.env`:**
-   ```bash
-   cp .env.example .env
-   # Edit as needed (defaults work for LAN-local setup)
-   ```
-
-3. **Start services:**
-   ```bash
-   docker compose up -d
-   ```
-
-   This starts:
-   - PostgreSQL on `:5432`
-   - FastAPI on `:8000`
-   - ollama (qwen3.5:4b) on `:11434` — preloaded at boot and pinned in GPU
-
-4. **Verify health:**
-   ```bash
-   curl http://192.168.3.30:8000/healthz
-   curl http://192.168.3.30:8000/chat/health
-   ```
-
-### Android Setup
-
-1. **Clone on your dev machine**, open `android/` in Android Studio.
-
-2. **Build a debug APK** (or run on emulator):
-   ```bash
-   ./gradlew build
-   ```
-
-3. **In the app → Settings**, set backend URL:
-   - **Emulator:** `http://10.0.2.2:8000/`
-   - **Physical phone:** `http://192.168.3.30:8000/` (your Jetson's LAN IP)
-
-4. **Tap "Sync & analyze"** to pull health data and kick off the pipeline.
-
-### First Data Flow
-
-1. **Phone syncs health** → `POST /health/batch` uploads sleep, HRV, RHR, etc.
-2. **Phone submits Pulse** → optional emoji check-in (mood/energy/focus/stress)
-3. **Backend recomputes** → scoring + state + correlations (if 2+ weeks of data)
-4. **Phone displays scores** → Sleep, Recovery, Execution, Wellness cards
-5. **Ask LifeOS** → chat grounded in your actual metrics
-
----
-
-## Optional: Enable Execution Tracking (GitHub)
-
-The backend uses the official [github-mcp-server](https://github.com/github/github-mcp-server) as a Docker sidecar. This replaces any manual REST calls with the maintained MCP tool layer, and also gives the LLM (qwen3.5:4b) direct access to GitHub tools during chat (`list_commits`, `get_commit`, `search_commits`, `get_file_contents`).
-
-1. **Create a GitHub Personal Access Token** (fine-grained, read access to your repos)
-
-2. **On Jetson, edit `~/life_os/backend/.env`:**
-   ```env
-   GITHUB_TOKEN=ghp_xxxxx...
-   GITHUB_REPOS=ajmalrasi/life_os,ajmalrasi/other_repo
-   GITHUB_USER=ajmalrasi
-   ```
-
-3. **Restart the stack** (`github-mcp` sidecar starts automatically):
-   ```bash
-   docker compose up -d
-   ```
-
-4. **Next sync fetches commits, PRs, and issues** via the MCP server and computes your Execution score. The LLM can also search GitHub live during chat.
-
-Execution is sourced entirely from GitHub — there is no local `git log` scan. The backend runs on the Jetson, a different host than the dev machine, so a local scan would only ever see whatever happened to be pulled onto that host; GitHub is the actual source of truth for whether the work happened.
-
----
-
-## Repository Layout
-
-```
-life_os/
-├── backend/                FastAPI + PostgreSQL core
-│   ├── app/
-│   │   ├── models/        SQLAlchemy ORM (daily_score, mood, github_activity, etc.)
-│   │   ├── schemas/       Pydantic DTOs (request/response bodies)
-│   │   ├── services/      Scoring, correlation, state, analytics, chat, notifications
-│   │   ├── repositories/  Database access (repository pattern)
-│   │   ├── api/routes/    HTTP endpoints (health, mood, chat, analytics, etc.)
-│   │   └── main.py        FastAPI app setup
-│   ├── tests/             44 unit + integration tests
-│   ├── Dockerfile         Multi-arch (arm64 + x86)
-│   ├── docker-compose.yml Postgres + API
-│   ├── requirements.txt    Python deps
-│   └── README.md          Backend development guide
-│
-├── android/               Jetpack Compose app
-│   ├── app/src/main/java/com/lifeos/app/
-│   │   ├── domain/         Models + repository interfaces (no Android deps)
-│   │   ├── data/
-│   │   │   ├── remote/     Retrofit HTTP client + DTOs
-│   │   │   ├── local/      Room database + DAOs
-│   │   │   ├── health/     Health Connect manager
-│   │   │   └── repository/ Repository implementations
-│   │   ├── di/             Hilt dependency injection
-│   │   ├── presentation/   UI (dashboard, mood, insights, chat, settings)
-│   │   └── work/           WorkManager jobs (health sync, pulse reminder)
-│   ├── app/build.gradle.kts
-│   └── README.md           Android development guide
-│
-└── README.md              (this file)
-```
-
----
-
-## Configuration Reference
-
-### Backend `.env` (key variables)
-
-```env
-# Postgres
-DATABASE_URL=postgresql+psycopg2://lifeos:lifeos@localhost:5432/lifeos
-
-# ollama (local LLM)
-OPENCLAW_BASE_URL=http://host.docker.internal:11434
-OPENCLAW_MODEL=qwen3.5:4b
-OPENCLAW_API_KEY=
-
-# GitHub execution via github-mcp-server sidecar (commits + PRs + issues)
-GITHUB_TOKEN=ghp_xxxxx
-GITHUB_REPOS=ajmalrasi/life_os,ajmalrasi/other_repo
-GITHUB_USER=ajmalrasi
-
-# Firebase Cloud Messaging (optional, for push notifications)
-FIREBASE_CREDENTIALS_PATH=
-FIREBASE_PROJECT_ID=
-```
-
-### Android Settings
-
-- **Backend URL:** `http://192.168.3.30:8000/` (set to your Jetson's LAN IP)
-- **Last sync:** Shown in Settings, also logged locally
-- **Pulse reminder time:** Configurable in Settings (default 9 PM)
-
----
-
-## Development
+- Docker and Docker Compose on the backend host (production uses a Jetson Orin
+  Nano).
+- An OpenAI-compatible local model endpoint if Ask and LLM-assisted parsing are
+  required. Production uses MLC-LLM on `:11434`.
+- Android Studio, JDK 17, and Android SDK 35 for the app.
+- The Android device and backend on the same trusted network.
+- Optional source accounts: Apple Health Auto Export Premium, read-only Gmail,
+  and a read-only GitHub token.
 
 ### Backend
 
-- **Run locally (no Docker):**
-  ```bash
-  cd backend
-  ./.venv/bin/pip install -r requirements.txt
-  ./.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
-  ```
+```bash
+git clone git@github.com:ajmalrasi/life_os.git
+cd life_os/backend
+cp .env.example .env
+# Edit .env for this host. Never commit it.
+docker compose up -d --build
 
-- **Run tests:**
-  ```bash
-  ./.venv/bin/pytest
-  ```
+curl http://localhost:8000/healthz
+curl http://localhost:8000/docs
+```
 
-- **Add a new scoring function:** Edit `app/services/scoring.py`, add a test in `tests/test_scoring.py`, run `pytest`.
+Docker Compose starts PostgreSQL and the API. MLC-LLM is a separate host service
+in the production deployment.
+
+Important settings:
+
+| Setting | Purpose |
+|---|---|
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Database credentials used by Compose |
+| `OPENCLAW_BASE_URL`, `OPENCLAW_MODEL` | OpenAI-compatible local model endpoint and model name |
+| `OPENCLAW_TIMEOUT_SECONDS`, `OPENCLAW_CHAT_DEADLINE_SECONDS`, `OPENCLAW_MAX_TOKENS` | Ask latency and generation bounds; keep the Android 150-second read timeout in mind |
+| `GITHUB_TOKEN`, `GITHUB_USER` | Read-only execution discovery by author; `GITHUB_REPOS` is retained only for chat/backward compatibility |
+| `HAE_HOST`, `HAE_PORT` | Optional foreground live-health TCP server on the iPhone |
+| `GOGCLI_DATA_DIR`, `GOG_KEYRING_PASSWORD` | Persistent encrypted gog OAuth/keyring storage |
+| `CC_OWNER_NAME`, `CC_OWNER_DOB`, `CC_PDF_PASSWORD_OVERRIDES` | Credit-card PDF unlock inputs |
+| `EXPENSE_OWNER_IDENTITIES` | Names/UPI handles used to exclude self-transfers |
+| `PRIORITY_BACKFILL_DAYS`, `PRIORITY_LLM_ENABLED` | Priority history window and optional ambiguous-item model review |
+
+The deployed Jetson checkout lives at `/home/ajmalrasi/life_os`. A normal update
+is:
+
+```bash
+ssh -i ~/.ssh/jetson_key ajmalrasi@192.168.3.30
+cd /home/ajmalrasi/life_os
+git pull
+cd backend
+docker compose up -d --build api
+curl -fsS http://localhost:8000/healthz
+```
+
+`backend/.env` contains production secrets and must never be overwritten during
+a deploy.
 
 ### Android
 
-- **Open in Android Studio** and run on emulator or device.
-- **Debug builds** can use `USE_DEMO_DATA=true` for offline testing.
-- **Gradle wrapper** is included; if missing, open Android Studio once to generate it.
+1. Open `android/` in Android Studio.
+2. Build/install the debug app on the device or emulator.
+3. In **Settings**, set the LifeOS server address. Production uses
+   `http://192.168.3.30:8000/`; an emulator can use
+   `http://10.0.2.2:8000/` for a backend running on the development machine.
+4. Connect the Money and/or Priority Gmail accounts if those features are
+   wanted.
+5. Use **Sync everything** in Settings for an explicit Gmail, statement,
+   Priority, score, execution, and insight refresh.
 
----
+Opening the app refreshes Android's caches without polling Gmail or invoking the
+local model. The nightly worker recomputes analytics, and the spend widget has a
+separate six-hour best-effort refresh. Pulse reminders are opt-in and request the
+Android notification permission when enabled.
 
-## Known Limitations & Workarounds
+The repository currently has no usable Gradle wrapper JAR, so Android Studio is
+the supported build path. A debug APK is written to
+`android/app/build/outputs/apk/debug/`.
 
-| Limitation | Mitigation |
+## API overview
+
+The authoritative machine-readable API is at `GET /openapi.json`; interactive
+documentation is at `GET /docs`.
+
+| Area | Representative endpoints |
 |---|---|
-| Lagged Pearson needs 2+ weeks before insights are meaningful | Show "not enough data" gracefully; seed with demo data in dev |
-| Execution only reflects pushed GitHub activity | Unpushed local commits don't count — push before expecting a sync to pick them up |
-| No user authentication — assumes single-user local setup | Acceptable for personal use; add if multi-user needed |
-| Schema migrations via `create_all` (not Alembic) | Plan to add Alembic before Phase 2 schema changes |
-| Backend must be on LAN | Tailscale or WireGuard for remote access if needed |
-| ollama on Orin Nano: 4B models slower than cloud | Full grounded answer takes ~50s; acceptable for personal insights |
+| Health | `POST /health/auto-export`, `POST /health/batch` |
+| Pulse | `POST /mood`, `GET /mood` |
+| Analytics | `POST /analytics/recompute`, `GET /analytics/scores`, `GET /analytics/state`, `GET /analytics/insights`, `GET /analytics/synthesis` |
+| Execution | `POST /collectors/execution/sync`, `GET /github`, `POST /github` |
+| Money | `GET /expenses`, `POST /expenses/sync`, repayment/refund/category routes, `GET /payee-labels` |
+| Cards | `GET /statements`, `POST /statements/sync`, statement details/paid routes, `GET /statements/cycles/current` |
+| Priority | `GET /priority`, `GET /priority/{id}`, `PATCH /priority/{id}`, `POST /priority/sync/check`, feedback routes |
+| Gmail accounts | `GET /mail/accounts`, OAuth connect/complete and purpose-disconnect routes |
+| Ask | `POST /chat/stream`, `POST /chat`, `GET /chat/suggestions`, `GET /chat/health` |
 
----
+## Development and verification
 
-## Next Steps
+### Backend tests
 
-**Immediate (optional):**
-- Enable GitHub API collector (set `GITHUB_TOKEN` + `GITHUB_REPOS` in `.env`)
-- Fix the failing test (`test_wellness_clamps_out_of_range`)
+```bash
+cd backend
+pytest -q
+```
 
-**Near term (Phase 1 completion):**
-- Alembic migrations (before Phase 2)
-- More extensive tests for correlation engine
+Tests use SQLite and do not require PostgreSQL, Gmail, GitHub, or the local model.
 
-**Phase 2+ (not started):**
-- Financial tracking (SBI/Axis bank API, CSV import, auto-categorization)
-- Location intelligence (significant places, exploration/isolation scores)
-- Device activity (screen time, app classification)
-- Advanced pattern discovery + learned models
+### Android tests
 
----
+Run unit tests and `assembleDebug` from Android Studio. Connected Compose tests
+live under `android/app/src/androidTest/` and should be run on a device/emulator
+for navigation or Money UI changes.
+
+### Database changes
+
+LifeOS still uses SQLAlchemy `create_all()` at startup and has no Alembic
+migration framework. It creates missing tables but does **not** alter existing
+columns. Any schema change to a deployed database therefore needs an explicit,
+idempotent SQL migration applied before the rebuilt API starts. Existing scripts
+live under `backend/scripts/`.
+
+## Repository layout
+
+```text
+life_os/
+├── backend/
+│   ├── app/
+│   │   ├── api/routes/          FastAPI routes
+│   │   ├── mail/                Gmail provider and OAuth/keyring integration
+│   │   ├── models/              SQLAlchemy models
+│   │   ├── priority/            Priority classification and notifications
+│   │   ├── repositories/        Database access
+│   │   ├── schemas/             API request/response models
+│   │   └── services/            Analytics, health, money, GitHub, statements, Ask
+│   ├── docs/                    Expenses and Priority operational references
+│   ├── ops/systemd/             MLC watchdog and Priority sync units
+│   ├── scripts/                 Imports, migrations, maintenance, watchdog
+│   ├── tests/                   Backend test suite
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── android/
+│   └── app/src/
+│       ├── main/java/com/lifeos/app/
+│       │   ├── data/            Retrofit, Room, and repositories
+│       │   ├── domain/          Models and repository contracts
+│       │   ├── presentation/    Money, Priority, Today, Pulse, Insights, Ask, Settings
+│       │   ├── sync/            Unified app refresh/sync coordinator
+│       │   ├── widget/          Spend widget
+│       │   └── work/            Nightly, reminder, and widget workers
+│       ├── test/                JVM unit tests
+│       └── androidTest/         Connected Compose tests
+├── AGENTS.md                    Detailed operational history and agent handoff notes
+└── README.md
+```
+
+## Operational notes and limitations
+
+- The production API/database run on the Jetson; backend changes are verified
+  there after deployment. Android changes need a build and device/emulator check.
+- `/chat/health` proves that the model endpoint answers `/v1/models`; it does not
+  prove that a full generation will complete. The supplied MLC watchdog also
+  performs a real token-generation probe and can recover a stuck decoder.
+- `POST /analytics/recompute` keeps health scoring synchronous but runs GitHub
+  execution discovery in the background to keep user-visible sync fast.
+- Gmail OAuth must use a Google Cloud consent screen in **Production** mode;
+  Testing-mode refresh tokens expire after seven days. Only `gmail.readonly` is
+  required.
+- Firebase push is optional and remains inactive unless the optional backend
+  dependency, credentials, and Android Google Services configuration are
+  supplied. Local Pulse reminders do not require Firebase.
+- Location intelligence and device-activity/screen-time ingestion are not yet
+  implemented.
 
 ## License
 
-Personal project. All data stays local — Jetson + Android + PostgreSQL.
+Personal project. Core LifeOS data and model inference stay on the Jetson and
+Android device.
