@@ -145,7 +145,7 @@ def test_routine_feedback_and_prospectus_notices_are_suppressed():
     )
     prospectus = _message(
         subject="Prospectus Available Online for Viewing",
-        text="Your Prospectus Documents are available online as a result of your transaction.",
+        text="Your Prospectus Document(s) are available online as a result of your transaction.",
     )
 
     assert classify(feedback).importance == "suppressed"

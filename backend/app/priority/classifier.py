@@ -51,7 +51,7 @@ _ROUTINE_TRANSACTION = re.compile(
     r"\b(?:order (?:has been )?(?:confirmed|delivered|shipped)|payment successful|"
     r"rate your (?:delivery|experience|transaction)|share your experience|leave seller feedback|"
     r"replied to your review|weekly (?:stats|progress report)|"
-    r"prospectus documents? (?:are|is) available online)\b",
+    r"prospectus documents?(?:\(s\))? (?:are|is) available online)\b",
     re.I,
 )
 _CONFIRMED_INTERVIEW = re.compile(
