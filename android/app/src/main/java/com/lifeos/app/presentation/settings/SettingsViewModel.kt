@@ -3,6 +3,8 @@ package com.lifeos.app.presentation.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.repository.SettingsRepository
+import com.lifeos.app.domain.model.ConnectedMailAccount
+import com.lifeos.app.mail.MailConnectionManager
 import com.lifeos.app.sync.LifeOsSyncCoordinator
 import com.lifeos.app.work.WorkScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,6 +24,11 @@ data class SettingsUiState(
     val syncing: Boolean = false,
     val syncMessage: String? = null,
     val syncError: Boolean = false,
+    val mailAccounts: List<ConnectedMailAccount> = emptyList(),
+    val mailLoading: Boolean = true,
+    val connectingPurpose: String? = null,
+    val mailMessage: String? = null,
+    val mailError: Boolean = false,
 )
 
 @HiltViewModel
@@ -29,6 +36,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val workScheduler: WorkScheduler,
     private val syncCoordinator: LifeOsSyncCoordinator,
+    private val mailConnectionManager: MailConnectionManager,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -48,6 +56,7 @@ class SettingsViewModel @Inject constructor(
                 _state.value = _state.value.copy(lastSyncAt = lastSyncAt)
             }
         }
+        refreshMailAccounts()
     }
 
     fun onUrlChange(url: String) {
@@ -95,4 +104,76 @@ class SettingsViewModel @Inject constructor(
             )
         }
     }
+
+    fun refreshMailAccounts() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(mailLoading = true, mailError = false)
+            runCatching { mailConnectionManager.accounts() }
+                .onSuccess { accounts ->
+                    _state.value = _state.value.copy(
+                        mailAccounts = accounts,
+                        mailLoading = false,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        mailLoading = false,
+                        mailError = true,
+                        mailMessage = error.message ?: "Mail connections could not be loaded.",
+                    )
+                }
+        }
+    }
+
+    fun connectMail(purpose: String, email: String, forceReauthorize: Boolean) {
+        if (_state.value.connectingPurpose != null) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                connectingPurpose = purpose,
+                mailMessage = "Opening Google authorization…",
+                mailError = false,
+            )
+            runCatching {
+                mailConnectionManager.connect(purpose, email, forceReauthorize)
+            }.onSuccess { connected ->
+                val accounts = mailConnectionManager.accounts()
+                _state.value = _state.value.copy(
+                    mailAccounts = accounts,
+                    connectingPurpose = null,
+                    mailMessage = "${connected.address} is connected to ${purpose.displayName()}.",
+                )
+            }.onFailure { error ->
+                _state.value = _state.value.copy(
+                    connectingPurpose = null,
+                    mailError = true,
+                    mailMessage = error.message ?: "Gmail authorization could not be completed.",
+                )
+            }
+        }
+    }
+
+    fun stopUsingMail(accountId: Int, purpose: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(connectingPurpose = purpose, mailMessage = null)
+            runCatching { mailConnectionManager.stopUsing(accountId, purpose) }
+                .onSuccess {
+                    val accounts = mailConnectionManager.accounts()
+                    _state.value = _state.value.copy(
+                        mailAccounts = accounts,
+                        connectingPurpose = null,
+                        mailMessage = "${purpose.displayName()} mailbox disconnected.",
+                        mailError = false,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        connectingPurpose = null,
+                        mailMessage = error.message ?: "The mailbox could not be disconnected.",
+                        mailError = true,
+                    )
+                }
+        }
+    }
+
+    private fun String.displayName(): String = if (this == "finance") "Money" else "Priority"
 }

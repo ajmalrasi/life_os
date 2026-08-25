@@ -44,6 +44,10 @@ services:
       # the mounted gogcli config below; only the keyring password is a secret.
       GMAIL_ACCOUNT: ${GMAIL_ACCOUNT:-}
       GOG_KEYRING_PASSWORD: ${GOG_KEYRING_PASSWORD:-}
+      # Keep the existing token/client layout, but place short-lived PKCE state
+      # in a writable LifeOS-owned subdirectory instead of the read-only host config.
+      GOG_CONFIG_DIR: /root/.local/share/gogcli/config
+      GOG_KEYRING_BACKEND: file
       EXPENSE_BACKFILL_DAYS: ${EXPENSE_BACKFILL_DAYS:-90}
       PRIORITY_BACKFILL_DAYS: ${PRIORITY_BACKFILL_DAYS:-120}
       PRIORITY_LLM_ENABLED: ${PRIORITY_LLM_ENABLED:-false}
@@ -59,11 +63,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # gog auth. Config (client + keyring_backend flag) is shared read-only.
-      # The data dir (credentials + file keyring) needs write access for gog's
-      # lock file, so it is a life_os-owned COPY — isolated from other gog
-      # consumers on the host, but backed by the same authorized refresh token.
-      - ${GOGCLI_CONFIG_DIR:-/home/ajmalrasi/.config/gogcli}:/root/.config/gogcli:ro
+      # OAuth state and encrypted tokens are isolated in LifeOS-owned storage.
+      # The refresh token never passes through Android or Postgres.
       - ${GOGCLI_DATA_DIR:-/home/ajmalrasi/lifeos-gog/data}:/root/.local/share/gogcli:rw
 
 volumes:

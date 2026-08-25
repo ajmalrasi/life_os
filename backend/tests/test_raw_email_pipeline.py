@@ -302,7 +302,7 @@ def test_fetch_endpoint_rejects_unknown_bank(client):
 def test_fetch_endpoint_no_gmail_account_returns_zero(client):
     from unittest.mock import patch
 
-    with patch("app.mail.gmail_provider.shutil.which", return_value=None):
+    with patch("app.mail.gog.shutil.which", return_value=None):
         resp = client.post("/expenses/rebuild-llm/fetch", params={"since": "2026-01-01", "bank": "HDFC"})
     assert resp.status_code == 200
     assert resp.json() == {"bank": "HDFC", "emails_found": 0, "emails_saved": 0}

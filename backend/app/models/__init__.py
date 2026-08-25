@@ -10,7 +10,13 @@ from app.models.device import DeviceToken
 from app.models.github import GithubActivity
 from app.models.health import HealthRecord, HealthRecordType
 from app.models.insight import Insight
-from app.models.mail import MailAccount, MailAccountPurpose, MailMessageRecord, MailSyncState
+from app.models.mail import (
+    MailAccount,
+    MailAccountPurpose,
+    MailAuthSession,
+    MailMessageRecord,
+    MailSyncState,
+)
 from app.models.card_statement import CardStatement, CardStatementItem
 from app.models.mood import MoodCheckin
 from app.models.payee_label import PayeeLabel
@@ -35,6 +41,7 @@ __all__ = [
     "Insight",
     "MailAccount",
     "MailAccountPurpose",
+    "MailAuthSession",
     "MailMessageRecord",
     "MailSyncState",
     "SynthesizedInsight",

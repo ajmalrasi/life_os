@@ -92,3 +92,21 @@ class MailSyncState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class MailAuthSession(Base):
+    """Short-lived pairing state; refresh tokens remain in gog's keyring."""
+
+    __tablename__ = "mail_auth_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(32), index=True)
+    expected_email: Mapped[str] = mapped_column(String(320))
+    display_label: Mapped[str] = mapped_column(String(80))
+    redirect_uri: Mapped[str] = mapped_column(String(200))
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

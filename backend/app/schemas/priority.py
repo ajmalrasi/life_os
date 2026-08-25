@@ -109,5 +109,44 @@ class MailAccountOut(BaseModel):
     display_label: str
     purposes: list[str]
     enabled: bool
+    authorized: bool = False
     priority_last_success_at: datetime | None = None
     priority_last_error: str | None = None
+
+
+class MailConnectionStartIn(BaseModel):
+    purpose: str
+    email: str
+    display_label: str | None = None
+    callback_port: int = Field(ge=1024, le=65535)
+    force_reauthorize: bool = False
+
+    @field_validator("purpose")
+    @classmethod
+    def validate_purpose(cls, value: str) -> str:
+        if value not in {"finance", "priority"}:
+            raise ValueError("unsupported mail purpose")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.strip().casefold()
+        if not normalized or "@" not in normalized or len(normalized) > 320:
+            raise ValueError("a valid Gmail address is required")
+        return normalized
+
+
+class MailConnectionStartOut(BaseModel):
+    requires_authorization: bool
+    account: MailAccountOut | None = None
+    session_id: str | None = None
+    session_secret: str | None = None
+    authorization_url: str | None = None
+    expires_at: datetime | None = None
+
+
+class MailConnectionCompleteIn(BaseModel):
+    session_id: str = Field(min_length=36, max_length=36)
+    session_secret: str = Field(min_length=32, max_length=200)
+    callback_url: str = Field(min_length=20, max_length=4096)

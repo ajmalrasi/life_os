@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 import html
-import json
 import logging
-import os
 import re
-import shutil
-import subprocess
 
+from app.mail.gog import GogCommandError, GogRunner
 from app.mail.models import MailAttachment, MailMessage
 
 logger = logging.getLogger(__name__)
-
-_TIMEOUT = 30.0
-
 
 class MailProviderError(RuntimeError):
     """A mailbox read failed and must not be reported as a successful sync."""
@@ -33,48 +27,36 @@ class GmailProvider:
         self.keyring_password = keyring_password
         self.gog_bin = gog_bin
         self.home = home
+        self.runner = GogRunner(
+            keyring_password=keyring_password,
+            gog_bin=gog_bin,
+            home=home,
+        )
 
     def is_available(self) -> bool:
-        return bool(self.account) and shutil.which(self.gog_bin) is not None
-
-    def _env(self) -> dict[str, str]:
-        env = {**os.environ}
-        if self.keyring_password:
-            env["GOG_KEYRING_PASSWORD"] = self.keyring_password
-        if self.home:
-            env["GOG_HOME"] = self.home
-        return env
+        return bool(self.account) and self.runner.available
 
     def _run(self, args: list[str]) -> str:
         try:
-            proc = subprocess.run(
-                [self.gog_bin, "-a", self.account, *args],
-                capture_output=True,
-                text=True,
-                timeout=_TIMEOUT,
-                env=self._env(),
-            )
-        except subprocess.TimeoutExpired as exc:
-            logger.warning("gog call for %s timed out: %s", self.account, exc)
-            raise MailProviderError(f"Gmail account {self.account} took too long to respond.") from exc
-        except (FileNotFoundError, OSError) as exc:
-            logger.warning("gog call failed: %s", exc)
-            raise MailProviderError("The Gmail reader is unavailable on the LifeOS server.") from exc
-        if proc.returncode != 0:
-            stderr = proc.stderr.strip()
-            logger.warning("gog error for %s (%s): %s", self.account, proc.returncode, stderr[:200])
-            lowered = stderr.lower()
+            return self.runner.run(args, account=self.account)
+        except GogCommandError as exc:
+            lowered = exc.stderr.casefold()
             if "invalid_grant" in lowered or "insufficientpermissions" in lowered:
                 raise MailProviderError(
                     f"Gmail authorization expired for {self.account} or lacks read access. "
                     "Reauthorize that LifeOS mail connection."
-                )
-            raise MailProviderError(f"Gmail account {self.account} could not be read.")
-        return proc.stdout
+                ) from exc
+            if "too long" in str(exc).casefold():
+                raise MailProviderError(
+                    f"Gmail account {self.account} took too long to respond."
+                ) from exc
+            raise MailProviderError(f"Gmail account {self.account} could not be read.") from exc
 
     @staticmethod
     def _json(out: str, operation: str) -> dict:
         try:
+            import json
+
             data = json.loads(out)
         except json.JSONDecodeError as exc:
             logger.warning("gog returned invalid JSON while %s", operation)

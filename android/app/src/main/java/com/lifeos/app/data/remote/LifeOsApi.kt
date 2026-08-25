@@ -24,6 +24,10 @@ import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
 import com.lifeos.app.data.remote.dto.PriorityItemDto
 import com.lifeos.app.data.remote.dto.PrioritySyncResultDto
 import com.lifeos.app.data.remote.dto.PriorityUpdateDto
+import com.lifeos.app.data.remote.dto.MailAccountDto
+import com.lifeos.app.data.remote.dto.MailConnectionCompleteDto
+import com.lifeos.app.data.remote.dto.MailConnectionStartDto
+import com.lifeos.app.data.remote.dto.MailConnectionStartResultDto
 import com.lifeos.app.data.remote.dto.RecomputeResultDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
@@ -60,6 +64,25 @@ interface LifeOsApi {
 
     @POST("priority/sync/check")
     suspend fun syncPriority(): PrioritySyncResultDto
+
+    @GET("mail/accounts")
+    suspend fun listMailAccounts(): List<MailAccountDto>
+
+    @POST("mail/accounts/connect/start")
+    suspend fun startMailConnection(
+        @Body payload: MailConnectionStartDto,
+    ): MailConnectionStartResultDto
+
+    @POST("mail/accounts/connect/complete")
+    suspend fun completeMailConnection(
+        @Body payload: MailConnectionCompleteDto,
+    ): MailAccountDto
+
+    @DELETE("mail/accounts/{accountId}/purposes/{purpose}")
+    suspend fun stopUsingMailAccount(
+        @Path("accountId") accountId: Int,
+        @Path("purpose") purpose: String,
+    )
 
     @PATCH("priority/{itemId}")
     suspend fun updatePriority(

@@ -226,7 +226,7 @@ def test_new_since_endpoint(client):
 
 def test_sync_endpoint_disabled_without_account(client):
     # No gmail_account configured in tests → collector reports unavailable.
-    with patch("app.mail.gmail_provider.shutil.which", return_value=None):
+    with patch("app.mail.gog.shutil.which", return_value=None):
         resp = client.post("/expenses/sync")
     assert resp.status_code == 200
     assert resp.json()["transactions_new"] == 0
@@ -239,7 +239,7 @@ def test_gmail_auth_failure_is_not_silently_treated_as_no_email():
         stdout="",
         stderr="oauth2: invalid_grant: Token has been expired or revoked",
     )
-    with patch("app.mail.gmail_provider.subprocess.run", return_value=failed):
+    with patch("app.mail.gog.subprocess.run", return_value=failed):
         with pytest.raises(MailProviderError, match="authorization expired"):
             GmailProvider("mail@example.com").search("newer_than:1d")
 

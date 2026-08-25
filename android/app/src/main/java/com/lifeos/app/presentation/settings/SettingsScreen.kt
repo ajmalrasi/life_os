@@ -23,8 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,9 +35,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +56,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.theme.LifeOsColors
+import com.lifeos.app.domain.model.ConnectedMailAccount
+
+private data class MailConnectPrompt(
+    val purpose: String,
+    val initialEmail: String,
+    val forceReauthorize: Boolean,
+)
+
+private data class MailDisconnectPrompt(
+    val accountId: Int,
+    val purpose: String,
+    val address: String,
+)
 
 @Composable
 fun SettingsScreen(
@@ -61,6 +78,8 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val fieldColors = lifeOsFieldColors()
+    var mailPrompt by remember { mutableStateOf<MailConnectPrompt?>(null) }
+    var disconnectPrompt by remember { mutableStateOf<MailDisconnectPrompt?>(null) }
     var notificationPermissionGranted by remember {
         mutableStateOf(hasNotificationPermission(context))
     }
@@ -193,6 +212,50 @@ fun SettingsScreen(
             }
         }
 
+        SettingsSectionLabel("Mail accounts")
+        SettingsGroup {
+            Column {
+                MailConnectionRow(
+                    title = "Money email",
+                    description = "Bank alerts, UPI transactions, and card statements.",
+                    purpose = "finance",
+                    account = state.mailAccounts.firstOrNull { "finance" in it.purposes },
+                    busy = state.connectingPurpose == "finance",
+                    loading = state.mailLoading,
+                    onConnect = { current, force ->
+                        mailPrompt = MailConnectPrompt("finance", current.orEmpty(), force)
+                    },
+                    onDisconnect = { account ->
+                        disconnectPrompt = MailDisconnectPrompt(account.id, "finance", account.address)
+                    },
+                )
+                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                MailConnectionRow(
+                    title = "Priority email",
+                    description = "Important personal mail, interviews, schedules, and actions.",
+                    purpose = "priority",
+                    account = state.mailAccounts.firstOrNull { "priority" in it.purposes },
+                    busy = state.connectingPurpose == "priority",
+                    loading = state.mailLoading,
+                    onConnect = { current, force ->
+                        mailPrompt = MailConnectPrompt("priority", current.orEmpty(), force)
+                    },
+                    onDisconnect = { account ->
+                        disconnectPrompt = MailDisconnectPrompt(account.id, "priority", account.address)
+                    },
+                )
+                state.mailMessage?.let { message ->
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                    Text(
+                        message,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.mailError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                    )
+                }
+            }
+        }
+
         SettingsSectionLabel("Automation")
         SettingsGroup {
             Column {
@@ -289,7 +352,154 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(20.dp))
     }
+
+    mailPrompt?.let { prompt ->
+        MailConnectionDialog(
+            prompt = prompt,
+            onDismiss = { mailPrompt = null },
+            onConnect = { email ->
+                mailPrompt = null
+                viewModel.connectMail(prompt.purpose, email, prompt.forceReauthorize)
+            },
+        )
+    }
+
+    disconnectPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = { disconnectPrompt = null },
+            title = { Text("Stop using this inbox?") },
+            text = {
+                Text(
+                    "LifeOS will stop checking ${prompt.address} for ${prompt.purpose.mailPurposeName()} mail. Existing records stay intact.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        disconnectPrompt = null
+                        viewModel.stopUsingMail(prompt.accountId, prompt.purpose)
+                    },
+                ) { Text("Stop using") }
+            },
+            dismissButton = {
+                TextButton(onClick = { disconnectPrompt = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
+
+@Composable
+private fun MailConnectionRow(
+    title: String,
+    description: String,
+    purpose: String,
+    account: ConnectedMailAccount?,
+    busy: Boolean,
+    loading: Boolean,
+    onConnect: (currentEmail: String?, forceReauthorize: Boolean) -> Unit,
+    onDisconnect: (ConnectedMailAccount) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(shape = RoundedCornerShape(12.dp), color = LifeOsColors.PrimarySoft) {
+                Icon(
+                    Icons.Rounded.Mail,
+                    contentDescription = null,
+                    tint = LifeOsColors.Primary,
+                    modifier = Modifier.padding(10.dp).size(22.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(description, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+            }
+            if (busy || loading) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+        }
+
+        when {
+            account == null && !loading -> {
+                Text("Not connected", style = MaterialTheme.typography.labelMedium, color = LifeOsColors.Warning)
+                Button(
+                    onClick = { onConnect(null, false) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Connect Gmail") }
+            }
+            account != null -> {
+                Text(
+                    if (account.authorized) "Connected · ${account.address}" else "Authorization needed · ${account.address}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (account.authorized) LifeOsColors.Positive else LifeOsColors.Warning,
+                )
+                account.priorityLastError?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.Warning)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onConnect(account.address, !account.authorized) },
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                    ) { Text(if (account.authorized) "Change" else "Authorize") }
+                    if (account.authorized) {
+                        OutlinedButton(
+                            onClick = { onConnect(account.address, true) },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Reauthorize") }
+                    }
+                }
+                TextButton(
+                    onClick = { onDisconnect(account) },
+                    enabled = !busy,
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text("Stop using for ${purpose.mailPurposeName()}") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MailConnectionDialog(
+    prompt: MailConnectPrompt,
+    onDismiss: () -> Unit,
+    onConnect: (String) -> Unit,
+) {
+    var email by remember(prompt) { mutableStateOf(prompt.initialEmail) }
+    val valid = email.trim().let { "@" in it && "." in it.substringAfter('@') }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Connect ${prompt.purpose.mailPurposeName()} email") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Google opens in your browser. LifeOS requests read-only Gmail access; the Jetson stores the authorization securely.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Gmail address") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConnect(email.trim()) }, enabled = valid) {
+                Text(if (prompt.forceReauthorize) "Continue to Google" else "Connect")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun String.mailPurposeName(): String = if (this == "finance") "Money" else "Priority"
 
 @Composable
 private fun SettingsSectionLabel(text: String) {

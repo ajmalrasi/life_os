@@ -5,10 +5,28 @@ the `finance` purpose; the second Gmail account receives only the `priority`
 purpose. Tokens remain in gog's protected credential store and are never saved
 in Postgres or Android.
 
-## One-time second-account setup
+## In-app account setup
 
-Run on the Jetson from `/home/ajmalrasi/life_os/backend` after deploying the new
-API image. Replace the example address and label:
+Settings now owns two independent connection slots: **Money email** and
+**Priority email**. Connect, change, or reauthorize either one from the Android
+app. LifeOS opens Google's consent page in the phone browser and listens briefly
+on a phone-only loopback address for Google's callback.
+
+The Jetson starts and completes gog's supported remote OAuth flow with S256
+PKCE. Android receives only the authorization link, a short-lived pairing
+secret, and Google's one-time callback URL. The refresh token is exchanged by
+gog and stored in the Jetson's encrypted file keyring; it is never returned to
+Android or written to Postgres. A connection session expires after five minutes
+and cannot be replayed.
+
+The existing Money account is bootstrapped into the account registry on the
+first Settings load. Changing a slot disables its prior purpose assignment but
+does not delete transactions, statements, Priority items, or mail history.
+
+## Command-line fallback
+
+The command-line flow remains available for recovery. Run on the Jetson from
+`/home/ajmalrasi/life_os/backend` and replace the example address and label:
 
 ```bash
 docker compose run --rm api gog auth add career@example.com \
