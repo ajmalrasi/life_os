@@ -9,15 +9,17 @@ in Postgres or Android.
 
 Settings now owns two independent connection slots: **Money email** and
 **Priority email**. Connect, change, or reauthorize either one from the Android
-app. LifeOS opens Google's consent page in the phone browser and listens briefly
-on a phone-only loopback address for Google's callback.
+app. Google owns account selection; LifeOS does not ask the user to type an
+address before opening the consent page. The app listens briefly on a
+phone-only loopback address for Google's callback.
 
-The Jetson starts and completes gog's supported remote OAuth flow with S256
-PKCE. Android receives only the authorization link, a short-lived pairing
-secret, and Google's one-time callback URL. The refresh token is exchanged by
-gog and stored in the Jetson's encrypted file keyring; it is never returned to
-Android or written to Postgres. A connection session expires after five minutes
-and cannot be replayed.
+The Jetson starts and completes a native Google OAuth flow with S256 PKCE.
+Android receives only the authorization link and a short-lived pairing secret.
+After Google returns to the phone, the Jetson exchanges the one-time code,
+verifies the selected identity through Gmail, and imports the refresh token into
+gog's encrypted file keyring through standard input. The token is never returned
+to Android or written to Postgres. A connection session expires after five
+minutes and cannot be replayed.
 
 The existing Money account is bootstrapped into the account registry on the
 first Settings load. Changing a slot disables its prior purpose assignment but

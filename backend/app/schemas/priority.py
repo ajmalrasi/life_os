@@ -116,7 +116,7 @@ class MailAccountOut(BaseModel):
 
 class MailConnectionStartIn(BaseModel):
     purpose: str
-    email: str
+    email: str | None = None
     display_label: str | None = None
     callback_port: int = Field(ge=1024, le=65535)
     force_reauthorize: bool = False
@@ -130,9 +130,13 @@ class MailConnectionStartIn(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def validate_email(cls, value: str) -> str:
+    def validate_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip().casefold()
-        if not normalized or "@" not in normalized or len(normalized) > 320:
+        if not normalized:
+            return None
+        if "@" not in normalized or len(normalized) > 320:
             raise ValueError("a valid Gmail address is required")
         return normalized
 

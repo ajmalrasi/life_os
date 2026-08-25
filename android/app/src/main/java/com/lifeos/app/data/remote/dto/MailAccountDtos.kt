@@ -16,7 +16,7 @@ data class MailAccountDto(
 @Serializable
 data class MailConnectionStartDto(
     val purpose: String,
-    val email: String,
+    val email: String? = null,
     @SerialName("display_label") val displayLabel: String,
     @SerialName("callback_port") val callbackPort: Int,
     @SerialName("force_reauthorize") val forceReauthorize: Boolean,

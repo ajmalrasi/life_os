@@ -212,13 +212,16 @@ OAuth credentials remain in gog's protected credential store. The database
 stores only the provider account identity and purpose assignment. Both Gmail
 accounts are authorized independently with read-only Gmail scope.
 
-Settings can initiate gog's two-step remote flow. The Jetson creates the Google
-authorization URL and retains the S256 PKCE verifier. Android opens the URL and
-temporarily listens on `127.0.0.1` for Google's loopback callback, then sends the
-one-time callback URL plus a separate short-lived pairing secret to the Jetson.
-The Jetson validates the exact callback origin and OAuth state, exchanges the
-code, and stores the refresh token in its encrypted gog keyring. The refresh
-token never crosses the LifeOS API boundary.
+Settings initiates a native Google OAuth flow. Google is the source of truth for
+account selection, so Android never asks the user to type an address. The Jetson
+creates the authorization URL with an S256 PKCE challenge; the short-lived
+pairing secret supplied to Android is also the verifier, while only its hash is
+stored in Postgres. Android opens the URL and temporarily listens on
+`127.0.0.1` for Google's loopback callback. The Jetson validates the exact
+callback origin and OAuth state, exchanges the code, verifies the selected
+identity through Gmail, and imports the refresh token into the encrypted gog
+keyring through standard input. The refresh token never crosses the LifeOS API
+boundary.
 
 The current `GMAIL_ACCOUNT` environment value is migrated once into an account
 with the `finance` purpose. It remains as a temporary bootstrap fallback for one

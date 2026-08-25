@@ -70,6 +70,8 @@ def _validate_callback(session: MailAuthSession, callback_url: str) -> None:
         raise HTTPException(status_code=400, detail="Google authorization was cancelled.")
     if not params.get("code") or not params.get("state"):
         raise HTTPException(status_code=400, detail="Google callback is missing authorization data.")
+    if params["state"] != [session.id]:
+        raise HTTPException(status_code=400, detail="Google returned an invalid authorization state.")
 
 
 @router.get("", response_model=list[MailAccountOut])
@@ -92,7 +94,7 @@ def start_mail_connection(
     label = (payload.display_label or ("Money inbox" if payload.purpose == "finance" else "Priority inbox"))
     label = label.strip()[:80]
     authorized = oauth.authorized_accounts()
-    if payload.email in authorized and not payload.force_reauthorize:
+    if payload.email and payload.email in authorized and not payload.force_reauthorize:
         account = accounts.assign_exclusive(payload.email, payload.purpose, label)
         return MailConnectionStartOut(
             requires_authorization=False,
@@ -100,18 +102,23 @@ def start_mail_connection(
         )
 
     redirect_uri = f"http://127.0.0.1:{payload.callback_port}/oauth2/callback"
+    session_id = str(uuid.uuid4())
+    session_secret = secrets.token_urlsafe(64)
     try:
-        remote = oauth.start(payload.email, redirect_uri)
+        remote = oauth.start(
+            redirect_uri,
+            session_id,
+            session_secret,
+            payload.email if payload.force_reauthorize else None,
+        )
     except MailAuthorizationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    session_id = str(uuid.uuid4())
-    session_secret = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     MailAuthSessionRepository(db).create(
         session_id=session_id,
         purpose=payload.purpose,
-        email=payload.email,
+        email=payload.email or "",
         display_label=label,
         redirect_uri=redirect_uri,
         secret_hash=_secret_hash(session_secret),
@@ -140,9 +147,10 @@ def complete_mail_connection(
     try:
         _validate_callback(session, payload.callback_url)
         email = GogOAuthService().complete(
-            session.expected_email,
+            session.expected_email or None,
             session.redirect_uri,
             payload.callback_url,
+            payload.session_secret,
         )
     except HTTPException as exc:
         sessions.fail(session, str(exc.detail))

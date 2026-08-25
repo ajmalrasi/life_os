@@ -41,7 +41,7 @@ class MailConnectionManager @Inject constructor(
 
     suspend fun connect(
         purpose: String,
-        email: String,
+        expectedEmail: String?,
         forceReauthorize: Boolean,
     ): ConnectedMailAccount = try {
         withContext(Dispatchers.IO) {
@@ -51,7 +51,7 @@ class MailConnectionManager @Inject constructor(
                 val start = api.startMailConnection(
                     MailConnectionStartDto(
                         purpose = purpose,
-                        email = email.trim(),
+                        email = expectedEmail?.trim()?.takeIf { it.isNotEmpty() },
                         displayLabel = label,
                         callbackPort = server.localPort,
                         forceReauthorize = forceReauthorize,
@@ -65,10 +65,7 @@ class MailConnectionManager @Inject constructor(
                 val sessionId = requireNotNull(start.sessionId)
                 val sessionSecret = requireNotNull(start.sessionSecret)
                 openBrowser(authorizationUrl)
-                val callbackUrl = receiveCallback(server)
-                api.completeMailConnection(
-                    MailConnectionCompleteDto(sessionId, sessionSecret, callbackUrl),
-                ).toDomain()
+                receiveAndComplete(server, sessionId, sessionSecret)
             }
         }
     } catch (error: HttpException) {
@@ -96,7 +93,11 @@ class MailConnectionManager @Inject constructor(
         }
     }
 
-    private fun receiveCallback(server: ServerSocket): String {
+    private suspend fun receiveAndComplete(
+        server: ServerSocket,
+        sessionId: String,
+        sessionSecret: String,
+    ): ConnectedMailAccount {
         server.accept().use { socket ->
             socket.soTimeout = 5_000
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
@@ -107,26 +108,51 @@ class MailConnectionManager @Inject constructor(
             }
             while (reader.readLine()?.isNotEmpty() == true) Unit
 
-            val body = """
-                <!doctype html><html><head><meta name="viewport" content="width=device-width">
-                <title>LifeOS connected</title></head><body style="font-family:sans-serif;padding:32px">
-                <h2>Authorization received</h2><p>Return to LifeOS to finish connecting this inbox.</p>
-                <p><a href="lifeos://mail-auth-complete">Return to LifeOS</a></p>
-                <script>setTimeout(function(){ location.href='lifeos://mail-auth-complete'; }, 300);</script>
-                </body></html>
-            """.trimIndent().toByteArray(StandardCharsets.UTF_8)
-            val headers = buildString {
-                append("HTTP/1.1 200 OK\r\n")
-                append("Content-Type: text/html; charset=utf-8\r\n")
-                append("Content-Length: ${body.size}\r\n")
-                append("Connection: close\r\n\r\n")
-            }.toByteArray(StandardCharsets.US_ASCII)
-            socket.getOutputStream().apply {
-                write(headers)
-                write(body)
-                flush()
+            val callbackUrl = "http://$LOOPBACK_HOST:${server.localPort}$target"
+            val account = try {
+                api.completeMailConnection(
+                    MailConnectionCompleteDto(sessionId, sessionSecret, callbackUrl),
+                ).toDomain()
+            } catch (error: Throwable) {
+                runCatching { writeBrowserResponse(socket, connected = false) }
+                throw error
             }
-            return "http://$LOOPBACK_HOST:${server.localPort}$target"
+            // The Jetson has already stored the authorization at this point. A browser
+            // closing the loopback page must not turn that durable success into an error.
+            runCatching { writeBrowserResponse(socket, connected = true) }
+            return account
+        }
+    }
+
+    private fun writeBrowserResponse(socket: java.net.Socket, connected: Boolean) {
+        val title = if (connected) "LifeOS connected" else "LifeOS could not connect"
+        val message = if (connected) {
+            "Your Gmail account is connected. Returning to LifeOS…"
+        } else {
+            "Return to LifeOS to see the error and try again."
+        }
+        val autoReturn = if (connected) {
+            "<script>setTimeout(function(){ location.href='lifeos://mail-auth-complete'; }, 800);</script>"
+        } else {
+            ""
+        }
+        val body = """
+            <!doctype html><html><head><meta name="viewport" content="width=device-width">
+            <title>$title</title></head><body style="font-family:sans-serif;padding:32px">
+            <h2>$title</h2><p>$message</p>
+            <p><a href="lifeos://mail-auth-complete">Return to LifeOS</a></p>$autoReturn
+            </body></html>
+        """.trimIndent().toByteArray(StandardCharsets.UTF_8)
+        val headers = buildString {
+            append("HTTP/1.1 200 OK\r\n")
+            append("Content-Type: text/html; charset=utf-8\r\n")
+            append("Content-Length: ${body.size}\r\n")
+            append("Connection: close\r\n\r\n")
+        }.toByteArray(StandardCharsets.US_ASCII)
+        socket.getOutputStream().apply {
+            write(headers)
+            write(body)
+            flush()
         }
     }
 

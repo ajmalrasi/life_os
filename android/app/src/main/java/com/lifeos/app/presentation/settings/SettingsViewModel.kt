@@ -125,7 +125,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun connectMail(purpose: String, email: String, forceReauthorize: Boolean) {
+    fun connectMail(purpose: String, expectedEmail: String?, forceReauthorize: Boolean) {
         if (_state.value.connectingPurpose != null) return
         viewModelScope.launch {
             _state.value = _state.value.copy(
@@ -134,7 +134,7 @@ class SettingsViewModel @Inject constructor(
                 mailError = false,
             )
             runCatching {
-                mailConnectionManager.connect(purpose, email, forceReauthorize)
+                mailConnectionManager.connect(purpose, expectedEmail, forceReauthorize)
             }.onSuccess { connected ->
                 val accounts = mailConnectionManager.accounts()
                 _state.value = _state.value.copy(

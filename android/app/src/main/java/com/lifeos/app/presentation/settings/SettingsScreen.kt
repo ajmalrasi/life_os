@@ -58,12 +58,6 @@ import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.domain.model.ConnectedMailAccount
 
-private data class MailConnectPrompt(
-    val purpose: String,
-    val initialEmail: String,
-    val forceReauthorize: Boolean,
-)
-
 private data class MailDisconnectPrompt(
     val accountId: Int,
     val purpose: String,
@@ -78,7 +72,6 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val fieldColors = lifeOsFieldColors()
-    var mailPrompt by remember { mutableStateOf<MailConnectPrompt?>(null) }
     var disconnectPrompt by remember { mutableStateOf<MailDisconnectPrompt?>(null) }
     var notificationPermissionGranted by remember {
         mutableStateOf(hasNotificationPermission(context))
@@ -223,7 +216,7 @@ fun SettingsScreen(
                     busy = state.connectingPurpose == "finance",
                     loading = state.mailLoading,
                     onConnect = { current, force ->
-                        mailPrompt = MailConnectPrompt("finance", current.orEmpty(), force)
+                        viewModel.connectMail("finance", current, force)
                     },
                     onDisconnect = { account ->
                         disconnectPrompt = MailDisconnectPrompt(account.id, "finance", account.address)
@@ -238,7 +231,7 @@ fun SettingsScreen(
                     busy = state.connectingPurpose == "priority",
                     loading = state.mailLoading,
                     onConnect = { current, force ->
-                        mailPrompt = MailConnectPrompt("priority", current.orEmpty(), force)
+                        viewModel.connectMail("priority", current, force)
                     },
                     onDisconnect = { account ->
                         disconnectPrompt = MailDisconnectPrompt(account.id, "priority", account.address)
@@ -353,17 +346,6 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
     }
 
-    mailPrompt?.let { prompt ->
-        MailConnectionDialog(
-            prompt = prompt,
-            onDismiss = { mailPrompt = null },
-            onConnect = { email ->
-                mailPrompt = null
-                viewModel.connectMail(prompt.purpose, email, prompt.forceReauthorize)
-            },
-        )
-    }
-
     disconnectPrompt?.let { prompt ->
         AlertDialog(
             onDismissRequest = { disconnectPrompt = null },
@@ -442,7 +424,10 @@ private fun MailConnectionRow(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { onConnect(account.address, !account.authorized) },
+                        onClick = {
+                            if (account.authorized) onConnect(null, false)
+                            else onConnect(account.address, true)
+                        },
                         enabled = !busy,
                         modifier = Modifier.weight(1f),
                     ) { Text(if (account.authorized) "Change" else "Authorize") }
@@ -462,41 +447,6 @@ private fun MailConnectionRow(
             }
         }
     }
-}
-
-@Composable
-private fun MailConnectionDialog(
-    prompt: MailConnectPrompt,
-    onDismiss: () -> Unit,
-    onConnect: (String) -> Unit,
-) {
-    var email by remember(prompt) { mutableStateOf(prompt.initialEmail) }
-    val valid = email.trim().let { "@" in it && "." in it.substringAfter('@') }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Connect ${prompt.purpose.mailPurposeName()} email") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Google opens in your browser. LifeOS requests read-only Gmail access; the Jetson stores the authorization securely.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Gmail address") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onConnect(email.trim()) }, enabled = valid) {
-                Text(if (prompt.forceReauthorize) "Continue to Google" else "Connect")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
 }
 
 private fun String.mailPurposeName(): String = if (this == "finance") "Money" else "Priority"

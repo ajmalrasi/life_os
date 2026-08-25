@@ -45,7 +45,14 @@ class GogRunner:
             env["GOG_HOME"] = self.home
         return env
 
-    def run(self, args: list[str], *, account: str | None = None, timeout: float = 30.0) -> str:
+    def run(
+        self,
+        args: list[str],
+        *,
+        account: str | None = None,
+        timeout: float = 30.0,
+        input_text: str | None = None,
+    ) -> str:
         command = [self.gog_bin]
         if account:
             command.extend(("-a", account))
@@ -55,6 +62,7 @@ class GogRunner:
                 command,
                 capture_output=True,
                 text=True,
+                input=input_text,
                 timeout=timeout,
                 env=self._env(),
             )
@@ -70,8 +78,20 @@ class GogRunner:
             raise GogCommandError("Google rejected the Gmail operation.", stderr=stderr)
         return proc.stdout
 
-    def json(self, args: list[str], *, account: str | None = None, timeout: float = 30.0) -> dict:
-        output = self.run(args, account=account, timeout=timeout)
+    def json(
+        self,
+        args: list[str],
+        *,
+        account: str | None = None,
+        timeout: float = 30.0,
+        input_text: str | None = None,
+    ) -> dict:
+        output = self.run(
+            args,
+            account=account,
+            timeout=timeout,
+            input_text=input_text,
+        )
         try:
             value = json.loads(output)
         except json.JSONDecodeError as exc:

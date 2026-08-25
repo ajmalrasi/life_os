@@ -34,21 +34,20 @@ def test_remote_oauth_session_pairs_callback_and_registers_priority(client, monk
     monkeypatch.setattr(
         GogOAuthService,
         "start",
-        lambda _self, _email, _redirect: RemoteAuthorization(
+        lambda _self, _redirect, _state, _verifier, _hint=None: RemoteAuthorization(
             "https://accounts.google.com/o/oauth2/v2/auth?state=test"
         ),
     )
     monkeypatch.setattr(
         GogOAuthService,
         "complete",
-        lambda _self, email, _redirect, _callback: email,
+        lambda _self, email, _redirect, _callback, _verifier: email or "career@example.com",
     )
 
     started = client.post(
         "/mail/accounts/connect/start",
         json={
             "purpose": "priority",
-            "email": "career@example.com",
             "display_label": "Priority inbox",
             "callback_port": 53124,
             "force_reauthorize": True,
@@ -72,7 +71,8 @@ def test_remote_oauth_session_pairs_callback_and_registers_priority(client, monk
             "session_id": payload["session_id"],
             "session_secret": payload["session_secret"],
             "callback_url": (
-                "http://127.0.0.1:53124/oauth2/callback?code=once&state=checked"
+                f"http://127.0.0.1:53124/oauth2/callback?code=once"
+                f"&state={payload['session_id']}"
             ),
         },
     )
@@ -86,7 +86,8 @@ def test_remote_oauth_session_pairs_callback_and_registers_priority(client, monk
             "session_id": payload["session_id"],
             "session_secret": payload["session_secret"],
             "callback_url": (
-                "http://127.0.0.1:53124/oauth2/callback?code=once&state=checked"
+                f"http://127.0.0.1:53124/oauth2/callback?code=once"
+                f"&state={payload['session_id']}"
             ),
         },
     )
@@ -98,7 +99,7 @@ def test_callback_must_return_to_the_exact_phone_loopback(client, monkeypatch):
     monkeypatch.setattr(
         GogOAuthService,
         "start",
-        lambda _self, _email, _redirect: RemoteAuthorization(
+        lambda _self, _redirect, _state, _verifier, _hint=None: RemoteAuthorization(
             "https://accounts.google.com/o/oauth2/v2/auth?state=test"
         ),
     )
@@ -120,6 +121,35 @@ def test_callback_must_return_to_the_exact_phone_loopback(client, monkeypatch):
     )
     assert response.status_code == 400
     assert "invalid callback" in response.json()["detail"]
+
+
+def test_callback_state_must_match_the_server_session(client, monkeypatch):
+    monkeypatch.setattr(GogOAuthService, "authorized_accounts", lambda _self: set())
+    monkeypatch.setattr(
+        GogOAuthService,
+        "start",
+        lambda _self, _redirect, _state, _verifier, _hint=None: RemoteAuthorization(
+            "https://accounts.google.com/o/oauth2/v2/auth?state=test"
+        ),
+    )
+    started = client.post(
+        "/mail/accounts/connect/start",
+        json={"purpose": "priority", "callback_port": 53126},
+    ).json()
+
+    response = client.post(
+        "/mail/accounts/connect/complete",
+        json={
+            "session_id": started["session_id"],
+            "session_secret": started["session_secret"],
+            "callback_url": (
+                "http://127.0.0.1:53126/oauth2/callback?code=x&state=wrong"
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "invalid authorization state" in response.json()["detail"]
 
 
 def test_changing_purpose_is_exclusive_and_disconnect_is_not_legacy_restored(client):
