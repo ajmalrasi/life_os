@@ -138,6 +138,20 @@ def test_cost_alert_is_important_without_becoming_an_interview():
     assert "interview" not in result.labels
 
 
+def test_routine_feedback_and_prospectus_notices_are_suppressed():
+    feedback = _message(
+        subject="Regarding your recent order",
+        text="Dear Ajmal, will you share your experience? Leave seller feedback here.",
+    )
+    prospectus = _message(
+        subject="Prospectus Available Online for Viewing",
+        text="Your Prospectus Documents are available online as a result of your transaction.",
+    )
+
+    assert classify(feedback).importance == "suppressed"
+    assert classify(prospectus).importance == "suppressed"
+
+
 def test_anarock_time_first_interview_range_is_scheduled():
     result = classify(
         _message(
