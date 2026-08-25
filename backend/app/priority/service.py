@@ -162,10 +162,18 @@ class PrioritySyncService:
             max_cursor = max(max_cursor, epoch)
             if row.received_at is None and epoch:
                 row.received_at = datetime.fromtimestamp(epoch, tz=timezone.utc)
+        if full:
+            # Gmail search is capped, but already-visible older items must not
+            # escape a rules cleanup simply because they fall just beyond that
+            # result window.
+            for row in self.priority.latest_messages_for_account(account.id):
+                row.processing_state = "pending"
+                row.last_error = None
         # Durable message ids are committed before any content fetch/classifier work.
         self.db.commit()
 
-        for row in self.intake.pending(account.id, limit=250):
+        pending_limit = 1000 if full else 250
+        for row in self.intake.pending(account.id, limit=pending_limit):
             try:
                 message = provider.get_message(row.provider_message_id)
                 if message is None:

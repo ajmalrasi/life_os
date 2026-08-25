@@ -14,13 +14,18 @@ ALLOWED_LABELS = {
 }
 
 _INTERVIEW = re.compile(
-    r"\b(?:interview|screening call|technical round|hiring manager|recruiter call|phone screen)\b",
+    r"\b(?:interview(?![-_])|screening call|technical round|hiring manager|recruiter call|phone screen)\b",
     re.I,
 )
 _RECRUITER = re.compile(r"\b(?:recruiter|recruiting|talent acquisition|hiring team)\b", re.I)
 _APPOINTMENT = re.compile(r"\b(?:appointment|consultation|meeting confirmed)\b", re.I)
 _SECURITY = re.compile(r"\b(?:security alert|unusual sign[ -]?in|password reset|verify your identity|account locked)\b", re.I)
-_TRAVEL = re.compile(r"\b(?:booking|reservation|flight) (?:is )?confirmed\b|\bitinerary\b|\bboarding pass\b|\bcheck[ -]?in (?:opens?|reminder)\b", re.I)
+_TRAVEL = re.compile(
+    r"\b(?:your )?(?:booking|reservation|flight) (?:is |has been )?confirmed\b|"
+    r"\byour (?:travel )?itinerary\b|\bitinerary (?:is )?(?:attached|confirmed)\b|"
+    r"\bboarding pass\b|\bcheck[ -]?in (?:opens?|reminder)\b",
+    re.I,
+)
 _DOCUMENT = re.compile(r"\b(?:documents? (?:needed|required)|signature required|required form|offer letter|please (?:send|sign|submit).{0,40}(?:document|form))\b", re.I)
 _ACTION = re.compile(r"\b(?:please|could you|kindly|action required|respond|reply|confirm|choose|select|schedule|submit|complete|send|sign)\b", re.I)
 _CANCEL = re.compile(r"\b(?:cancelled|canceled|will not take place|interview cancellation)\b", re.I)
@@ -58,6 +63,10 @@ _DIRECT_REQUEST = re.compile(
 )
 _ACCOUNT_CONSEQUENCE = re.compile(
     r"\b(?:account|wallet|card|policy|subscription).{0,80}\b(?:inactive|suspended|locked|expire|expires|overdue|closed)\b",
+    re.I | re.S,
+)
+_COST_ALERT = re.compile(
+    r"\b(?:aws budgets?|cloud cost|budget).{0,80}\b(?:exceed(?:ed|ing)?|alert threshold|over budget)\b",
     re.I | re.S,
 )
 _GENERIC_SENDER = re.compile(
@@ -127,6 +136,7 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
     travel = bool(_TRAVEL.search(text))
     appointment = bool(_APPOINTMENT.search(text))
     document = bool(_DOCUMENT.search(text))
+    cost_alert = bool(_COST_ALERT.search(text))
     direct_request = bool(direct and _DIRECT_REQUEST.search(text))
     confirmed_interview = bool(interview and (_CONFIRMED_INTERVIEW.search(text) or details.event_start))
     consequence_deadline = bool(details.due_at and _ACCOUNT_CONSEQUENCE.search(text))
@@ -139,7 +149,7 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
         or _automated_or_bulk_sender(message)
     )
     protected_priority = bool(
-        calendar or security or confirmed_interview or travel or consequence_deadline
+        calendar or security or confirmed_interview or travel or consequence_deadline or cost_alert
         or (appointment and details.event_start)
     )
 
@@ -192,6 +202,9 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
     if document:
         labels.append("document")
         evidence.append("document_language")
+    if cost_alert:
+        labels.append("work")
+        evidence.append("cost_threshold_alert")
     if details.due_at:
         labels.append("deadline")
         evidence.append("explicit_deadline")
@@ -217,7 +230,11 @@ def classify(message: MailMessage, invite: CalendarInvite | None = None) -> Prio
     else:
         state = "informational"
 
-    importance = "high" if ({"interview", "security", "deadline"} & set(unique_labels) or state in {"needs_action", "scheduled"}) else "normal"
+    importance = "high" if (
+        {"interview", "security", "deadline"} & set(unique_labels)
+        or cost_alert
+        or state in {"needs_action", "scheduled"}
+    ) else "normal"
     confidence = 0.96 if calendar else 0.9 if interview or details.due_at else 0.76 if direct else 0.62
     subject = message.subject.strip() or "Important message"
     if "interview" in unique_labels and state == "scheduled":

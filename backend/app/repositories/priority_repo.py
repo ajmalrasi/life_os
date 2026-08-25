@@ -32,6 +32,19 @@ class PriorityRepository:
             )
         ).scalar_one_or_none()
 
+    def latest_messages_for_account(self, account_id: int) -> list[MailMessageRecord]:
+        """Return the retained source needed to reclassify every existing item."""
+        return list(
+            self.db.execute(
+                select(MailMessageRecord)
+                .join(
+                    PriorityItem,
+                    PriorityItem.latest_mail_message_id == MailMessageRecord.id,
+                )
+                .where(PriorityItem.mail_account_id == account_id)
+            ).scalars()
+        )
+
     def upsert(
         self,
         account: MailAccount,

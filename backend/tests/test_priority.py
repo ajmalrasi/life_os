@@ -115,6 +115,28 @@ def test_promotions_and_generic_job_board_mail_are_suppressed():
     assert classify(promotion).importance == "suppressed"
     assert classify(job_alert).importance == "suppressed"
 
+    tour_ad = _message(
+        subject="Essence of Northeast Ex Guwahati",
+        text="Dear Traveller, explore this itinerary. Book now for the tour package.",
+    )
+    tour_ad = MailMessage(
+        **{**tour_ad.__dict__, "from_addr": "IRCTC offers <irctctourismoffers@irctc.co.in>"}
+    )
+    assert classify(tour_ad).importance == "suppressed"
+
+
+def test_cost_alert_is_important_without_becoming_an_interview():
+    result = classify(
+        _message(
+            subject="AWS Budgets: account has exceeded your alert threshold",
+            text="AWS Budget Name: ml-interview-prep-monthly-cap. The budget is over budget.",
+        )
+    )
+
+    assert result.importance == "high"
+    assert "work" in result.labels
+    assert "interview" not in result.labels
+
 
 def test_anarock_time_first_interview_range_is_scheduled():
     result = classify(
@@ -252,6 +274,7 @@ def test_full_sync_reclassifies_and_hides_existing_noise(client, monkeypatch):
             text="Hi Ajmal, recommended jobs for you. Review the latest openings.",
         )
         provider.messages = {promotional.message_id: promotional}
+        provider.search = lambda _query, max_results=25: []
         report = service.sync(full=True)
 
         assert report.items_updated == 1
