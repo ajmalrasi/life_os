@@ -20,7 +20,7 @@ from app.models.card_statement import CardStatement
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.statement_repo import StatementRepository
 from app.services.expense_parsers.base import ParsedTxn
-from app.services.gmail_client import GmailClient
+from app.mail.gmail_provider import GmailProvider
 from app.services.openclaw import OpenClawClient
 from app.services.pdf_unlock import extract_pdf_text, parse_overrides, password_candidates
 from app.services.statement_emi import select_emi_items
@@ -56,7 +56,7 @@ class StatementCollector:
     def __init__(
         self,
         db: Session,
-        client: GmailClient,
+        client: GmailProvider,
         owner_name: str,
         owner_dob: str,
         password_overrides: str = "",

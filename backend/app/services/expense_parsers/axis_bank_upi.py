@@ -25,7 +25,8 @@ from datetime import date, datetime
 
 from decimal import Decimal
 
-from app.services.expense_parsers.base import BankEmail, ParsedTxn
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn
 
 _AMOUNT = re.compile(r"Amount Debited:\s*INR\s*([\d,]+\.\d{2})", re.I)
 _ACCOUNT = re.compile(r"Account Number:\s*(?:XX)?(\w{4,})", re.I)
@@ -46,7 +47,7 @@ class AxisBankUpiParser:
     # — "was debited" is the stable, amount/account-independent part.
     gmail_query = 'from:alerts@axis.bank.in subject:"was debited from your A/c"'
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         text = email.text
         amount_m = _AMOUNT.search(text)
         if not amount_m:
@@ -79,7 +80,7 @@ class AxisBankUpiParser:
         ]
 
 
-def _received_date(email: BankEmail) -> date:
+def _received_date(email: MailMessage) -> date:
     try:
         from email.utils import parsedate_to_datetime
 

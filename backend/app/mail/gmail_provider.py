@@ -1,14 +1,4 @@
-"""Sync, read-only Gmail access via the ``gog`` CLI (Google Workspace).
-
-Mirrors ``github_mcp_client.py``: the ``gog`` binary is baked into the API
-image and auth is injected via environment — here a shared ``gogcli`` config
-directory (OAuth client + refresh token) plus the file-keyring password. Only
-search / get are used, and the stored OAuth token is read-only, so this cannot
-mutate the mailbox.
-
-We shell out to ``gog ... -j`` and parse JSON rather than embedding a client,
-because gog is a standalone tool shared with other consumers on the host.
-"""
+"""Read-only Gmail provider backed by the gog Google Workspace CLI."""
 
 from __future__ import annotations
 
@@ -20,18 +10,18 @@ import re
 import shutil
 import subprocess
 
-from app.services.expense_parsers.base import BankEmail
+from app.mail.models import MailAttachment, MailMessage
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 30.0
 
 
-class GmailClientError(RuntimeError):
-    """A Gmail read failed and the sync must not be reported as successful."""
+class MailProviderError(RuntimeError):
+    """A mailbox read failed and must not be reported as a successful sync."""
 
 
-class GmailClient:
+class GmailProvider:
     def __init__(
         self,
         account: str,
@@ -39,16 +29,13 @@ class GmailClient:
         gog_bin: str = "gog",
         home: str | None = None,
     ) -> None:
-        self.account = account
+        self.account = account.strip()
         self.keyring_password = keyring_password
         self.gog_bin = gog_bin
         self.home = home
 
     def is_available(self) -> bool:
-        """True if an account is configured and the gog binary is on PATH."""
         return bool(self.account) and shutil.which(self.gog_bin) is not None
-
-    # -- internals ---------------------------------------------------------------
 
     def _env(self) -> dict[str, str]:
         env = {**os.environ}
@@ -68,21 +55,21 @@ class GmailClient:
                 env=self._env(),
             )
         except subprocess.TimeoutExpired as exc:
-            logger.warning("gog call failed: %s", exc)
-            raise GmailClientError("Gmail took too long to respond. Try the sync again.") from exc
+            logger.warning("gog call for %s timed out: %s", self.account, exc)
+            raise MailProviderError(f"Gmail account {self.account} took too long to respond.") from exc
         except (FileNotFoundError, OSError) as exc:
             logger.warning("gog call failed: %s", exc)
-            raise GmailClientError("The Gmail reader is unavailable on the LifeOS server.") from exc
+            raise MailProviderError("The Gmail reader is unavailable on the LifeOS server.") from exc
         if proc.returncode != 0:
             stderr = proc.stderr.strip()
-            logger.warning("gog error (%s): %s", proc.returncode, stderr[:200])
+            logger.warning("gog error for %s (%s): %s", self.account, proc.returncode, stderr[:200])
             lowered = stderr.lower()
             if "invalid_grant" in lowered or "insufficientpermissions" in lowered:
-                raise GmailClientError(
-                    "Gmail authorization expired or lacks read access. "
-                    "Reauthorize the LifeOS Gmail connection."
+                raise MailProviderError(
+                    f"Gmail authorization expired for {self.account} or lacks read access. "
+                    "Reauthorize that LifeOS mail connection."
                 )
-            raise GmailClientError("Gmail could not be read. Check the LifeOS server logs.")
+            raise MailProviderError(f"Gmail account {self.account} could not be read.")
         return proc.stdout
 
     @staticmethod
@@ -91,66 +78,84 @@ class GmailClient:
             data = json.loads(out)
         except json.JSONDecodeError as exc:
             logger.warning("gog returned invalid JSON while %s", operation)
-            raise GmailClientError("Gmail returned an invalid response. Try the sync again.") from exc
+            raise MailProviderError("Gmail returned an invalid response. Try the sync again.") from exc
         if not isinstance(data, dict):
-            raise GmailClientError("Gmail returned an invalid response. Try the sync again.")
+            raise MailProviderError("Gmail returned an invalid response. Try the sync again.")
         return data
 
-    # -- public API --------------------------------------------------------------
-
     def search(self, query: str, max_results: int = 25) -> list[dict]:
-        """Return message metadata dicts (id, subject, from, date) for a query."""
         out = self._run(["gmail", "messages", "list", query, "--max", str(max_results), "-j"])
         if not out:
             return []
-        data = self._json(out, "listing messages")
-        return data.get("messages", [])
+        return self._json(out, "listing messages").get("messages", [])
 
-    def get_message(self, message_id: str) -> BankEmail | None:
-        """Fetch one message and return it with the body stripped to text."""
+    def get_message(self, message_id: str) -> MailMessage | None:
         out = self._run(["gmail", "get", message_id, "-j"])
         if not out:
-            raise GmailClientError("Gmail returned an empty message. Try the sync again.")
+            raise MailProviderError("Gmail returned an empty message. Try the sync again.")
         data = self._json(out, "reading a message")
-        headers = data.get("headers") or {}
+        raw_headers = data.get("headers") or {}
+        headers = {str(key).lower(): str(value) for key, value in raw_headers.items()}
         raw = data.get("body") or ""
         message = data.get("message") or {}
         try:
-            internal_ms = int(message.get("internalDate") or 0)
+            internal_ms = int(message.get("internalDate") or data.get("internalDate") or 0)
         except (TypeError, ValueError):
             internal_ms = 0
-        return BankEmail(
+        label_ids = message.get("labelIds") or data.get("labelIds") or []
+        attachments = tuple(
+            MailAttachment(
+                attachment_id=str(item.get("attachmentId") or ""),
+                filename=str(item.get("filename") or ""),
+                mime_type=str(item.get("mimeType") or ""),
+            )
+            for item in (data.get("attachments") or [])
+            if item.get("attachmentId")
+        )
+        return MailMessage(
             message_id=message_id,
+            thread_id=message.get("threadId") or data.get("threadId"),
             subject=headers.get("subject", ""),
             from_addr=headers.get("from", ""),
+            to_addrs=headers.get("to", ""),
+            cc_addrs=headers.get("cc", ""),
             received=headers.get("date", ""),
             text=strip_html(raw),
             raw_body=raw,
             internal_date_ms=internal_ms,
+            headers=headers,
+            label_ids=tuple(str(value) for value in label_ids),
+            snippet=str(data.get("snippet") or message.get("snippet") or ""),
+            attachments=attachments,
         )
 
-
-    def list_pdf_attachments(self, message_id: str) -> list[dict]:
-        """Return [{'filename', 'attachmentId'}] for PDF attachments of a message."""
+    def list_attachments(self, message_id: str) -> list[dict]:
         out = self._run(["gmail", "get", message_id, "-j"])
         if not out:
             return []
         data = self._json(out, "listing attachments")
         return [
-            {"filename": a.get("filename", ""), "attachmentId": a.get("attachmentId", "")}
-            for a in (data.get("attachments") or [])
-            if (a.get("filename") or "").lower().endswith(".pdf") and a.get("attachmentId")
+            {
+                "filename": str(item.get("filename") or ""),
+                "attachmentId": str(item.get("attachmentId") or ""),
+                "mimeType": str(item.get("mimeType") or ""),
+            }
+            for item in (data.get("attachments") or [])
+            if item.get("attachmentId")
+        ]
+
+    def list_pdf_attachments(self, message_id: str) -> list[dict]:
+        return [
+            item for item in self.list_attachments(message_id)
+            if item["filename"].lower().endswith(".pdf")
         ]
 
     def download_attachment(self, message_id: str, attachment_id: str, out_path: str) -> bool:
-        out = self._run(
-            ["gmail", "attachment", message_id, attachment_id, "--out", out_path]
-        )
+        self._run(["gmail", "attachment", message_id, attachment_id, "--out", out_path])
         return True
 
 
 def strip_html(body: str) -> str:
-    """Reduce an HTML email body to readable, whitespace-collapsed text."""
     t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", body, flags=re.S | re.I)
     t = re.sub(r"<[^>]+>", " ", t)
     t = html.unescape(t)

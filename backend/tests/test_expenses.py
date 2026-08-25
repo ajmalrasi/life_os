@@ -13,9 +13,10 @@ import pytest
 
 from app.services.expense_collector import ExpenseCollector, derive_dedup_key
 from app.services.expense_parsers import get_parsers
-from app.services.expense_parsers.base import BankEmail, ParsedTxn, ParserUnavailable
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn, ParserUnavailable
 from app.services.expense_parsers.hdfc_upi import HdfcUpiParser
-from app.services.gmail_client import GmailClient, GmailClientError, strip_html
+from app.mail.gmail_provider import GmailProvider, MailProviderError, strip_html
 
 # Real HDFC RuPay-CC UPI alert body (HTML), trimmed to the salient block.
 _HDFC_HTML = """
@@ -32,8 +33,8 @@ Important Note: If you made this transaction, no action is needed.
 """
 
 
-def _hdfc_email(html: str = _HDFC_HTML, mid: str = "m1", internal_ms: int = 1_751_478_677_000) -> BankEmail:
-    return BankEmail(
+def _hdfc_email(html: str = _HDFC_HTML, mid: str = "m1", internal_ms: int = 1_751_478_677_000) -> MailMessage:
+    return MailMessage(
         message_id=mid,
         subject="You have done a UPI txn. Check details!",
         from_addr="HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>",
@@ -79,10 +80,10 @@ def test_registry_has_hdfc():
 
 
 class _FakeGmail:
-    """Stub GmailClient. Serves ``emails`` and records the queries it received,
+    """Stub GmailProvider. Serves ``emails`` and records the queries it received,
     so tests can assert the collector switches from backfill to incremental."""
 
-    def __init__(self, emails: list[BankEmail]):
+    def __init__(self, emails: list[MailMessage]):
         self.account = "x@example.com"
         self.emails = {e.message_id: e for e in emails}
         self.queries: list[str] = []
@@ -94,7 +95,7 @@ class _FakeGmail:
         self.queries.append(query)
         return [{"id": mid} for mid in self.emails]
 
-    def get_message(self, message_id: str) -> BankEmail:
+    def get_message(self, message_id: str) -> MailMessage:
         return self.emails[message_id]
 
 
@@ -167,7 +168,7 @@ class _FlakyParser:
         self.flaky_id = flaky_id
         self.down = down
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         if email.message_id == self.flaky_id and self.down:
             raise ParserUnavailable("backend down")
         return [
@@ -225,7 +226,7 @@ def test_new_since_endpoint(client):
 
 def test_sync_endpoint_disabled_without_account(client):
     # No gmail_account configured in tests → collector reports unavailable.
-    with patch("app.services.gmail_client.shutil.which", return_value=None):
+    with patch("app.mail.gmail_provider.shutil.which", return_value=None):
         resp = client.post("/expenses/sync")
     assert resp.status_code == 200
     assert resp.json()["transactions_new"] == 0
@@ -238,15 +239,15 @@ def test_gmail_auth_failure_is_not_silently_treated_as_no_email():
         stdout="",
         stderr="oauth2: invalid_grant: Token has been expired or revoked",
     )
-    with patch("app.services.gmail_client.subprocess.run", return_value=failed):
-        with pytest.raises(GmailClientError, match="authorization expired"):
-            GmailClient("mail@example.com").search("newer_than:1d")
+    with patch("app.mail.gmail_provider.subprocess.run", return_value=failed):
+        with pytest.raises(MailProviderError, match="authorization expired"):
+            GmailProvider("mail@example.com").search("newer_than:1d")
 
 
 def test_sync_endpoint_returns_service_unavailable_for_gmail_auth_failure(client):
     class _ExpiredGmail(_FakeGmail):
         def search(self, query: str, max_results: int = 100) -> list[dict]:
-            raise GmailClientError(
+            raise MailProviderError(
                 "Gmail authorization expired or lacks read access. "
                 "Reauthorize the LifeOS Gmail connection."
             )
@@ -433,8 +434,8 @@ use: Mycards: https://mycards.hdfc.bank.in
 """
 
 
-def _diners_email(html: str = _HDFC_DINERS_HTML, mid: str = "d1") -> BankEmail:
-    return BankEmail(
+def _diners_email(html: str = _HDFC_DINERS_HTML, mid: str = "d1") -> MailMessage:
+    return MailMessage(
         message_id=mid,
         subject="A payment was made using your Credit Card",
         from_addr="HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>",
@@ -661,8 +662,8 @@ c. UPI Reference No.: 618271180521
 """
 
 
-def _bank_upi_email(html: str, mid: str = "b1", subject: str = "You have done a UPI txn. Check details!") -> BankEmail:
-    return BankEmail(
+def _bank_upi_email(html: str, mid: str = "b1", subject: str = "You have done a UPI txn. Check details!") -> MailMessage:
+    return MailMessage(
         message_id=mid,
         subject=subject,
         from_addr="HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>",
@@ -749,8 +750,8 @@ SMS BLOCKUPI &lt;Customer ID&gt; to +919951860002 from your registered mobile nu
 """
 
 
-def _axis_bank_upi_email(html: str = _AXIS_BANK_DEBIT_HTML, mid: str = "ax1") -> BankEmail:
-    return BankEmail(
+def _axis_bank_upi_email(html: str = _AXIS_BANK_DEBIT_HTML, mid: str = "ax1") -> MailMessage:
+    return MailMessage(
         message_id=mid,
         subject="INR 70.00 was debited from your A/c no. XX4402.",
         from_addr="Axis Bank Alerts <alerts@axis.bank.in>",

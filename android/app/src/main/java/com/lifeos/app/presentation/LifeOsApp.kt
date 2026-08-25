@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +48,8 @@ import com.lifeos.app.presentation.money.CurrentCycleDetailsScreen
 import com.lifeos.app.presentation.money.MoneyScreen
 import com.lifeos.app.presentation.money.StatementDetailsScreen
 import com.lifeos.app.presentation.mood.MoodScreen
+import com.lifeos.app.presentation.priority.PriorityDetailsScreen
+import com.lifeos.app.presentation.priority.PriorityScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
 
@@ -54,12 +57,14 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
     DASHBOARD("dashboard", "Today", Icons.Rounded.WbSunny),
     MOOD("mood", "Pulse", Icons.Rounded.Favorite),
     MONEY("money", "Money", Icons.Rounded.AccountBalanceWallet),
+    PRIORITY("priority", "Priority", Icons.Rounded.Mail),
     INSIGHTS("insights", "Insights", Icons.Rounded.Insights),
     CHAT("chat", "Ask", Icons.Rounded.AutoAwesome),
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
 private val moreDestinations = listOf(
+    Destination.PRIORITY,
     Destination.DASHBOARD,
     Destination.MOOD,
     Destination.INSIGHTS,
@@ -68,10 +73,11 @@ private val moreDestinations = listOf(
 )
 private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
 private const val CURRENT_CYCLE_DETAILS_ROUTE = "cycle/{bank}/{cardLast4}"
+private const val PRIORITY_DETAILS_ROUTE = "priority/{itemId}"
 internal const val DEFAULT_DESTINATION_ROUTE = "money"
 
 @Composable
-fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L) {
+fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityItemId: Int? = null) {
     val navController = rememberNavController()
     var showMore by remember { mutableStateOf(false) }
     var moneyOverviewRequest by remember { mutableStateOf(0L) }
@@ -91,6 +97,9 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 launchSingleTop = true
                 restoreState = true
+            }
+            if (destination == Destination.PRIORITY && openPriorityItemId != null) {
+                navController.navigate("priority/$openPriorityItemId")
             }
         }
     }
@@ -118,6 +127,9 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L) {
                 DashboardScreen(onOpenSettings = { navController.navigate(Destination.SETTINGS.route) })
             }
             composable(Destination.MOOD.route) { MoodScreen() }
+            composable(Destination.PRIORITY.route) {
+                PriorityScreen(onOpenItem = { id -> navController.navigate("priority/$id") })
+            }
             composable(Destination.INSIGHTS.route) { InsightsScreen() }
             composable(Destination.CHAT.route) { ChatScreen() }
             composable(Destination.SETTINGS.route) {
@@ -137,6 +149,12 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L) {
                 ),
             ) {
                 CurrentCycleDetailsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = PRIORITY_DETAILS_ROUTE,
+                arguments = listOf(navArgument("itemId") { type = NavType.IntType }),
+            ) {
+                PriorityDetailsScreen(onBack = { navController.popBackStack() })
             }
         }
     }
@@ -225,4 +243,5 @@ private fun destinationSupportingText(destination: Destination): String = when (
     Destination.CHAT -> "Grounded answers"
     Destination.SETTINGS -> "Sync and preferences"
     Destination.MONEY -> "Spending and cards"
+    Destination.PRIORITY -> "Important mail and schedules"
 }

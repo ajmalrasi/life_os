@@ -13,7 +13,8 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.services.expense_parsers.base import BankEmail, ParsedTxn
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn
 
 _AMOUNT = re.compile(r"Rs\.?\s*([\d,]+\.\d{2})\s+has been\s+(debited|credited)", re.I)
 _CARD = re.compile(r"Credit Card\s*\(ending\s*(\d{4})\)", re.I)
@@ -34,7 +35,7 @@ class HdfcUpiParser:
     # Sender + subject keyword keep this to the RuPay-CC UPI alert only.
     gmail_query = "from:alerts@hdfcbank.bank.in subject:UPI"
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         text = email.text
         amount_m = _AMOUNT.search(text)
         if not amount_m:
@@ -69,7 +70,7 @@ class HdfcUpiParser:
         ]
 
 
-def _received_date(email: BankEmail) -> date:
+def _received_date(email: MailMessage) -> date:
     # RFC 2822 header, e.g. "Thu, 02 Jul 2026 23:51:17 +0530"
     try:
         from email.utils import parsedate_to_datetime

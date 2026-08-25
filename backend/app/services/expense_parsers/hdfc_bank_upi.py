@@ -24,7 +24,8 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.services.expense_parsers.base import BankEmail, ParsedTxn
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn
 
 _DEBIT = re.compile(
     r"Rs\.?\s*([\d,]+\.\d{2})\s+is debited from your account ending\s+(\d{4})"
@@ -54,7 +55,7 @@ class HdfcBankUpiParser:
     # or incoming money (e.g. a returned loan) never gets fetched at all.
     gmail_query = 'from:alerts@hdfcbank.bank.in subject:(UPI OR "Account update")'
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         text = email.text
 
         m = _DEBIT.search(text)
@@ -98,7 +99,7 @@ class HdfcBankUpiParser:
         return []
 
 
-def _received_date(email: BankEmail) -> date:
+def _received_date(email: MailMessage) -> date:
     try:
         from email.utils import parsedate_to_datetime
 

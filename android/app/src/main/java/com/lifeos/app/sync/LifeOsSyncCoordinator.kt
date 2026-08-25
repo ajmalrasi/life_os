@@ -3,6 +3,7 @@ package com.lifeos.app.sync
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.MoneyRepository
 import com.lifeos.app.domain.repository.MoodRepository
+import com.lifeos.app.domain.repository.PriorityRepository
 import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.widget.SpendWidgetUpdater
 import kotlinx.coroutines.sync.Mutex
@@ -29,6 +30,7 @@ class LifeOsSyncCoordinator @Inject constructor(
     private val analyticsRepository: AnalyticsRepository,
     private val moneyRepository: MoneyRepository,
     private val moodRepository: MoodRepository,
+    private val priorityRepository: PriorityRepository,
     private val settingsRepository: SettingsRepository,
     private val spendWidgetUpdater: SpendWidgetUpdater,
 ) {
@@ -42,6 +44,8 @@ class LifeOsSyncCoordinator @Inject constructor(
             .onFailure { failures += "Pulse" }
         runCatching { moneyRepository.refresh(MONEY_HISTORY_DAYS, STATEMENT_HISTORY_MONTHS) }
             .onFailure { failures += "money" }
+        runCatching { priorityRepository.refresh() }
+            .onFailure { failures += "Priority" }
         runCatching { spendWidgetUpdater.updateAll() }
 
         finish(failures, "LifeOS refreshed")
@@ -54,6 +58,8 @@ class LifeOsSyncCoordinator @Inject constructor(
         // ordinary statement line items remain excluded by the backend.
         runCatching { moneyRepository.syncNow() }
             .onFailure { failures += "money and statements" }
+        runCatching { priorityRepository.syncNow() }
+            .onFailure { failures += "Priority mail" }
         runCatching { spendWidgetUpdater.updateAll() }
         runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }
             .onFailure { failures += "Pulse" }

@@ -16,7 +16,8 @@ from decimal import Decimal
 import pytest
 
 from app.services.expense_parsers import get_parsers
-from app.services.expense_parsers.base import BankEmail, ParserUnavailable
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParserUnavailable
 from app.services.expense_parsers.llm_bank_parser import (
     _MAX_PROMPT_CHARS,
     LlmBankParser,
@@ -47,8 +48,8 @@ _YES_GATE = '{"is_transaction": true, "reason": "a debit happened"}'
 _NO_GATE = '{"is_transaction": false, "reason": "promotional offer"}'
 
 
-def _email(text: str) -> BankEmail:
-    return BankEmail(
+def _email(text: str) -> MailMessage:
+    return MailMessage(
         message_id="m1",
         subject="whatever",
         from_addr="HDFC Bank <alerts@hdfcbank.bank.in>",

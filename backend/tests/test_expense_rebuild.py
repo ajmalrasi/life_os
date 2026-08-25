@@ -137,7 +137,7 @@ def test_rebuild_endpoint_deletes_only_scoped_rows(client):
 
     # No gmail account configured in tests -> collector reports unavailable,
     # so this exercises the delete step without needing a real OpenClaw call.
-    with patch("app.services.gmail_client.shutil.which", return_value=None):
+    with patch("app.mail.gmail_provider.shutil.which", return_value=None):
         resp = client.post("/expenses/rebuild-llm", params={"since": "2026-01-01"})
     assert resp.status_code == 200
     body = resp.json()
@@ -155,7 +155,7 @@ def test_rebuild_endpoint_bank_param_scopes_delete_to_that_bank(client):
         _seed_txn(db, source="upi", txn_date=date(2026, 2, 1), mid="b", account="Axis Savings ..4402")
         db.commit()
 
-    with patch("app.services.gmail_client.shutil.which", return_value=None):
+    with patch("app.mail.gmail_provider.shutil.which", return_value=None):
         resp = client.post("/expenses/rebuild-llm", params={"since": "2026-01-01", "bank": "HDFC"})
     assert resp.status_code == 200
     assert resp.json()["transactions_deleted"] == 1

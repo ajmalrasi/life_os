@@ -38,6 +38,8 @@ class LifeOsMessagingService : FirebaseMessagingService() {
             notificationId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
             title = title,
             body = body,
+            openTab = message.data["open_tab"],
+            openItemId = message.data["priority_item_id"]?.toIntOrNull(),
         )
     }
 }

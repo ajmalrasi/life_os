@@ -1,0 +1,12 @@
+[Unit]
+Description=Check LifeOS Priority mail every hour
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=2min
+Persistent=true
+Unit=lifeos-priority-sync.service
+
+[Install]
+WantedBy=timers.target

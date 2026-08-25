@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     gog_keyring_password: str = ""     # file-keyring password (inject as a secret)
     expense_backfill_days: int = 90    # window seeded on the first sync (cursor unset)
 
+    # Priority mail classification. Connected accounts live in mail_accounts;
+    # unlike the legacy Money bootstrap above, no mailbox address is hard-coded
+    # into environment settings. Ambiguous local-model review is opt-in so a
+    # background mail poll cannot contend with Ask by default.
+    priority_backfill_days: int = 120
+    priority_llm_enabled: bool = False
+
     # CC statement PDFs — unlock secrets. Passwords derive from name+DOB per
     # bank scheme (see services/pdf_unlock.py); overrides cover banks with
     # nonstandard passwords, format "bank:password,bank2:password2".

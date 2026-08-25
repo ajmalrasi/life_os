@@ -11,7 +11,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 
 from app.services.expense_collector import ExpenseCollector
-from app.services.expense_parsers.base import BankEmail, ParsedTxn
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn
 from app.services.expense_parsers.txn_time import extract_clock_time
 from app.services.openclaw import OpenClawUnavailable
 
@@ -32,8 +33,8 @@ class _FakeClient:
         return self.response
 
 
-def _email(text: str = "Rs.10 debited at 14:41:02", internal_ms: int = 1_751_478_677_000) -> BankEmail:
-    return BankEmail(
+def _email(text: str = "Rs.10 debited at 14:41:02", internal_ms: int = 1_751_478_677_000) -> MailMessage:
+    return MailMessage(
         message_id="m1",
         subject="alert",
         from_addr="alerts@hdfcbank.bank.in",
@@ -83,12 +84,12 @@ class _OneTxnParser:
     name = "fake"
     gmail_query = "from:test"
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         return [ParsedTxn(txn_date=date(2026, 7, 2), amount=1, direction="debit", source="upi")]
 
 
 class _FakeGmail:
-    def __init__(self, emails: list[BankEmail]):
+    def __init__(self, emails: list[MailMessage]):
         self.account = "x@example.com"
         self.emails = {e.message_id: e for e in emails}
 
@@ -98,7 +99,7 @@ class _FakeGmail:
     def search(self, query: str, max_results: int = 100) -> list[dict]:
         return [{"id": mid} for mid in self.emails]
 
-    def get_message(self, message_id: str) -> BankEmail:
+    def get_message(self, message_id: str) -> MailMessage:
         return self.emails[message_id]
 
 

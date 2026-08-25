@@ -42,7 +42,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.config import get_settings
-from app.services.expense_parsers.base import BankEmail, ParsedTxn, ParserUnavailable
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn, ParserUnavailable
 from app.services.openclaw import OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.llm_bank_parser")
@@ -362,7 +363,7 @@ class LlmBankParser:
             pass
         return client
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         if not settings.llm_bank_parser_enabled:
             return []
 

@@ -22,9 +22,9 @@ from app.config import get_settings
 from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
 from app.services.expense_parsers import ParsedTxn, Parser, ParserUnavailable, get_parsers
-from app.services.expense_parsers.base import BankEmail
+from app.mail.models import MailMessage
 from app.services.expense_parsers.txn_time import extract_clock_time
-from app.services.gmail_client import GmailClient
+from app.mail.gmail_provider import GmailProvider
 from app.services.openclaw import OpenClawClient
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ _MAX_PER_PARSER = 100  # safety cap on emails fetched per parser per run
 _IST = ZoneInfo("Asia/Kolkata")
 
 
-def _email_arrival(email: BankEmail) -> datetime | None:
+def _email_arrival(email: MailMessage) -> datetime | None:
     """The alert email's arrival instant (UTC), or None if unknown."""
     if email.internal_date_ms:
         return datetime.fromtimestamp(email.internal_date_ms / 1000, tz=timezone.utc)
@@ -80,7 +80,7 @@ class ExpenseCollector:
     def __init__(
         self,
         db: Session,
-        client: GmailClient,
+        client: GmailProvider,
         backfill_days: int = 90,
         full: bool = False,
         parsers: list[Parser] | None = None,
@@ -117,7 +117,7 @@ class ExpenseCollector:
     def _cursor_key(self) -> str:
         return f"gmail_expenses:{self.client.account}"
 
-    def _stamp_txn_time(self, email: BankEmail, parsed: list[ParsedTxn]) -> None:
+    def _stamp_txn_time(self, email: MailMessage, parsed: list[ParsedTxn]) -> None:
         """Set ``txn_at`` on each parsed txn: the body's stated clock time when
         the LLM finds one, else the email's arrival instant. One LLM call per
         transaction-bearing email; failures fall back silently (time is

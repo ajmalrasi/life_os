@@ -7,7 +7,8 @@ etc.), add a parser module here and append an instance to ``_REGISTRY``.
 from __future__ import annotations
 
 from app.services.expense_parsers.axis_bank_upi import AxisBankUpiParser
-from app.services.expense_parsers.base import BankEmail, ParsedTxn, Parser, ParserUnavailable
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn, Parser, ParserUnavailable
 from app.services.expense_parsers.hdfc_bank_upi import HdfcBankUpiParser
 from app.services.expense_parsers.hdfc_diners_live import HdfcDinersLiveParser
 from app.services.expense_parsers.hdfc_upi import HdfcUpiParser
@@ -30,4 +31,4 @@ def get_parsers() -> list[Parser]:
     return list(_REGISTRY)
 
 
-__all__ = ["BankEmail", "ParsedTxn", "Parser", "ParserUnavailable", "get_parsers"]
+__all__ = ["MailMessage", "ParsedTxn", "Parser", "ParserUnavailable", "get_parsers"]

@@ -79,11 +79,13 @@ class FcmService:
         return PushResult(attempted, delivered, True, f"Pushed {delivered}/{attempted}.")
 
     def _send_one(self, client, url, headers, token, note) -> bool:
+        data = {"severity": note.severity, "title": note.title}
+        data.update({str(key): str(value) for key, value in getattr(note, "data", {}).items()})
         payload = {
             "message": {
                 "token": token,
                 "notification": {"title": note.title, "body": note.detail},
-                "data": {"severity": note.severity, "title": note.title},
+                "data": data,
                 "android": {"priority": "high"},
             }
         }

@@ -13,6 +13,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
+from app.mail.models import MailMessage
+
 
 class ParserUnavailable(Exception):
     """A parser could not process an email because of a *transient* dependency
@@ -25,19 +27,6 @@ class ParserUnavailable(Exception):
     its own (not a transaction, malformed amount, etc.) should return ``[]``
     instead — those emails are genuinely done and should let the cursor advance.
     """
-
-
-@dataclass(frozen=True)
-class BankEmail:
-    """A fetched email, normalized for parsers (HTML already stripped to text)."""
-
-    message_id: str  # Gmail message id (provenance + idempotency)
-    subject: str
-    from_addr: str
-    received: str  # raw RFC date header, used only as a date fallback
-    text: str  # HTML-stripped, whitespace-collapsed plaintext body
-    raw_body: str  # original body, in case a parser needs the markup
-    internal_date_ms: int = 0  # Gmail internalDate (epoch ms); drives the sync cursor
 
 
 @dataclass
@@ -70,4 +59,4 @@ class Parser(Protocol):
     name: str
     gmail_query: str
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]: ...
+    def parse(self, email: MailMessage) -> list[ParsedTxn]: ...

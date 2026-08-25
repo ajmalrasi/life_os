@@ -24,6 +24,7 @@ object AppNotifications {
     const val CHANNEL_INSIGHTS = "insights"
 
     const val EXTRA_OPEN_TAB = "open_tab"
+    const val EXTRA_OPEN_ITEM_ID = "priority_item_id"
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -38,9 +39,9 @@ object AppNotifications {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_INSIGHTS,
-                "Insights & alerts",
+                "Priority & alerts",
                 NotificationManager.IMPORTANCE_HIGH,
-            ).apply { description = "Burnout warnings, peak-state alerts, and nudges." }
+            ).apply { description = "Important mail, schedule changes, and LifeOS alerts." }
         )
     }
 
@@ -55,6 +56,7 @@ object AppNotifications {
         title: String,
         body: String,
         openTab: String? = null,
+        openItemId: Int? = null,
     ) {
         ensureChannels(context)
 
@@ -70,6 +72,7 @@ object AppNotifications {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (openTab != null) putExtra(EXTRA_OPEN_TAB, openTab)
+            if (openItemId != null) putExtra(EXTRA_OPEN_ITEM_ID, openItemId)
         }
         val pendingIntent = android.app.PendingIntent.getActivity(
             context,

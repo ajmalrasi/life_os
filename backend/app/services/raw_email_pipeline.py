@@ -24,9 +24,9 @@ from app.models.transaction import Transaction
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.raw_email_repo import RawEmailRepository
 from app.services.expense_collector import derive_dedup_key
-from app.services.expense_parsers.base import BankEmail
+from app.mail.models import MailMessage
 from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankParser
-from app.services.gmail_client import GmailClient
+from app.mail.gmail_provider import GmailProvider
 from app.services.openclaw import OpenClawClient
 
 _FETCH_MAX_RESULTS = 2000
@@ -39,7 +39,7 @@ class FetchReport:
     emails_saved: int
 
 
-def fetch_raw_emails(db: Session, client: GmailClient, bank: str, since: date) -> FetchReport:
+def fetch_raw_emails(db: Session, client: GmailProvider, bank: str, since: date) -> FetchReport:
     """Search Gmail and save every new matching email's full body — no LLM
     calls, so this is cheap and safe to call repeatedly (already-saved
     message_ids are skipped)."""
@@ -124,7 +124,7 @@ def process_raw_emails(
 
         db.query(Transaction).filter(Transaction.gmail_message_id == row.message_id).delete()
 
-        email = BankEmail(
+        email = MailMessage(
             message_id=row.message_id,
             subject=row.subject,
             from_addr=row.from_addr,

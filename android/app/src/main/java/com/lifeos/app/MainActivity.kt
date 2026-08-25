@@ -15,7 +15,7 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val openRequest = mutableStateOf(OpenRequest(null, 0L))
+    private val openRequest = mutableStateOf(OpenRequest(null, null, 0L))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,12 +31,17 @@ class MainActivity : ComponentActivity() {
         // Deep-link target from a notification tap (e.g. the Pulse reminder).
         openRequest.value = OpenRequest(
             route = intent?.getStringExtra(AppNotifications.EXTRA_OPEN_TAB),
+            priorityItemId = intent?.priorityItemId(),
             id = System.nanoTime(),
         )
         setContent {
             LifeOsTheme {
                 val request = openRequest.value
-                LifeOsApp(startTab = request.route, openRequestId = request.id)
+                LifeOsApp(
+                    startTab = request.route,
+                    openRequestId = request.id,
+                    openPriorityItemId = request.priorityItemId,
+                )
             }
         }
     }
@@ -46,9 +51,18 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         openRequest.value = OpenRequest(
             route = intent.getStringExtra(AppNotifications.EXTRA_OPEN_TAB),
+            priorityItemId = intent.priorityItemId(),
             id = System.nanoTime(),
         )
     }
 }
 
-private data class OpenRequest(val route: String?, val id: Long)
+private fun Intent.priorityItemId(): Int? {
+    val key = AppNotifications.EXTRA_OPEN_ITEM_ID
+    return (
+        getStringExtra(key)?.toIntOrNull()
+            ?: getIntExtra(key, -1).takeIf { it >= 0 }
+        )?.takeIf { it >= 0 }
+}
+
+private data class OpenRequest(val route: String?, val priorityItemId: Int?, val id: Long)

@@ -16,7 +16,8 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.services.expense_parsers.base import BankEmail, ParsedTxn
+from app.mail.models import MailMessage
+from app.services.expense_parsers.base import ParsedTxn
 
 _TXN = re.compile(
     r"Rs\.?\s*([\d,]+\.\d{2})\s+has been\s+(debited|credited)\s+from your HDFC Bank Credit Card"
@@ -32,7 +33,7 @@ class HdfcDinersLiveParser:
     # for every purchase type on the Diners card.
     gmail_query = 'from:alerts@hdfcbank.bank.in subject:"A payment was made using your Credit Card"'
 
-    def parse(self, email: BankEmail) -> list[ParsedTxn]:
+    def parse(self, email: MailMessage) -> list[ParsedTxn]:
         m = _TXN.search(email.text)
         if not m:
             return []
@@ -63,7 +64,7 @@ def _parse_date(raw: str) -> date | None:
         return None
 
 
-def _received_date(email: BankEmail) -> date:
+def _received_date(email: MailMessage) -> date:
     try:
         from email.utils import parsedate_to_datetime
 

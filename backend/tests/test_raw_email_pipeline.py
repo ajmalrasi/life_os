@@ -16,7 +16,7 @@ from app.database import SessionLocal
 from app.models.raw_bank_email import RawBankEmail
 from app.models.transaction import Transaction
 from app.repositories.raw_email_repo import RawEmailRepository
-from app.services.expense_parsers.base import BankEmail
+from app.mail.models import MailMessage
 from app.services.openclaw import OpenClawUnavailable
 from app.services.raw_email_pipeline import (
     fetch_raw_emails,
@@ -67,8 +67,8 @@ def _fields(**overrides) -> str:
     return json.dumps(data)
 
 
-def _email(mid: str = "m1", internal_ms: int = 1_751_000_000_000, text: str = "some email") -> BankEmail:
-    return BankEmail(
+def _email(mid: str = "m1", internal_ms: int = 1_751_000_000_000, text: str = "some email") -> MailMessage:
+    return MailMessage(
         message_id=mid,
         subject="whatever",
         from_addr="HDFC Bank <alerts@hdfcbank.bank.in>",
@@ -302,7 +302,7 @@ def test_fetch_endpoint_rejects_unknown_bank(client):
 def test_fetch_endpoint_no_gmail_account_returns_zero(client):
     from unittest.mock import patch
 
-    with patch("app.services.gmail_client.shutil.which", return_value=None):
+    with patch("app.mail.gmail_provider.shutil.which", return_value=None):
         resp = client.post("/expenses/rebuild-llm/fetch", params={"since": "2026-01-01", "bank": "HDFC"})
     assert resp.status_code == 200
     assert resp.json() == {"bank": "HDFC", "emails_found": 0, "emails_saved": 0}

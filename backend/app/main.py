@@ -17,14 +17,16 @@ from app.api.routes import (
     expenses,
     github_data,
     health_data,
+    mail_accounts,
     mood,
     notifications,
     payee_labels,
+    priority,
     statements,
 )
 from app.config import get_settings
 from app.database import init_db, purge_seed_data
-from app.services.gmail_client import GmailClientError
+from app.mail.gmail_provider import MailProviderError
 
 settings = get_settings()
 
@@ -55,8 +57,8 @@ app.add_middleware(
 )
 
 
-@app.exception_handler(GmailClientError)
-async def gmail_client_error_handler(_request: Request, exc: GmailClientError) -> JSONResponse:
+@app.exception_handler(MailProviderError)
+async def gmail_client_error_handler(_request: Request, exc: MailProviderError) -> JSONResponse:
     """Keep Gmail outages visible to Android and cron instead of returning a false 200."""
     return JSONResponse(status_code=503, content={"detail": str(exc)})
 
@@ -67,6 +69,8 @@ app.include_router(github_data.router)
 app.include_router(expenses.router)
 app.include_router(statements.router)
 app.include_router(payee_labels.router)
+app.include_router(priority.router)
+app.include_router(mail_accounts.router)
 app.include_router(analytics.router)
 app.include_router(chat.router)
 app.include_router(notifications.router)

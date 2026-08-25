@@ -9,6 +9,8 @@ import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.InsightDao
 import com.lifeos.app.data.local.LifeOsDatabase
+import com.lifeos.app.data.local.MIGRATION_12_13
+import com.lifeos.app.data.local.PriorityDao
 import com.lifeos.app.data.local.SynthesizedInsightDao
 import com.lifeos.app.data.local.MoodDao
 import com.lifeos.app.data.local.ScoreDao
@@ -42,6 +44,7 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): LifeOsDatabase =
         Room.databaseBuilder(context, LifeOsDatabase::class.java, "lifeos.db")
+            .addMigrations(MIGRATION_12_13)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -68,4 +71,7 @@ object AppModule {
 
     @Provides
     fun currentCardCycleDao(db: LifeOsDatabase): CurrentCardCycleDao = db.currentCardCycleDao()
+
+    @Provides
+    fun priorityDao(db: LifeOsDatabase): PriorityDao = db.priorityDao()
 }

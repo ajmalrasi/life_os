@@ -26,7 +26,8 @@ from app.schemas.statement import (
     StatementSyncResult,
     StatementPaidUpdate,
 )
-from app.services.gmail_client import GmailClient
+from app.mail.factory import finance_provider
+from app.mail.gmail_provider import GmailProvider
 from app.schemas.expense import TransactionOut
 from app.services.card_cycles import current_card_cycle_details, current_card_cycles
 from app.services.reconcile import EXCLUDED_FROM_SPEND
@@ -108,13 +109,8 @@ def build_categorizer(db: Session):
     return categorize
 
 
-def _gmail_client(settings: Settings) -> GmailClient:
-    return GmailClient(
-        account=settings.gmail_account,
-        keyring_password=settings.gog_keyring_password,
-        gog_bin=settings.gog_bin,
-        home=settings.gog_home or None,
-    )
+def _gmail_client(settings: Settings, db: Session) -> GmailProvider:
+    return finance_provider(db, settings)
 
 
 @router.get("", response_model=list[CardStatementOut])
@@ -167,7 +163,7 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
     settings = get_settings()
     report = StatementCollector(
         db,
-        _gmail_client(settings),
+        _gmail_client(settings, db),
         owner_name=settings.cc_owner_name,
         owner_dob=settings.cc_owner_dob,
         password_overrides=settings.cc_pdf_password_overrides,

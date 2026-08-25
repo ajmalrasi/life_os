@@ -19,6 +19,11 @@ import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
 import com.lifeos.app.data.remote.dto.NotificationDto
+import com.lifeos.app.data.remote.dto.PriorityDetailsDto
+import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
+import com.lifeos.app.data.remote.dto.PriorityItemDto
+import com.lifeos.app.data.remote.dto.PrioritySyncResultDto
+import com.lifeos.app.data.remote.dto.PriorityUpdateDto
 import com.lifeos.app.data.remote.dto.RecomputeResultDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
@@ -44,6 +49,29 @@ import retrofit2.http.Streaming
 import okhttp3.ResponseBody
 
 interface LifeOsApi {
+
+    @GET("priority")
+    suspend fun listPriority(
+        @Query("include_done") includeDone: Boolean = false,
+    ): List<PriorityItemDto>
+
+    @GET("priority/{itemId}")
+    suspend fun priorityDetails(@Path("itemId") itemId: Int): PriorityDetailsDto
+
+    @POST("priority/sync/check")
+    suspend fun syncPriority(): PrioritySyncResultDto
+
+    @PATCH("priority/{itemId}")
+    suspend fun updatePriority(
+        @Path("itemId") itemId: Int,
+        @Body body: PriorityUpdateDto,
+    ): PriorityItemDto
+
+    @POST("priority/{itemId}/feedback")
+    suspend fun priorityFeedback(
+        @Path("itemId") itemId: Int,
+        @Body body: PriorityFeedbackDto,
+    ): PriorityItemDto
 
     @POST("health/batch")
     suspend fun uploadHealth(@Body batch: HealthBatchDto): IngestResultDto

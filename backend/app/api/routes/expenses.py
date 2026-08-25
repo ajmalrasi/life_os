@@ -25,7 +25,8 @@ from app.schemas.expense import (
 )
 from app.services.expense_collector import ExpenseCollector
 from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankParser
-from app.services.gmail_client import GmailClient
+from app.mail.factory import finance_provider
+from app.mail.gmail_provider import GmailProvider
 from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.repayments import RepaymentError, RepaymentService
@@ -51,13 +52,8 @@ def _to_out(rows, db: Session) -> list[TransactionOut]:
     return out
 
 
-def _gmail_client(settings: Settings) -> GmailClient:
-    return GmailClient(
-        account=settings.gmail_account,
-        keyring_password=settings.gog_keyring_password,
-        gog_bin=settings.gog_bin,
-        home=settings.gog_home or None,
-    )
+def _gmail_client(settings: Settings, db: Session) -> GmailProvider:
+    return finance_provider(db, settings)
 
 
 def _repayment_out(reconciliation, db: Session) -> RepaymentOut:
@@ -214,7 +210,7 @@ def sync_expenses(
     settings = get_settings()
     report = ExpenseCollector(
         db,
-        _gmail_client(settings),
+        _gmail_client(settings, db),
         backfill_days=settings.expense_backfill_days,
         full=full,
     ).sync()
@@ -277,7 +273,7 @@ def rebuild_with_llm(
 
     report = ExpenseCollector(
         db,
-        _gmail_client(settings),
+        _gmail_client(settings, db),
         parsers=[LlmBankParser(domains=domains)],
         since_date=since,
         max_per_parser=2000,
@@ -321,7 +317,7 @@ def rebuild_fetch(since: date, bank: str, db: Session = Depends(get_db)) -> RawE
     if bank not in BANK_DOMAINS:
         raise HTTPException(status_code=422, detail=f"bank must be one of {list(BANK_DOMAINS)}")
     settings = get_settings()
-    report = fetch_raw_emails(db, _gmail_client(settings), bank=bank, since=since)
+    report = fetch_raw_emails(db, _gmail_client(settings, db), bank=bank, since=since)
     return RawEmailFetchResult(**report.__dict__)
 
 
