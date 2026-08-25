@@ -14,6 +14,8 @@ import com.lifeos.app.presentation.money.MoneySectionTabs
 import com.lifeos.app.presentation.money.PeriodSelector
 import com.lifeos.app.presentation.money.SpendPeriod
 import com.lifeos.app.presentation.money.TransactionDetailDialog
+import com.lifeos.app.presentation.money.TransactionSort
+import com.lifeos.app.presentation.money.TransactionSortSheet
 import com.lifeos.app.presentation.theme.LifeOsTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -44,12 +46,12 @@ class MoneyFirstUiTest {
     }
 
     @Test
-    fun more_sheet_routes_to_secondary_lifeos_areas() {
+    fun navigation_drawer_routes_to_secondary_lifeos_areas() {
         var selected: Destination? = null
         compose.setContent {
             LifeOsTheme {
-                LifeOsMoreSheet(
-                    onDismiss = {},
+                LifeOsNavigationDrawer(
+                    currentRoute = Destination.MONEY.route,
                     onDestinationSelected = { selected = it },
                 )
             }
@@ -104,6 +106,23 @@ class MoneyFirstUiTest {
             assertTrue(editClicked)
             assertTrue(refundClicked)
         }
+    }
+
+    @Test
+    fun transaction_sort_sheet_selects_amount_order() {
+        var selected = TransactionSort.RECENT
+        compose.setContent {
+            LifeOsTheme {
+                TransactionSortSheet(
+                    selected = selected,
+                    onSelect = { selected = it },
+                    onDismiss = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Highest amount").performClick()
+        compose.runOnIdle { assertEquals(TransactionSort.HIGHEST, selected) }
     }
 
     private fun transaction() = Transaction(

@@ -33,7 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -73,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -246,10 +248,32 @@ internal fun filterEmiTransactions(
     transactions.filterNot { it.spendCategory in EMI_SPEND_CATEGORIES }
 }
 
+internal fun sortTransactions(
+    transactions: List<Transaction>,
+    sort: TransactionSort,
+): List<Transaction> = when (sort) {
+    TransactionSort.RECENT -> transactions.sortedWith(
+        compareByDescending<Transaction> { it.txnDate }.thenByDescending { it.txnAt },
+    )
+    TransactionSort.OLDEST -> transactions.sortedWith(
+        compareBy<Transaction> { it.txnDate }.thenBy { it.txnAt },
+    )
+    TransactionSort.HIGHEST -> transactions.sortedWith(
+        compareByDescending<Transaction> { it.amount }
+            .thenByDescending { it.txnDate }
+            .thenByDescending { it.txnAt },
+    )
+    TransactionSort.LOWEST -> transactions.sortedWith(
+        compareBy<Transaction> { it.amount }
+            .thenByDescending { it.txnDate }
+            .thenByDescending { it.txnAt },
+    )
+}
+
 @Composable
 fun MoneyScreen(
     overviewRequestId: Long = 0L,
-    onOpenMore: () -> Unit = {},
+    onOpenNavigation: () -> Unit = {},
     onOpenStatement: (Int) -> Unit = {},
     onOpenCurrentCycle: (String, String) -> Unit = { _, _ -> },
     viewModel: MoneyViewModel = hiltViewModel(),
@@ -258,6 +282,7 @@ fun MoneyScreen(
     var showRangePicker by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
+    var showSort by remember { mutableStateOf(false) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -328,14 +353,19 @@ fun MoneyScreen(
     }
     val canGoNext = state.period != SpendPeriod.CUSTOM && slice.end.isBefore(LocalDate.now())
     val canGoPrev = state.period != SpendPeriod.CUSTOM
-    val sortedTransactions = remember(spendTxns) {
-        spendTxns.sortedWith(
-            compareByDescending<Transaction> { it.txnDate }
-                .thenByDescending { it.txnAt },
-        )
+    val recentTransactions = remember(spendTxns) {
+        sortTransactions(spendTxns, TransactionSort.RECENT).take(5)
     }
-    val recentTransactions = remember(sortedTransactions) { sortedTransactions.take(5) }
-    val transactionGroups = remember(sortedTransactions) { sortedTransactions.groupBy { it.txnDate } }
+    val orderedTransactions = remember(spendTxns, state.transactionSort) {
+        sortTransactions(spendTxns, state.transactionSort)
+    }
+    val transactionGroups = remember(orderedTransactions, state.transactionSort) {
+        if (state.transactionSort == TransactionSort.RECENT || state.transactionSort == TransactionSort.OLDEST) {
+            orderedTransactions.groupBy { it.txnDate }
+        } else {
+            emptyMap()
+        }
+    }
     val todayTotal = remember(categoryFilteredTransactions) {
         val today = LocalDate.now()
         categoryFilteredTransactions.filter { it.txnDate == today }
@@ -375,6 +405,17 @@ fun MoneyScreen(
             onBankUpiFilterChange = viewModel::setBankUpiFilter,
             onToggleEmi = viewModel::toggleIncludeEmi,
             onDismiss = { showFilters = false },
+        )
+    }
+
+    if (showSort) {
+        TransactionSortSheet(
+            selected = state.transactionSort,
+            onSelect = { sort ->
+                viewModel.setTransactionSort(sort)
+                showSort = false
+            },
+            onDismiss = { showSort = false },
         )
     }
 
@@ -479,7 +520,7 @@ fun MoneyScreen(
             item {
                 MoneyTopBar(
                     lastSyncAt = state.lastSyncAt,
-                    onOpenMore = onOpenMore,
+                    onOpenNavigation = onOpenNavigation,
                 )
             }
             item {
@@ -585,6 +626,8 @@ fun MoneyScreen(
                                 transactionCount = spendTxns.size,
                                 total = total,
                                 filterCount = activeFilterCount,
+                                sort = state.transactionSort,
+                                onOpenSort = { showSort = true },
                                 onOpenFilters = { showFilters = true },
                             )
                             if (activeFilterCount > 0) {
@@ -600,8 +643,20 @@ fun MoneyScreen(
                             }
                             Spacer(Modifier.height(10.dp))
                         }
-                        if (transactionGroups.isEmpty()) {
+                        if (orderedTransactions.isEmpty()) {
                             item { EmptyInlineMessage("No spend matches these filters.") }
+                        } else if (
+                            state.transactionSort == TransactionSort.HIGHEST ||
+                            state.transactionSort == TransactionSort.LOWEST
+                        ) {
+                            orderedTransactions.forEach { transaction ->
+                                item(key = "transaction-${transaction.id}") {
+                                    TransactionRow(
+                                        txn = transaction,
+                                        onClick = { selectedTransaction = transaction },
+                                    )
+                                }
+                            }
                         } else {
                             transactionGroups.forEach { (date, transactions) ->
                                 item {
@@ -687,12 +742,29 @@ private fun previousPeriodSlice(period: SpendPeriod, current: PeriodSlice): Peri
 }
 
 @Composable
-private fun MoneyTopBar(lastSyncAt: Long?, onOpenMore: () -> Unit) {
+private fun MoneyTopBar(
+    lastSyncAt: Long?,
+    onOpenNavigation: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Surface(
+            modifier = Modifier.size(44.dp).clickable(onClick = onOpenNavigation),
+            shape = RoundedCornerShape(14.dp),
+            color = LifeOsColors.SurfaceMuted,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Rounded.Menu,
+                    contentDescription = "Open navigation drawer",
+                    tint = LifeOsColors.OnBackground,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(14.dp))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Money", style = MaterialTheme.typography.headlineLarge, color = LifeOsColors.OnBackground)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -702,20 +774,6 @@ private fun MoneyTopBar(lastSyncAt: Long?, onOpenMore: () -> Unit) {
                     syncFreshness(lastSyncAt),
                     style = MaterialTheme.typography.labelMedium,
                     color = LifeOsColors.OnSurfaceMuted,
-                )
-            }
-        }
-        Surface(
-            modifier = Modifier.size(44.dp).clickable(onClick = onOpenMore),
-            shape = RoundedCornerShape(14.dp),
-            color = LifeOsColors.SurfaceMuted,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Rounded.Apps,
-                    contentDescription = "Open LifeOS",
-                    tint = LifeOsColors.OnBackground,
-                    modifier = Modifier.size(21.dp),
                 )
             }
         }
@@ -995,6 +1053,8 @@ private fun TransactionListHeader(
     transactionCount: Int,
     total: BigDecimal,
     filterCount: Int,
+    sort: TransactionSort,
+    onOpenSort: () -> Unit,
     onOpenFilters: () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1006,20 +1066,108 @@ private fun TransactionListHeader(
                 color = LifeOsColors.OnSurfaceMuted,
             )
         }
-        Surface(
-            modifier = Modifier.clickable(onClick = onOpenFilters),
-            shape = RoundedCornerShape(12.dp),
-            color = LifeOsColors.Surface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, LifeOsColors.SurfaceBorder),
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            TransactionHeaderControl(
+                label = sort.shortLabel,
+                icon = { Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, modifier = Modifier.size(17.dp)) },
+                contentDescription = "Sort transactions: ${sort.optionLabel}",
+                onClick = onOpenSort,
+            )
+            TransactionHeaderControl(
+                label = if (filterCount == 0) "Filters" else "Filters · $filterCount",
+                icon = { Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(17.dp)) },
+                contentDescription = if (filterCount == 0) "Filter transactions" else "Filter transactions, $filterCount active",
+                onClick = onOpenFilters,
+            )
+        }
+    }
+}
+
+private val TransactionSort.shortLabel: String
+    get() = when (this) {
+        TransactionSort.RECENT -> "Recent"
+        TransactionSort.OLDEST -> "Oldest"
+        TransactionSort.HIGHEST -> "Highest"
+        TransactionSort.LOWEST -> "Lowest"
+    }
+
+private val TransactionSort.optionLabel: String
+    get() = when (this) {
+        TransactionSort.RECENT -> "Recent first"
+        TransactionSort.OLDEST -> "Oldest first"
+        TransactionSort.HIGHEST -> "Highest amount"
+        TransactionSort.LOWEST -> "Lowest amount"
+    }
+
+@Composable
+private fun TransactionHeaderControl(
+    label: String,
+    icon: @Composable () -> Unit,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.semantics { this.contentDescription = contentDescription }.clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = LifeOsColors.Surface,
+        contentColor = LifeOsColors.Primary,
+        border = androidx.compose.foundation.BorderStroke(1.dp, LifeOsColors.SurfaceBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(17.dp), tint = LifeOsColors.Primary)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (filterCount == 0) "Filters" else "Filters · $filterCount",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = LifeOsColors.Primary,
-                )
+            icon()
+            Spacer(Modifier.width(5.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun TransactionSortSheet(
+    selected: TransactionSort,
+    onSelect: (TransactionSort) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LifeOsColors.SurfaceElevated) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+                .navigationBarsPadding(),
+        ) {
+            Text("Sort transactions", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Choose how this list is ordered",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+            )
+            TransactionSort.entries.forEach { option ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().selectable(
+                        selected = option == selected,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(option) },
+                    ).padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = option == selected, onClick = null)
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(option.optionLabel, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            when (option) {
+                                TransactionSort.RECENT -> "Newest dates at the top"
+                                TransactionSort.OLDEST -> "Earliest dates at the top"
+                                TransactionSort.HIGHEST -> "Largest payments at the top"
+                                TransactionSort.LOWEST -> "Smallest payments at the top"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
+                }
             }
         }
     }

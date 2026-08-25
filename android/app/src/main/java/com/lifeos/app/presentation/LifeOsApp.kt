@@ -1,13 +1,15 @@
 package com.lifeos.app.presentation
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -16,21 +18,22 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +42,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lifeos.app.presentation.chat.ChatScreen
@@ -52,6 +56,7 @@ import com.lifeos.app.presentation.priority.PriorityDetailsScreen
 import com.lifeos.app.presentation.priority.PriorityScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
+import kotlinx.coroutines.launch
 
 enum class Destination(val route: String, val label: String, val icon: ImageVector) {
     DASHBOARD("dashboard", "Today", Icons.Rounded.WbSunny),
@@ -63,7 +68,8 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
-private val moreDestinations = listOf(
+internal val navigationDestinations = listOf(
+    Destination.MONEY,
     Destination.PRIORITY,
     Destination.DASHBOARD,
     Destination.MOOD,
@@ -79,8 +85,20 @@ internal const val DEFAULT_DESTINATION_ROUTE = "money"
 @Composable
 fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityItemId: Int? = null) {
     val navController = rememberNavController()
-    var showMore by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
     var moneyOverviewRequest by remember { mutableStateOf(0L) }
+
+    val navigateTo: (Destination) -> Unit = { destination ->
+        navController.navigate(destination.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+        scope.launch { drawerState.close() }
+    }
 
     // Deep links still reach the quieter LifeOS areas, but Money remains under
     // them on the back stack and is the app's normal home.
@@ -104,133 +122,124 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = LifeOsColors.Background,
-    ) { contentPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = DEFAULT_DESTINATION_ROUTE,
-            modifier = Modifier.padding(contentPadding),
-        ) {
-            composable(Destination.MONEY.route) {
-                MoneyScreen(
-                    overviewRequestId = moneyOverviewRequest,
-                    onOpenMore = { showMore = true },
-                    onOpenStatement = { id -> navController.navigate("statement/$id") },
-                    onOpenCurrentCycle = { bank, cardLast4 ->
-                        navController.navigate("cycle/$bank/$cardLast4")
-                    },
-                )
-            }
-            composable(Destination.DASHBOARD.route) {
-                DashboardScreen(onOpenSettings = { navController.navigate(Destination.SETTINGS.route) })
-            }
-            composable(Destination.MOOD.route) { MoodScreen() }
-            composable(Destination.PRIORITY.route) {
-                PriorityScreen(onOpenItem = { id -> navController.navigate("priority/$id") })
-            }
-            composable(Destination.INSIGHTS.route) { InsightsScreen() }
-            composable(Destination.CHAT.route) { ChatScreen() }
-            composable(Destination.SETTINGS.route) {
-                SettingsScreen(onBack = { navController.popBackStack() })
-            }
-            composable(
-                route = STATEMENT_DETAILS_ROUTE,
-                arguments = listOf(navArgument("statementId") { type = NavType.IntType }),
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            LifeOsNavigationDrawer(
+                currentRoute = currentRoute,
+                onDestinationSelected = navigateTo,
+            )
+        },
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = LifeOsColors.Background,
+        ) { contentPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = DEFAULT_DESTINATION_ROUTE,
+                modifier = Modifier.padding(contentPadding),
             ) {
-                StatementDetailsScreen(onBack = { navController.popBackStack() })
-            }
-            composable(
-                route = CURRENT_CYCLE_DETAILS_ROUTE,
-                arguments = listOf(
-                    navArgument("bank") { type = NavType.StringType },
-                    navArgument("cardLast4") { type = NavType.StringType },
-                ),
-            ) {
-                CurrentCycleDetailsScreen(onBack = { navController.popBackStack() })
-            }
-            composable(
-                route = PRIORITY_DETAILS_ROUTE,
-                arguments = listOf(navArgument("itemId") { type = NavType.IntType }),
-            ) {
-                PriorityDetailsScreen(onBack = { navController.popBackStack() })
+                composable(Destination.MONEY.route) {
+                    MoneyScreen(
+                        overviewRequestId = moneyOverviewRequest,
+                        onOpenNavigation = { scope.launch { drawerState.open() } },
+                        onOpenStatement = { id -> navController.navigate("statement/$id") },
+                        onOpenCurrentCycle = { bank, cardLast4 ->
+                            navController.navigate("cycle/$bank/$cardLast4")
+                        },
+                    )
+                }
+                composable(Destination.DASHBOARD.route) {
+                    DashboardScreen(onOpenSettings = { navigateTo(Destination.SETTINGS) })
+                }
+                composable(Destination.MOOD.route) { MoodScreen() }
+                composable(Destination.PRIORITY.route) {
+                    PriorityScreen(onOpenItem = { id -> navController.navigate("priority/$id") })
+                }
+                composable(Destination.INSIGHTS.route) { InsightsScreen() }
+                composable(Destination.CHAT.route) { ChatScreen() }
+                composable(Destination.SETTINGS.route) {
+                    SettingsScreen(onBack = { navController.popBackStack() })
+                }
+                composable(
+                    route = STATEMENT_DETAILS_ROUTE,
+                    arguments = listOf(navArgument("statementId") { type = NavType.IntType }),
+                ) {
+                    StatementDetailsScreen(onBack = { navController.popBackStack() })
+                }
+                composable(
+                    route = CURRENT_CYCLE_DETAILS_ROUTE,
+                    arguments = listOf(
+                        navArgument("bank") { type = NavType.StringType },
+                        navArgument("cardLast4") { type = NavType.StringType },
+                    ),
+                ) {
+                    CurrentCycleDetailsScreen(onBack = { navController.popBackStack() })
+                }
+                composable(
+                    route = PRIORITY_DETAILS_ROUTE,
+                    arguments = listOf(navArgument("itemId") { type = NavType.IntType }),
+                ) {
+                    PriorityDetailsScreen(onBack = { navController.popBackStack() })
+                }
             }
         }
     }
-
-    if (showMore) {
-        LifeOsMoreSheet(
-            onDismiss = { showMore = false },
-            onDestinationSelected = { destination ->
-                showMore = false
-                navController.navigate(destination.route) { launchSingleTop = true }
-            },
-        )
-    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun LifeOsMoreSheet(
-    onDismiss: () -> Unit,
+internal fun LifeOsNavigationDrawer(
+    currentRoute: String?,
     onDestinationSelected: (Destination) -> Unit,
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = LifeOsColors.SurfaceElevated,
+    ModalDrawerSheet(
+        modifier = Modifier.widthIn(max = 328.dp),
+        drawerContainerColor = LifeOsColors.SurfaceElevated,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
-                .navigationBarsPadding(),
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 20.dp),
         ) {
             Text(
                 "LifeOS",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineLarge,
                 color = LifeOsColors.OnBackground,
+                modifier = Modifier.padding(horizontal = 28.dp),
             )
             Text(
-                "Everything outside your daily Money view",
-                style = MaterialTheme.typography.bodySmall,
+                "Choose an area",
+                style = MaterialTheme.typography.bodyMedium,
                 color = LifeOsColors.OnSurfaceMuted,
-                modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 2.dp, bottom = 18.dp),
             )
-            moreDestinations.forEachIndexed { index, destination ->
-                TextButton(
-                    onClick = { onDestinationSelected(destination) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Icon(
-                            imageVector = destination.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = LifeOsColors.Primary,
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                destination.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = LifeOsColors.OnBackground,
-                            )
+            navigationDestinations.forEach { destination ->
+                NavigationDrawerItem(
+                    selected = currentRoute == destination.route,
+                    label = {
+                        Column {
+                            Text(destination.label, fontWeight = FontWeight.SemiBold)
                             Text(
                                 destinationSupportingText(destination),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = LifeOsColors.OnSurfaceMuted,
                             )
                         }
-                    }
-                }
-                if (index != moreDestinations.lastIndex) {
-                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
-                }
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = destination.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    onClick = { onDestinationSelected(destination) },
+                )
             }
         }
     }

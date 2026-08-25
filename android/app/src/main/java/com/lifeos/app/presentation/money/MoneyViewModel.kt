@@ -26,12 +26,16 @@ enum class SpendPeriod { DAY, WEEK, MONTH, SIX_MONTHS, YEAR, CUSTOM }
 /** Stable local destinations inside the Money-first experience. */
 enum class MoneySection { OVERVIEW, TRANSACTIONS, CARDS }
 
+/** Ordering for the main Transactions list. */
+enum class TransactionSort { RECENT, OLDEST, HIGHEST, LOWEST }
+
 internal val EMI_SPEND_CATEGORIES = setOf("emi", "emi_fees")
 
 data class MoneyUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val section: MoneySection = MoneySection.OVERVIEW,
+    val transactionSort: TransactionSort = TransactionSort.RECENT,
     val lastSyncAt: Long? = null,
     val period: SpendPeriod = SpendPeriod.MONTH,
     /** The period currently in view; moved by [prevPeriod]/[nextPeriod]. */
@@ -130,6 +134,10 @@ class MoneyViewModel @Inject constructor(
 
     fun setSection(section: MoneySection) {
         _state.update { it.copy(section = section, selectedCategory = null) }
+    }
+
+    fun setTransactionSort(sort: TransactionSort) {
+        _state.update { it.copy(transactionSort = sort) }
     }
 
     /** Refresh the cache from the backend; dues load softly and never fail the

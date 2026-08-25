@@ -578,6 +578,22 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   dark modes; Overview, filters, transaction actions, Cards detail return, and
   More were exercised against real cached data, and all four Compose device
   tests pass.
+- ✅ **Transaction sorting (2026-08-24).** The Money Transactions header now has
+  one compact Sort control beside Filters. Its four orders are Recent, Oldest,
+  Highest amount, and Lowest amount; date orders retain date-group headings,
+  while amount orders use a truthful global flat ordering with the date still
+  visible on every row. The selection lives in `MoneyUiState`, so it survives
+  configuration changes and detail navigation. Unit ordering tests and all five
+  Money Compose device tests pass on Samsung `RZCX60SNHHE`; the final APK was
+  installed and Recent/Highest states were visually verified against real data.
+- ✅ **Safe primary navigation drawer (2026-08-25).** The Money-first screen's
+  bottom “More” sheet was replaced with a standard left-side navigation drawer,
+  opened by a top-left menu button. It lists all seven LifeOS areas, highlights
+  the current destination, preserves destination state, and applies status- and
+  navigation-bar insets so no option can sit beneath Samsung's native controls.
+  Android unit tests and all five Money Compose device tests pass; the final APK
+  was reinstalled on Samsung `RZCX60SNHHE` after the connected test runner's
+  cleanup uninstalled its target package.
 
 ## 7. Open items / next steps
 
