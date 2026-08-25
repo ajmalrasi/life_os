@@ -67,7 +67,9 @@ class MailConnectionManager @Inject constructor(
                 val sessionId = requireNotNull(start.sessionId)
                 val sessionSecret = requireNotNull(start.sessionSecret)
                 openBrowser(authorizationUrl)
-                receiveAndComplete(server, sessionId, sessionSecret, purpose)
+                val callbackUrl = receiveCallbackAndReturnToApp(server)
+                delay(FOREGROUND_SETTLE_MILLIS)
+                completeWithRetry(sessionId, sessionSecret, callbackUrl, purpose)
             }
         }
     } catch (error: HttpException) {
@@ -95,12 +97,7 @@ class MailConnectionManager @Inject constructor(
         }
     }
 
-    private suspend fun receiveAndComplete(
-        server: ServerSocket,
-        sessionId: String,
-        sessionSecret: String,
-        purpose: String,
-    ): ConnectedMailAccount {
+    private fun receiveCallbackAndReturnToApp(server: ServerSocket): String {
         server.accept().use { socket ->
             socket.soTimeout = 5_000
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
@@ -112,16 +109,8 @@ class MailConnectionManager @Inject constructor(
             while (reader.readLine()?.isNotEmpty() == true) Unit
 
             val callbackUrl = "http://$LOOPBACK_HOST:${server.localPort}$target"
-            val account = try {
-                completeWithRetry(sessionId, sessionSecret, callbackUrl, purpose)
-            } catch (error: Throwable) {
-                runCatching { writeBrowserResponse(socket, connected = false) }
-                throw error
-            }
-            // The Jetson has already stored the authorization at this point. A browser
-            // closing the loopback page must not turn that durable success into an error.
-            runCatching { writeBrowserResponse(socket, connected = true) }
-            return account
+            writeBrowserReturnResponse(socket)
+            return callbackUrl
         }
     }
 
@@ -155,18 +144,11 @@ class MailConnectionManager @Inject constructor(
         throw requireNotNull(lastNetworkError)
     }
 
-    private fun writeBrowserResponse(socket: java.net.Socket, connected: Boolean) {
-        val title = if (connected) "LifeOS connected" else "LifeOS could not connect"
-        val message = if (connected) {
-            "Your Gmail account is connected. Returning to LifeOS…"
-        } else {
-            "Return to LifeOS to see the error and try again."
-        }
-        val autoReturn = if (connected) {
-            "<script>setTimeout(function(){ location.href='lifeos://mail-auth-complete'; }, 800);</script>"
-        } else {
-            ""
-        }
+    private fun writeBrowserReturnResponse(socket: java.net.Socket) {
+        val title = "Authorization received"
+        val message = "Returning to LifeOS to finish connecting Gmail…"
+        val autoReturn =
+            "<script>setTimeout(function(){ location.href='lifeos://mail-auth-complete'; }, 500);</script>"
         val body = """
             <!doctype html><html><head><meta name="viewport" content="width=device-width">
             <title>$title</title></head><body style="font-family:sans-serif;padding:32px">
@@ -193,6 +175,7 @@ class MailConnectionManager @Inject constructor(
         const val AUTH_TIMEOUT_MILLIS = 5 * 60 * 1_000
         const val COMPLETE_ATTEMPTS = 3
         const val COMPLETE_RETRY_DELAY_MILLIS = 2_000L
+        const val FOREGROUND_SETTLE_MILLIS = 1_200L
     }
 }
 
