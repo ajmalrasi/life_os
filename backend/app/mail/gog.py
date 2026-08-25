@@ -27,10 +27,12 @@ class GogRunner:
         *,
         keyring_password: str = "",
         gog_bin: str = "gog",
+        keyring_reader_bin: str = "gog-keyring-secret",
         home: str | None = None,
     ) -> None:
         self.keyring_password = keyring_password
         self.gog_bin = gog_bin
+        self.keyring_reader_bin = keyring_reader_bin
         self.home = home
 
     @property
@@ -100,3 +102,22 @@ class GogRunner:
         if not isinstance(value, dict):
             raise GogCommandError("Google returned an invalid response.")
         return value
+
+    def client_secret(self, client: str = "default", timeout: float = 10.0) -> str:
+        try:
+            proc = subprocess.run(
+                [self.keyring_reader_bin, "--client", client],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=self._env(),
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            raise GogCommandError("The Gmail OAuth keyring is unavailable.") from exc
+        if proc.returncode != 0:
+            logger.warning("Gmail OAuth keyring reader failed: %s", proc.stderr.strip()[:240])
+            raise GogCommandError("The Gmail OAuth keyring could not be read.")
+        secret = proc.stdout.strip()
+        if not secret:
+            raise GogCommandError("The Gmail OAuth client secret is unavailable.")
+        return secret

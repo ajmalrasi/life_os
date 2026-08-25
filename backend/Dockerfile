@@ -14,6 +14,16 @@ RUN apk add --no-cache curl tar \
     && tar -xzf /tmp/gog.tgz -C /tmp gog \
     && install -m 0755 /tmp/gog /usr/local/bin/gog
 
+# Read the OAuth client secret from the same encrypted file keyring as gog.
+# The helper writes only to its caller's private process pipe; it never persists
+# or logs the secret. The keyring library version matches gog v0.31.1.
+FROM golang:1.26-alpine AS gog-keyring-helper
+WORKDIR /src
+COPY tools/gogkeyring/go.mod ./
+RUN go mod download
+COPY tools/gogkeyring/main.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gog-keyring-secret .
+
 # Stage 2: LifeOS backend
 FROM python:3.12-slim
 
@@ -38,6 +48,7 @@ COPY --from=mcp-binary /server/github-mcp-server /usr/local/bin/github-mcp-serve
 
 # gog (gogcli) binary for read-only Gmail access in the expense collector.
 COPY --from=gog-binary /usr/local/bin/gog /usr/local/bin/gog
+COPY --from=gog-keyring-helper /gog-keyring-secret /usr/local/bin/gog-keyring-secret
 
 EXPOSE 8000
 

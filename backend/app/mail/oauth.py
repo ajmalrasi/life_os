@@ -62,7 +62,7 @@ class GogOAuthService:
             hashlib.sha256(code_verifier.encode("ascii")).digest()
         ).rstrip(b"=").decode("ascii")
         params = {
-            "client_id": self._client_id(),
+            "client_id": self._client_credentials()[0],
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": self.GMAIL_READONLY_SCOPE,
@@ -87,13 +87,14 @@ class GogOAuthService:
         code = parse_qs(urlsplit(callback_url).query).get("code", [""])[0]
         if not code:
             raise MailAuthorizationError("Google callback is missing authorization data.")
-        client_id = self._client_id()
+        client_id, client_secret = self._client_credentials()
         try:
             with httpx.Client(timeout=30.0) as client:
                 token_response = client.post(
                     self.TOKEN_URL,
                     data={
                         "client_id": client_id,
+                        "client_secret": client_secret,
                         "code": code,
                         "code_verifier": code_verifier,
                         "grant_type": "authorization_code",
@@ -146,7 +147,7 @@ class GogOAuthService:
             raise MailAuthorizationError(self._safe_error(exc)) from exc
         return email
 
-    def _client_id(self) -> str:
+    def _client_credentials(self) -> tuple[str, str]:
         try:
             status = self.runner.json(["auth", "status", "-j"])
             path = str(status.get("account", {}).get("credentials_path") or "")
@@ -155,9 +156,20 @@ class GogOAuthService:
             raise MailAuthorizationError("LifeOS Gmail OAuth credentials are unavailable.") from exc
         container = data.get("installed") or data.get("web") or data
         client_id = str(container.get("client_id") or "") if isinstance(container, dict) else ""
+        client_secret = (
+            str(container.get("client_secret") or "") if isinstance(container, dict) else ""
+        )
         if not client_id:
             raise MailAuthorizationError("LifeOS Gmail OAuth credentials are incomplete.")
-        return client_id
+        if not client_secret:
+            client = str(status.get("account", {}).get("client") or "default")
+            try:
+                client_secret = self.runner.client_secret(client)
+            except GogCommandError as exc:
+                raise MailAuthorizationError(
+                    "LifeOS Gmail OAuth client secret is unavailable."
+                ) from exc
+        return client_id, client_secret
 
     @staticmethod
     def _safe_error(exc: GogCommandError) -> str:

@@ -221,7 +221,9 @@ stored in Postgres. Android opens the URL and temporarily listens on
 callback origin and OAuth state, exchanges the code, verifies the selected
 identity through Gmail, and imports the refresh token into the encrypted gog
 keyring through standard input. The refresh token never crosses the LifeOS API
-boundary.
+boundary. A pinned read-only helper retrieves the OAuth client secret from that
+same encrypted keyring only into the API process pipe for the token exchange;
+the secret is not duplicated in the image, `.env`, Android, or Postgres.
 
 The current `GMAIL_ACCOUNT` environment value is migrated once into an account
 with the `finance` purpose. It remains as a temporary bootstrap fallback for one

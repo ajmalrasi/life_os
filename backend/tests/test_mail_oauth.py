@@ -30,6 +30,7 @@ class _HttpClient:
 
     def post(self, _url: str, *, data: dict) -> _Response:
         assert data["code_verifier"] == "v" * 64
+        assert data["client_secret"] == "client-secret"
         return _Response({"access_token": "access-once", "refresh_token": "refresh-long"})
 
     def get(self, _url: str, *, headers: dict) -> _Response:
@@ -52,7 +53,11 @@ def _service(monkeypatch) -> tuple[GogOAuthService, _Runner]:
     service = GogOAuthService.__new__(GogOAuthService)
     runner = _Runner()
     service.runner = runner
-    monkeypatch.setattr(service, "_client_id", lambda: "client-id")
+    monkeypatch.setattr(
+        service,
+        "_client_credentials",
+        lambda: ("client-id", "client-secret"),
+    )
     return service, runner
 
 

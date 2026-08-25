@@ -21,6 +21,11 @@ gog's encrypted file keyring through standard input. The token is never returned
 to Android or written to Postgres. A connection session expires after five
 minutes and cannot be replayed.
 
+The OAuth client secret also remains in gog's encrypted file keyring. The API
+image includes a narrow read-only helper that retrieves only that client secret
+into the API process pipe for Google's token exchange; it is never copied into
+the image, `.env`, logs, Android, or Postgres.
+
 The existing Money account is bootstrapped into the account registry on the
 first Settings load. Changing a slot disables its prior purpose assignment but
 does not delete transactions, statements, Priority items, or mail history.
