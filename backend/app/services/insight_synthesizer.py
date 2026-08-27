@@ -24,7 +24,7 @@ import logging
 from dataclasses import dataclass
 
 from app.config import get_settings
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.insight_synthesizer")
 settings = get_settings()
@@ -77,7 +77,7 @@ def synthesize(evidence: list[EvidenceFact], client: OpenClawClient | None = Non
     if not evidence or not settings.insight_synthesis_enabled:
         return []
 
-    client = client or OpenClawClient()
+    client = client or OpenClawClient(workload=InferenceWorkload.BACKGROUND)
     try:
         client.timeout = min(client.timeout, _SYNTHESIS_TIMEOUT_SECONDS)
     except Exception:  # client may be a stub in tests

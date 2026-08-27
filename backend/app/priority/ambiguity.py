@@ -4,7 +4,7 @@ import json
 
 from app.mail.models import MailMessage
 from app.priority.classifier import ALLOWED_LABELS, PriorityClassification
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 _SCHEMA = {
     "type": "object",
@@ -39,7 +39,7 @@ def review_ambiguous(
         {"role": "user", "content": f"SUBJECT: {message.subject}\nFROM: {message.from_addr}\nBODY:\n{message.text[:3000]}"},
     ]
     try:
-        raw = (client or OpenClawClient()).chat_structured(
+        raw = (client or OpenClawClient(workload=InferenceWorkload.BACKGROUND)).chat_structured(
             messages, schema=_SCHEMA, schema_name="priority_mail", temperature=0.0
         )
         data = json.loads(raw)

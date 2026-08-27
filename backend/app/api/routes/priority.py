@@ -8,6 +8,7 @@ from app.models.priority import PriorityItem
 from app.priority.service import PrioritySyncService
 from app.priority.notifications import PriorityNotificationService
 from app.repositories.priority_repo import PriorityRepository
+from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
 from app.schemas.priority import (
     PriorityDetailsOut,
     PriorityFeedbackIn,
@@ -113,19 +114,35 @@ def priority_feedback(
 
 @router.post("/sync/check", response_model=PrioritySyncOut)
 def sync_priority(full: bool = False, db: Session = Depends(get_db)) -> PrioritySyncOut:
-    report = PrioritySyncService(db).sync(full=full)
-    PriorityNotificationService(db).push_new(report.new_items)
-    repo = PriorityRepository(db)
-    return PrioritySyncOut(
-        successful=not report.account_errors,
-        accounts_run=report.accounts_run,
-        emails_found=report.emails_found,
-        emails_processed=report.emails_processed,
-        items_new=report.items_new,
-        items_updated=report.items_updated,
-        items_review=report.items_review,
-        pending=report.pending,
-        message=report.message,
-        account_errors=report.account_errors,
-        new_items=[_out(repo, item) for item in report.new_items],
-    )
+    with try_job_lock(db.get_bind(), MAIL_SYNC_JOB) as acquired:
+        if not acquired:
+            return PrioritySyncOut(
+                successful=True,
+                accounts_run=0,
+                emails_found=0,
+                emails_processed=0,
+                items_new=0,
+                items_updated=0,
+                items_review=0,
+                pending=0,
+                message="Priority sync deferred because another mail sync is running.",
+                account_errors=[],
+                new_items=[],
+            )
+
+        report = PrioritySyncService(db).sync(full=full)
+        PriorityNotificationService(db).push_new(report.new_items)
+        repo = PriorityRepository(db)
+        return PrioritySyncOut(
+            successful=not report.account_errors,
+            accounts_run=report.accounts_run,
+            emails_found=report.emails_found,
+            emails_processed=report.emails_processed,
+            items_new=report.items_new,
+            items_updated=report.items_updated,
+            items_review=report.items_review,
+            pending=report.pending,
+            message=report.message,
+            account_errors=report.account_errors,
+            new_items=[_out(repo, item) for item in report.new_items],
+        )

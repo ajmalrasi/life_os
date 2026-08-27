@@ -25,7 +25,7 @@ from app.services.expense_parsers import ParsedTxn, Parser, ParserUnavailable, g
 from app.mail.models import MailMessage
 from app.services.expense_parsers.txn_time import extract_clock_time
 from app.mail.gmail_provider import GmailProvider
-from app.services.openclaw import OpenClawClient
+from app.services.openclaw import InferenceWorkload, OpenClawClient
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class ExpenseCollector:
         clock: time | None = None
         if self._txn_time_enabled:
             if self._openclaw is None:
-                self._openclaw = OpenClawClient()
+                self._openclaw = OpenClawClient(workload=InferenceWorkload.FINANCE)
             clock = extract_clock_time(email.text, self._openclaw)
         arrival = _email_arrival(email)
         for txn in parsed:

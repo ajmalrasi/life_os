@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+from contextlib import contextmanager
 from collections.abc import Iterator
+from dataclasses import dataclass
+from enum import IntEnum
+from time import monotonic
 
 import httpx
 
@@ -30,6 +35,93 @@ class OpenClawTimeout(OpenClawUnavailable):
     """The local model was reachable but did not finish in time."""
 
     pass
+
+
+class OpenClawBusy(OpenClawUnavailable):
+    """The model is reserved for a higher-priority or already-running request."""
+
+    pass
+
+
+class InferenceWorkload(IntEnum):
+    """Admission priority for the Jetson's single-sequence local model."""
+
+    INTERACTIVE = 0
+    FINANCE = 10
+    BACKGROUND = 20
+
+
+_WORKLOAD_TIMEOUT_CAPS = {
+    InferenceWorkload.FINANCE: 30.0,
+    InferenceWorkload.BACKGROUND: 45.0,
+}
+
+
+@dataclass(frozen=True)
+class _InferenceWaiter:
+    priority: InferenceWorkload
+    sequence: int
+
+
+class InferenceCoordinator:
+    """Serialize model calls and let interactive work jump ahead in the queue.
+
+    MLC is configured for a single sequence, so concurrent HTTP requests only
+    create contention and unpredictable latency. Background/finance callers use
+    fail-fast admission and can safely defer or fall back; interactive Ask calls
+    wait for the active request, then run before any lower-priority waiter.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._active: _InferenceWaiter | None = None
+        self._waiters: list[_InferenceWaiter] = []
+        self._sequence = 0
+
+    @contextmanager
+    def lease(self, priority: InferenceWorkload, wait_timeout: float) -> Iterator[float]:
+        started = monotonic()
+        deadline = started + max(0.0, wait_timeout)
+        with self._condition:
+            self._sequence += 1
+            waiter = _InferenceWaiter(priority=priority, sequence=self._sequence)
+            self._waiters.append(waiter)
+            while self._active is not None or waiter != min(
+                self._waiters, key=lambda item: (item.priority, item.sequence)
+            ):
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    self._waiters.remove(waiter)
+                    self._condition.notify_all()
+                    raise OpenClawBusy(
+                        f"Local model is busy ({priority.name.casefold()} request deferred)"
+                    )
+                self._condition.wait(timeout=remaining)
+            self._waiters.remove(waiter)
+            self._active = waiter
+
+        try:
+            yield monotonic() - started
+        finally:
+            with self._condition:
+                if self._active == waiter:
+                    self._active = None
+                self._condition.notify_all()
+
+    def status(self) -> dict[str, int | str | None]:
+        with self._condition:
+            return {
+                "active_workload": (
+                    self._active.priority.name.casefold() if self._active else None
+                ),
+                "waiting_interactive": sum(
+                    waiter.priority == InferenceWorkload.INTERACTIVE for waiter in self._waiters
+                ),
+                "waiting_total": len(self._waiters),
+            }
+
+
+_INFERENCE_COORDINATOR = InferenceCoordinator()
 
 
 def _strip_think(text: str) -> str:
@@ -117,10 +209,39 @@ def _matches_schema(raw: str, schema: dict) -> bool:
 
 
 class OpenClawClient:
-    def __init__(self, base_url: str | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        workload: InferenceWorkload = InferenceWorkload.BACKGROUND,
+    ) -> None:
         self.base_url = (base_url or settings.openclaw_base_url).rstrip("/")
         self.model = model or settings.openclaw_model
         self.timeout = settings.openclaw_timeout_seconds
+        self.workload = workload
+
+    @contextmanager
+    def _admitted(self, timeout: float | None) -> Iterator[float]:
+        request_timeout = float(timeout or self.timeout)
+        cap = _WORKLOAD_TIMEOUT_CAPS.get(self.workload)
+        if cap is not None:
+            request_timeout = min(request_timeout, cap)
+        # Gmail/analytics callers are explicitly best-effort: if the model is
+        # occupied they defer or use deterministic fallbacks instead of forming
+        # a backlog. Ask may wait, but its queue time counts against the same
+        # end-to-end timeout budget as generation.
+        wait_timeout = (
+            request_timeout if self.workload == InferenceWorkload.INTERACTIVE else 0.0
+        )
+        with _INFERENCE_COORDINATOR.lease(self.workload, wait_timeout) as waited:
+            remaining = (
+                request_timeout - waited
+                if self.workload == InferenceWorkload.INTERACTIVE
+                else request_timeout
+            )
+            if remaining <= 0:
+                raise OpenClawBusy("Local model remained busy until the request deadline")
+            yield remaining
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -144,10 +265,11 @@ class OpenClawClient:
             "max_tokens": settings.openclaw_max_tokens,
         }
         try:
-            with httpx.Client(timeout=timeout or self.timeout) as client:
-                resp = client.post(url, json=payload, headers=self._headers())
-                resp.raise_for_status()
-                data = resp.json()
+            with self._admitted(timeout) as request_timeout:
+                with httpx.Client(timeout=request_timeout) as client:
+                    resp = client.post(url, json=payload, headers=self._headers())
+                    resp.raise_for_status()
+                    data = resp.json()
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
         except (httpx.HTTPError, ValueError) as exc:  # network error or bad JSON
@@ -190,43 +312,44 @@ class OpenClawClient:
         visibility = _StreamingThinkFilter()
         controls = _StreamingControlTokenFilter()
         try:
-            with httpx.Client(timeout=timeout or self.timeout) as client:
-                with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
-                    resp.raise_for_status()
-                    for line in resp.iter_lines():
-                        if not line or line.startswith(":"):
-                            continue
-                        raw = line[5:].strip() if line.startswith("data:") else line.strip()
-                        if raw == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(raw)
-                            delta = data["choices"][0].get("delta") or {}
-                        except (ValueError, KeyError, IndexError, TypeError) as exc:
-                            raise OpenClawUnavailable(
-                                f"Unexpected OpenClaw stream event: {raw[:200]}"
-                            ) from exc
+            with self._admitted(timeout) as request_timeout:
+                with httpx.Client(timeout=request_timeout) as client:
+                    with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
+                        resp.raise_for_status()
+                        for line in resp.iter_lines():
+                            if not line or line.startswith(":"):
+                                continue
+                            raw = line[5:].strip() if line.startswith("data:") else line.strip()
+                            if raw == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(raw)
+                                delta = data["choices"][0].get("delta") or {}
+                            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                                raise OpenClawUnavailable(
+                                    f"Unexpected OpenClaw stream event: {raw[:200]}"
+                                ) from exc
 
-                        piece = delta.get("content") or ""
-                        if piece:
-                            visible = visibility.push(piece)
-                            if visible:
-                                clean = controls.push(visible)
-                                if clean:
-                                    content_parts.append(clean)
-                                    yield {"type": "content", "text": clean}
+                            piece = delta.get("content") or ""
+                            if piece:
+                                visible = visibility.push(piece)
+                                if visible:
+                                    clean = controls.push(visible)
+                                    if clean:
+                                        content_parts.append(clean)
+                                        yield {"type": "content", "text": clean}
 
-                        for fragment in delta.get("tool_calls") or []:
-                            index = int(fragment.get("index", 0))
-                            call = calls.setdefault(
-                                index,
-                                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
-                            )
-                            if fragment.get("id"):
-                                call["id"] = fragment["id"]
-                            fn = fragment.get("function") or {}
-                            call["function"]["name"] += fn.get("name") or ""
-                            call["function"]["arguments"] += fn.get("arguments") or ""
+                            for fragment in delta.get("tool_calls") or []:
+                                index = int(fragment.get("index", 0))
+                                call = calls.setdefault(
+                                    index,
+                                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                                )
+                                if fragment.get("id"):
+                                    call["id"] = fragment["id"]
+                                fn = fragment.get("function") or {}
+                                call["function"]["name"] += fn.get("name") or ""
+                                call["function"]["arguments"] += fn.get("arguments") or ""
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
         except httpx.HTTPError as exc:
@@ -312,10 +435,11 @@ class OpenClawClient:
             "max_tokens": settings.openclaw_max_tokens,
         }
         try:
-            with httpx.Client(timeout=timeout or self.timeout) as client:
-                resp = client.post(url, json=payload, headers=self._headers())
-                resp.raise_for_status()
-                data = resp.json()
+            with self._admitted(timeout) as request_timeout:
+                with httpx.Client(timeout=request_timeout) as client:
+                    resp = client.post(url, json=payload, headers=self._headers())
+                    resp.raise_for_status()
+                    data = resp.json()
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
         except (httpx.HTTPError, ValueError) as exc:
@@ -336,6 +460,10 @@ class OpenClawClient:
                 return resp.status_code < 500
         except httpx.HTTPError:
             return False
+
+    @staticmethod
+    def admission_status() -> dict[str, int | str | None]:
+        return _INFERENCE_COORDINATOR.status()
 
 
 class _StreamingThinkFilter:

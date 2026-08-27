@@ -594,6 +594,25 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   Android unit tests and all five Money Compose device tests pass; the final APK
   was reinstalled on Samsung `RZCX60SNHHE` after the connected test runner's
   cleanup uninstalled its target package.
+- ✅ **Single-model admission control + mail sync lease (2026-08-28).** Every
+  LifeOS generation now enters through the thread-safe coordinator in
+  `services/openclaw.py`, matching MLC's one-sequence capacity. Ask is
+  interactive priority and waits within its existing request deadline; Money
+  parsing is finance priority; Priority semantic review and insight generation
+  are background priority. Finance/background calls fail fast while the model
+  is occupied, so their safe fallback/defer paths run instead of forming a
+  backlog, and they release the slot between emails so a waiting Ask goes next.
+  Finance calls are capped at 30 seconds and background calls at 45 seconds;
+  Ask keeps its aligned 90/135-second budgets. `/chat/health` exposes the active
+  workload and waiter counts. Separately, `/expenses/sync`, `/statements/sync`,
+  and `/priority/sync/check` share a non-blocking mail-job lease: an in-process
+  lock plus a PostgreSQL advisory lock held on a dedicated connection, so
+  automatic/manual Gmail jobs cannot overlap even if API workers are added. A
+  collision returns HTTP 200 with a deferred message; the next incremental run
+  catches up. Priority production review remains `PRIORITY_LLM_ENABLED=false`.
+  NOTE: this runtime admission layer does not solve the Jetson's boot-time CUDA
+  allocation race; the 4K model must still load from clean memory before
+  ancillary containers are restored (§5 watchdog recovery).
 
 ## 7. Open items / next steps
 
@@ -640,6 +659,8 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 backend/app/api/routes/expenses.py       # /expenses (list), /expenses/new (poll), /expenses/sync
 backend/app/services/expense_collector.py # incremental cursor sync (only-new emails)
 backend/app/services/expense_parsers/     # per-source parsers (registry); add a bank = add a file
+backend/app/services/openclaw.py          # prioritized single-inference admission + LLM client
+backend/app/services/job_guard.py         # local + PostgreSQL singleton mail-job lease
 backend/app/services/repayments.py         # repayment candidates, validation, pair + Undo
 backend/app/models/transaction.py         # transactions table (idempotent on dedup_key)
 backend/app/models/card_statement.py      # statement summaries + statement-only detail rows

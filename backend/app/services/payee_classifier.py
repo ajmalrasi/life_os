@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.transaction import Transaction
 from app.repositories.payee_label_repo import PayeeLabelRepository
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.payee_classifier")
 settings = get_settings()
@@ -105,7 +105,7 @@ def classify_payee(counterparty: str, client: OpenClawClient | None = None) -> P
     if not counterparty:
         return None
 
-    client = client or OpenClawClient()
+    client = client or OpenClawClient(workload=InferenceWorkload.FINANCE)
     try:
         client.timeout = min(client.timeout, _CLASSIFY_TIMEOUT_SECONDS)
     except Exception:  # client may be a test stub
@@ -164,7 +164,7 @@ def suggest_labels_for_new_payees(
     existing = repo.list_all()
     seen_patterns: set[str] = set()
     created = 0
-    client = client or OpenClawClient()
+    client = client or OpenClawClient(workload=InferenceWorkload.FINANCE)
 
     for txn in transactions:
         if created >= max_payees:

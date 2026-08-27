@@ -33,6 +33,7 @@ from app.services.card_cycles import current_card_cycle_details, current_card_cy
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.statement_collector import StatementCollector
 from app.services.statement_details import statement_breakdown
+from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
 
 router = APIRouter(prefix="/statements", tags=["statements"])
 
@@ -160,25 +161,37 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
     Ordinary line items never enter ``transactions``; live alerts cover normal
     purchases while statement-only EMI installments/fees fill that known gap.
     """
-    settings = get_settings()
-    report = StatementCollector(
-        db,
-        _gmail_client(settings, db),
-        owner_name=settings.cc_owner_name,
-        owner_dob=settings.cc_owner_dob,
-        password_overrides=settings.cc_pdf_password_overrides,
-        window_days=window_days,
-    ).sync()
-    return StatementSyncResult(
-        banks_run=report.banks_run,
-        emails_seen=report.emails_seen,
-        statements_new=report.statements_new,
-        line_items_ingested=report.line_items_ingested,
-        line_items_stored=report.line_items_stored,
-        line_items_deduped=report.line_items_deduped,
-        message=report.message,
-        statements=[CardStatementOut.model_validate(s) for s in report.statements],
-    )
+    with try_job_lock(db.get_bind(), MAIL_SYNC_JOB) as acquired:
+        if not acquired:
+            return StatementSyncResult(
+                banks_run=0,
+                emails_seen=0,
+                statements_new=0,
+                line_items_ingested=0,
+                line_items_stored=0,
+                line_items_deduped=0,
+                message="Statement sync deferred because another mail sync is running.",
+            )
+
+        settings = get_settings()
+        report = StatementCollector(
+            db,
+            _gmail_client(settings, db),
+            owner_name=settings.cc_owner_name,
+            owner_dob=settings.cc_owner_dob,
+            password_overrides=settings.cc_pdf_password_overrides,
+            window_days=window_days,
+        ).sync()
+        return StatementSyncResult(
+            banks_run=report.banks_run,
+            emails_seen=report.emails_seen,
+            statements_new=report.statements_new,
+            line_items_ingested=report.line_items_ingested,
+            line_items_stored=report.line_items_stored,
+            line_items_deduped=report.line_items_deduped,
+            message=report.message,
+            statements=[CardStatementOut.model_validate(s) for s in report.statements],
+        )
 
 
 @router.get("/cycles/current", response_model=CurrentCardCyclesOut)

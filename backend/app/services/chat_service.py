@@ -36,7 +36,13 @@ from app.services.money_query import (
     query_money,
     spending_coverage,
 )
-from app.services.openclaw import OpenClawClient, OpenClawTimeout, OpenClawUnavailable
+from app.services.openclaw import (
+    InferenceWorkload,
+    OpenClawBusy,
+    OpenClawClient,
+    OpenClawTimeout,
+    OpenClawUnavailable,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -182,7 +188,7 @@ def _needs_money_query(message: str) -> bool:
 class ChatService:
     def __init__(self, db: Session, client: OpenClawClient | None = None) -> None:
         self.db = db
-        self.client = client or OpenClawClient()
+        self.client = client or OpenClawClient(workload=InferenceWorkload.INTERACTIVE)
         self.scores = ScoreRepository(db)
         self.states = StateRepository(db)
         self.mood = MoodRepository(db)
@@ -339,6 +345,10 @@ class ChatService:
         try:
             answer = self._run_agent(messages)
             grounded = True
+        except OpenClawBusy as exc:
+            logger.warning("Ask local-model admission timeout: %s", exc)
+            answer = self._fallback(context, "The local model is busy with another request")
+            grounded = True
         except OpenClawTimeout as exc:
             logger.warning("Ask local-model timeout: %s", exc)
             answer = self._fallback(
@@ -372,6 +382,10 @@ class ChatService:
                     if event["type"] == "content":
                         emitted = True
                         yield {"type": "delta", "text": event["text"]}
+            except OpenClawBusy as exc:
+                logger.warning("Ask general stream admission timeout: %s", exc)
+                if not emitted:
+                    yield {"type": "delta", "text": "The local model is busy. Please try again shortly."}
             except OpenClawTimeout as exc:
                 logger.warning("Ask general stream timeout: %s", exc)
                 if not emitted:
@@ -427,6 +441,15 @@ class ChatService:
             for text in self._stream_agent(messages):
                 emitted = True
                 yield {"type": "delta", "text": text}
+        except OpenClawBusy as exc:
+            logger.warning("Ask personal stream admission timeout: %s", exc)
+            if not emitted:
+                yield {
+                    "type": "delta",
+                    "text": self._fallback(
+                        context, "The local model is busy with another request"
+                    ),
+                }
         except OpenClawTimeout as exc:
             logger.warning("Ask personal stream timeout: %s", exc)
             if not emitted:
@@ -633,6 +656,9 @@ class ChatService:
         )
         try:
             answer = self.client.chat(messages, timeout=timeout)
+        except OpenClawBusy as exc:
+            logger.warning("Ask general local-model admission timeout: %s", exc)
+            answer = "The local model is busy. Please try again shortly."
         except OpenClawTimeout as exc:
             logger.warning("Ask general local-model timeout: %s", exc)
             answer = "The local model timed out before it could finish that answer. Please try again."

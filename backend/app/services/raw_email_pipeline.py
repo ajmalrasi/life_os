@@ -27,7 +27,7 @@ from app.services.expense_collector import derive_dedup_key
 from app.mail.models import MailMessage
 from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankParser
 from app.mail.gmail_provider import GmailProvider
-from app.services.openclaw import OpenClawClient
+from app.services.openclaw import InferenceWorkload, OpenClawClient
 
 _FETCH_MAX_RESULTS = 2000
 
@@ -110,7 +110,7 @@ def process_raw_emails(
     """
     raw_repo = RawEmailRepository(db)
     expense_repo = ExpenseRepository(db)
-    client = client or OpenClawClient()
+    client = client or OpenClawClient(workload=InferenceWorkload.FINANCE)
     parser = LlmBankParser(client=client)
 
     rows = raw_repo.unprocessed(bank=bank, limit=limit)

@@ -44,7 +44,7 @@ from decimal import Decimal, InvalidOperation
 from app.config import get_settings
 from app.mail.models import MailMessage
 from app.services.expense_parsers.base import ParsedTxn, ParserUnavailable
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.llm_bank_parser")
 settings = get_settings()
@@ -356,7 +356,7 @@ class LlmBankParser:
         self.gmail_query = "from:(" + " OR ".join(domains or BANK_DOMAINS.values()) + ")"
 
     def _get_client(self) -> OpenClawClient:
-        client = self._client or OpenClawClient()
+        client = self._client or OpenClawClient(workload=InferenceWorkload.FINANCE)
         try:
             client.timeout = min(client.timeout, _TIMEOUT_SECONDS)
         except Exception:  # client may be a test stub

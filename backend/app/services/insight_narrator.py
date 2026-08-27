@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass
 
 from app.config import get_settings
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.insight_narrator")
 settings = get_settings()
@@ -85,7 +85,7 @@ def narrate(facts: list[InsightFact], client: OpenClawClient | None = None) -> d
     if not facts or not settings.insight_narration_enabled:
         return {}
 
-    client = client or OpenClawClient()
+    client = client or OpenClawClient(workload=InferenceWorkload.BACKGROUND)
     # Don't let a slow local model hold an interactive recompute hostage.
     try:
         client.timeout = min(client.timeout, _NARRATION_TIMEOUT_SECONDS)

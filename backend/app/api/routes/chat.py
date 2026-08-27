@@ -43,6 +43,10 @@ def suggestions(days: int = 30, db: Session = Depends(get_db)) -> SuggestionsRes
 
 
 @router.get("/health")
-def openclaw_health() -> dict[str, bool | str]:
+def openclaw_health() -> dict[str, bool | str | int | None]:
     client = OpenClawClient()
-    return {"openclaw_base_url": client.base_url, "reachable": client.health()}
+    return {
+        "openclaw_base_url": client.base_url,
+        "reachable": client.health(),
+        **client.admission_status(),
+    }

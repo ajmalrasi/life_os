@@ -31,6 +31,7 @@ from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.repayments import RepaymentError, RepaymentService
 from app.services.refunds import RefundError, RefundService
+from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -207,32 +208,44 @@ def sync_expenses(
     Returns the transactions that were newly added this run. ``full=true`` forces
     a backfill over the whole window, ignoring the cursor (safe — idempotent).
     """
-    settings = get_settings()
-    report = ExpenseCollector(
-        db,
-        _gmail_client(settings, db),
-        backfill_days=settings.expense_backfill_days,
-        full=full,
-    ).sync()
-    from app.services.payee_classifier import suggest_labels_for_new_payees
-    from app.services.reconcile import run_reconciliation
+    with try_job_lock(db.get_bind(), MAIL_SYNC_JOB) as acquired:
+        if not acquired:
+            return ExpenseSyncResult(
+                parsers_run=0,
+                emails_scanned=0,
+                transactions_new=0,
+                transactions_seen=0,
+                source="gmail",
+                message="Mail sync deferred because another mail sync is running.",
+                transactions_deferred=0,
+            )
 
-    run_reconciliation(db)
-    # Best-effort: reconciliation must have already removed transfers/returns
-    # from consideration (category is no longer None on those), so this only
-    # ever sees genuine, still-uncategorized spend payees.
-    suggest_labels_for_new_payees(db, report.created)
-    return ExpenseSyncResult(
-        parsers_run=report.parsers_run,
-        emails_scanned=report.emails_scanned,
-        transactions_new=report.transactions_new,
-        transactions_seen=report.transactions_seen,
-        source=report.source,
-        message=report.message,
-        cursor_epoch=report.cursor_epoch,
-        transactions_deferred=report.transactions_deferred,
-        new_transactions=_to_out(report.created, db),
-    )
+        settings = get_settings()
+        report = ExpenseCollector(
+            db,
+            _gmail_client(settings, db),
+            backfill_days=settings.expense_backfill_days,
+            full=full,
+        ).sync()
+        from app.services.payee_classifier import suggest_labels_for_new_payees
+        from app.services.reconcile import run_reconciliation
+
+        run_reconciliation(db)
+        # Best-effort: reconciliation must have already removed transfers/returns
+        # from consideration (category is no longer None on those), so this only
+        # ever sees genuine, still-uncategorized spend payees.
+        suggest_labels_for_new_payees(db, report.created)
+        return ExpenseSyncResult(
+            parsers_run=report.parsers_run,
+            emails_scanned=report.emails_scanned,
+            transactions_new=report.transactions_new,
+            transactions_seen=report.transactions_seen,
+            source=report.source,
+            message=report.message,
+            cursor_epoch=report.cursor_epoch,
+            transactions_deferred=report.transactions_deferred,
+            new_transactions=_to_out(report.created, db),
+        )
 
 
 @router.post("/rebuild-llm", response_model=ExpenseRebuildResult)

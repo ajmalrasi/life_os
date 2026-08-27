@@ -12,7 +12,7 @@ import json
 import logging
 import re
 
-from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 from app.services.statement_parsers.base import StatementTxn
 
 logger = logging.getLogger("lifeos.statement_emi")
@@ -96,7 +96,7 @@ def select_emi_items(
         {"role": "user", "content": "STATEMENT ROWS:\n" + lines},
     ]
     try:
-        raw = (client or OpenClawClient()).chat_structured(
+        raw = (client or OpenClawClient(workload=InferenceWorkload.FINANCE)).chat_structured(
             messages, schema=_REVIEW_SCHEMA, schema_name="statement_emi_review", temperature=0.0
         )
         data = json.loads(raw)
