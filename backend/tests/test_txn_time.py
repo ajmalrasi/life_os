@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 
-from app.services.expense_collector import ExpenseCollector
+from app.services.expense_collector import ExpenseCollector, _resolve_body_clock
 from app.mail.models import MailMessage
 from app.services.expense_parsers.base import ParsedTxn
 from app.services.expense_parsers.txn_time import extract_clock_time
@@ -74,6 +74,38 @@ def test_extract_returns_none_on_bad_time_value():
 def test_extract_returns_none_when_client_unavailable():
     client = _FakeClient(fail=True)
     assert extract_clock_time("body", client) is None
+
+
+# -- ambiguous 12-hour bank clocks -------------------------------------------
+
+def test_resolve_body_clock_uses_pm_when_it_matches_arrival():
+    arrival = datetime(2026, 9, 11, 12, 28, 27, tzinfo=timezone.utc)  # 17:58:27 IST
+    resolved = _resolve_body_clock(date(2026, 9, 11), time(5, 58, 16), arrival)
+    assert resolved == datetime(2026, 9, 11, 12, 28, 16, tzinfo=timezone.utc)
+
+
+def test_resolve_body_clock_leaves_correct_24_hour_time_unchanged():
+    arrival = datetime(2026, 9, 11, 12, 28, 27, tzinfo=timezone.utc)
+    resolved = _resolve_body_clock(date(2026, 9, 11), time(17, 58, 16), arrival)
+    assert resolved == datetime(2026, 9, 11, 12, 28, 16, tzinfo=timezone.utc)
+
+
+def test_resolve_body_clock_leaves_genuine_morning_time_unchanged():
+    arrival = datetime(2026, 9, 11, 0, 28, 27, tzinfo=timezone.utc)  # 05:58:27 IST
+    resolved = _resolve_body_clock(date(2026, 9, 11), time(5, 58, 16), arrival)
+    assert resolved == datetime(2026, 9, 11, 0, 28, 16, tzinfo=timezone.utc)
+
+
+def test_resolve_body_clock_requires_adjusted_time_close_to_arrival():
+    arrival = datetime(2026, 9, 11, 11, 50, 0, tzinfo=timezone.utc)  # 17:20 IST
+    resolved = _resolve_body_clock(date(2026, 9, 11), time(5, 58, 16), arrival)
+    assert resolved == datetime(2026, 9, 11, 0, 28, 16, tzinfo=timezone.utc)
+
+
+def test_resolve_body_clock_handles_alert_just_after_midnight():
+    arrival = datetime(2026, 9, 11, 18, 30, 0, tzinfo=timezone.utc)  # 00:00 next day IST
+    resolved = _resolve_body_clock(date(2026, 9, 11), time(11, 58), arrival)
+    assert resolved == datetime(2026, 9, 11, 18, 28, 0, tzinfo=timezone.utc)
 
 
 # -- collector stamping -------------------------------------------------------

@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -46,6 +46,27 @@ def _email_arrival(email: MailMessage) -> datetime | None:
 def _combine_ist(txn_date: date, clock: time) -> datetime:
     """A body clock time on the transaction's date, as a UTC instant."""
     return datetime.combine(txn_date, clock, tzinfo=_IST).astimezone(timezone.utc)
+
+
+def _resolve_body_clock(txn_date: date, clock: time, arrival: datetime | None) -> datetime:
+    """Resolve a model-extracted body clock to the most plausible instant.
+
+    Some bank alerts omit AM/PM from a 12-hour clock (for example, an evening
+    purchase rendered as ``05:58:16``). Gmail's arrival instant is strong
+    corroborating evidence because transaction alerts normally arrive within
+    seconds. Correct only that narrow case: a 1-11 clock whose PM alternative
+    is within 15 minutes of arrival and is closer than the literal AM value.
+    """
+    literal = _combine_ist(txn_date, clock)
+    if arrival is None or not 1 <= clock.hour <= 11:
+        return literal
+
+    pm_candidate = literal + timedelta(hours=12)
+    literal_gap = abs(arrival - literal)
+    pm_gap = abs(arrival - pm_candidate)
+    if pm_gap <= timedelta(minutes=15) and pm_gap < literal_gap:
+        return pm_candidate
+    return literal
 
 
 @dataclass
@@ -131,7 +152,7 @@ class ExpenseCollector:
             clock = extract_clock_time(email.text, self._openclaw)
         arrival = _email_arrival(email)
         for txn in parsed:
-            txn.txn_at = _combine_ist(txn.txn_date, clock) if clock else arrival
+            txn.txn_at = _resolve_body_clock(txn.txn_date, clock, arrival) if clock else arrival
 
     def sync(self) -> ExpenseSyncReport:
         parsers = self.parsers if self.parsers is not None else get_parsers()
