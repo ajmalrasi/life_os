@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # rounds, so several individually-valid calls cannot run forever.
     openclaw_timeout_seconds: float = 90.0
     openclaw_chat_deadline_seconds: float = 135.0
-    openclaw_max_tokens: int = 512
+    openclaw_max_tokens: int = 1024
 
     # GitHub execution collection via the official github-mcp-server sidecar.
     # The sidecar runs inside docker-compose; GITHUB_TOKEN is its auth credential.
