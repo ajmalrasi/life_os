@@ -1,0 +1,7 @@
+[Unit]
+Description=LifeOS real-generation health check for OpenClaw TensorRT Edge-LLM
+After=openclaw-tensorrt-edgellm.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ajmalrasi/life_os/backend/scripts/watch_openclaw_tensorrt.sh

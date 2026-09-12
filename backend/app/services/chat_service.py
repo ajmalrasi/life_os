@@ -40,7 +40,9 @@ from app.services.openclaw import (
     InferenceWorkload,
     OpenClawBusy,
     OpenClawClient,
+    OpenClawRequestRejected,
     OpenClawTimeout,
+    OpenClawTruncated,
     OpenClawUnavailable,
 )
 
@@ -61,54 +63,14 @@ DEFAULT_SUGGESTIONS = [
 ]
 
 SYSTEM_PROMPT = (
-    "You are LifeOS, a personal intelligence companion. You analyze one user's own "
-    "health, mood, project-execution and daily-spending data to explain — in plain "
-    "language — why they perform well, procrastinate, drift toward burnout, or spend "
-    "the way they do, and what to do next. The DATA CONTEXT includes a 'spending' "
-    "block (total, daily average, and recent daily spend) when expense data exists; "
-    "treat those amounts as the user's local currency and cite them like any other "
-    "metric. The user has explicitly authorized access to this local LifeOS data. "
-    "When the context contains the requested data, answer from it and never claim "
-    "that you cannot access or read the user's private data.\n\n"
-    "HOW YOU WORK\n"
-    "- Each turn begins with a DATA CONTEXT snapshot (JSON). It is your primary source "
-    "of truth.\n"
-    "- When you need more than it contains — older days, raw metrics, or commit "
-    "detail — call the tools (git_log, github_events, health_summary) before "
-    "answering. Don't guess when a tool can tell you.\n"
-    "- For transaction-table questions beyond a simple current total — including "
-    "categories, merchants, accounts, rankings, income, matching rows, or arbitrary "
-    "dates such as last month — call query_money. It is a guarded read-only "
-    "NL-to-query layer over stored transactions. Use its exact window and summary; "
-    "a zero-count result means no matching stored rows, not missing permission.\n"
-    "- If DATA CONTEXT contains 'money_query_result', the backend already ran the "
-    "required guarded query. Answer directly from that result; never say transaction "
-    "detail is unavailable and do not ask the user to export it.\n"
-    "- For 'right now', 'today', or 'last night' health questions — or when stored "
-    "data is too stale — call live_health to pull live readings straight from the "
-    "user's iPhone. If it returns an error that the server is unreachable, relay "
-    "that fix to the user instead of guessing.\n\n"
-    "GROUNDING RULES (non-negotiable)\n"
-    "1. Use ONLY the DATA CONTEXT and tool results. Never invent, estimate, or "
-    "round-trip numbers that aren't there.\n"
-    "2. Cite a specific metric for every quantitative claim, e.g. '(avg sleep score "
-    "78 over 30d)' or '(recovery 52 on 2026-06-14)'.\n"
-    "3. A metric that is null, missing, or has zero days of data is UNKNOWN — not "
-    "zero and not bad. Say it's unavailable, and if it matters to the question, tell "
-    "the user how to fill the gap: sleep and recovery need Apple Health arriving "
-    "through Health Auto Export; wellness needs a Pulse check-in; execution needs GitHub "
-    "activity.\n"
-    "4. Read correlations honestly: |r| >= 0.5 is strong, 0.3-0.5 moderate, < 0.3 "
-    "weak. Flag a small sample size (n) instead of overclaiming, and never present "
-    "correlation as proven cause.\n\n"
-    "STYLE\n"
-    "- Concise and direct. Lead with the answer, then the supporting evidence.\n"
-    "- Keep the final answer under 220 words and always finish the last sentence.\n"
-    "- Prefer specific, actionable next steps over generic wellness advice.\n"
-    "- You are not a clinician: for medical concerns, suggest seeing a professional "
-    "rather than interpreting symptoms.\n"
-    "- If the data is too sparse to answer, say so plainly and name exactly what to "
-    "sync or log to get a real answer."
+    "You are LifeOS. Answer only from DATA CONTEXT and tool results; never invent "
+    "numbers, trends, causes, or access limits. Cite each quantitative claim. Missing "
+    "data is unknown, not zero. Correlation is not causation; state sample-size limits.\n"
+    "Use a tool for detail outside the snapshot: query_money for transaction questions, "
+    "git_log/github_events/health_summary for older detail, and live_health for current "
+    "phone readings. A provided money_query_result is authoritative.\n"
+    "Be concise (under 220 words), lead with the answer and evidence, and finish the "
+    "sentence. Give practical next steps. Do not diagnose medical symptoms."
 )
 
 GENERAL_SYSTEM_PROMPT = (
@@ -356,6 +318,14 @@ class ChatService:
                 "The local model timed out before it could finish",
             )
             grounded = True
+        except OpenClawTruncated as exc:
+            logger.warning("Ask local-model output truncated: %s", exc)
+            answer = self._fallback(context, "The local model response exceeded its output limit")
+            grounded = True
+        except OpenClawRequestRejected as exc:
+            logger.warning("Ask local-model rejected request: %s", exc)
+            answer = self._fallback(context, "The local model rejected this request")
+            grounded = True
         except OpenClawUnavailable as exc:
             logger.warning("Ask local-model unavailable: %s", exc)
             answer = self._fallback(context, "The local model could not be reached")
@@ -390,6 +360,13 @@ class ChatService:
                 logger.warning("Ask general stream timeout: %s", exc)
                 if not emitted:
                     yield {"type": "delta", "text": "The local model timed out before it could answer. Please try again."}
+            except OpenClawTruncated as exc:
+                logger.warning("Ask general stream truncated: %s", exc)
+                yield {"type": "delta", "text": "\n\nThe local model response exceeded its output limit. Please ask a narrower question."}
+            except OpenClawRequestRejected as exc:
+                logger.warning("Ask general stream rejected request: %s", exc)
+                if not emitted:
+                    yield {"type": "delta", "text": "The local model rejected this request. Please try a shorter or simpler question."}
             except OpenClawUnavailable as exc:
                 logger.warning("Ask general stream unavailable: %s", exc)
                 if not emitted:
@@ -454,6 +431,13 @@ class ChatService:
             logger.warning("Ask personal stream timeout: %s", exc)
             if not emitted:
                 yield {"type": "delta", "text": self._fallback(context, "The local model timed out before it could finish")}
+        except OpenClawTruncated as exc:
+            logger.warning("Ask personal stream truncated: %s", exc)
+            yield {"type": "delta", "text": "\n\nThe local model response exceeded its output limit. Please ask a narrower question."}
+        except OpenClawRequestRejected as exc:
+            logger.warning("Ask personal stream rejected request: %s", exc)
+            if not emitted:
+                yield {"type": "delta", "text": self._fallback(context, "The local model rejected this request")}
         except OpenClawUnavailable as exc:
             logger.warning("Ask personal stream unavailable: %s", exc)
             if not emitted:
@@ -471,12 +455,32 @@ class ChatService:
                 "role": "user",
                 "content": (
                     "DATA CONTEXT (JSON, your only source of truth):\n"
-                    + json.dumps(context, separators=(",", ":"))
+                    + json.dumps(self._compact_personal_context(context), separators=(",", ":"))
                     + f"\n\nQUESTION: {req.message}"
                 ),
             }
         )
         return messages
+
+    @staticmethod
+    def _compact_personal_context(context: dict) -> dict:
+        """Keep Personal Ask below the Jetson's 4K input limit.
+
+        The full snapshot remains available for deterministic answers/citations;
+        the agent gets current aggregates plus bounded recent detail and can fetch
+        older detail via tools.
+        """
+        compact = dict(context)
+        compact["recent_daily"] = list(context.get("recent_daily") or [])[-7:]
+        compact["discovered_patterns"] = list(context.get("discovered_patterns") or [])[:3]
+        compact["synthesized_insights"] = list(context.get("synthesized_insights") or [])[:2]
+        spending = context.get("spending")
+        if spending:
+            compact["spending"] = {
+                **{key: value for key, value in spending.items() if key != "recent_daily_spend"},
+                "recent_daily_spend": list(spending.get("recent_daily_spend") or [])[-7:],
+            }
+        return {key: value for key, value in compact.items() if value is not None}
 
     def _money_query_result(self, message: str) -> dict | None:
         if not _needs_money_query(message):

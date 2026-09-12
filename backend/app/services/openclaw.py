@@ -43,6 +43,18 @@ class OpenClawBusy(OpenClawUnavailable):
     pass
 
 
+class OpenClawRequestRejected(OpenClawUnavailable):
+    """The local model answered, but rejected this request (HTTP 4xx)."""
+
+    pass
+
+
+class OpenClawTruncated(OpenClawUnavailable):
+    """Generation reached the requested/output-capacity limit."""
+
+    pass
+
+
 class InferenceWorkload(IntEnum):
     """Admission priority for the Jetson's single-sequence local model."""
 
@@ -122,6 +134,27 @@ class InferenceCoordinator:
 
 
 _INFERENCE_COORDINATOR = InferenceCoordinator()
+
+
+def _completion_message(data: dict) -> dict:
+    """Return a completed message, rejecting silently truncated output."""
+    try:
+        choice = data["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise OpenClawTruncated("Local model output reached its token limit")
+        return choice["message"]
+    except OpenClawTruncated:
+        raise
+    except (KeyError, IndexError, TypeError) as exc:
+        raise OpenClawUnavailable(f"Unexpected OpenClaw response shape: {data}") from exc
+
+
+def _translate_http_error(exc: httpx.HTTPStatusError, operation: str) -> OpenClawUnavailable:
+    status = exc.response.status_code
+    if 400 <= status < 500:
+        detail = exc.response.text[:400]
+        return OpenClawRequestRejected(f"OpenClaw rejected {operation} (HTTP {status}): {detail}")
+    return OpenClawUnavailable(f"OpenClaw {operation} failed: {exc}")
 
 
 def _strip_think(text: str) -> str:
@@ -272,13 +305,12 @@ class OpenClawClient:
                     data = resp.json()
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise _translate_http_error(exc, "request") from exc
         except (httpx.HTTPError, ValueError) as exc:  # network error or bad JSON
             raise OpenClawUnavailable(f"OpenClaw request failed: {exc}") from exc
 
-        try:
-            return _strip_think(data["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError) as exc:
-            raise OpenClawUnavailable(f"Unexpected OpenClaw response shape: {data}") from exc
+        return _strip_think(_completion_message(data).get("content") or "")
 
     def stream_chat(
         self,
@@ -309,6 +341,7 @@ class OpenClawClient:
 
         content_parts: list[str] = []
         calls: dict[int, dict] = {}
+        finish_reason: str | None = None
         visibility = _StreamingThinkFilter()
         controls = _StreamingControlTokenFilter()
         try:
@@ -324,7 +357,9 @@ class OpenClawClient:
                                 break
                             try:
                                 data = json.loads(raw)
-                                delta = data["choices"][0].get("delta") or {}
+                                choice = data["choices"][0]
+                                delta = choice.get("delta") or {}
+                                finish_reason = choice.get("finish_reason") or finish_reason
                             except (ValueError, KeyError, IndexError, TypeError) as exc:
                                 raise OpenClawUnavailable(
                                     f"Unexpected OpenClaw stream event: {raw[:200]}"
@@ -352,8 +387,13 @@ class OpenClawClient:
                                 call["function"]["arguments"] += fn.get("arguments") or ""
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise _translate_http_error(exc, "streaming request") from exc
         except httpx.HTTPError as exc:
             raise OpenClawUnavailable(f"OpenClaw streaming request failed: {exc}") from exc
+
+        if finish_reason == "length":
+            raise OpenClawTruncated("Local model output reached its token limit")
 
         tail = visibility.finish()
         if tail:
@@ -442,13 +482,12 @@ class OpenClawClient:
                     data = resp.json()
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise _translate_http_error(exc, "tool request") from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise OpenClawUnavailable(f"OpenClaw request failed: {exc}") from exc
 
-        try:
-            message = data["choices"][0]["message"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise OpenClawUnavailable(f"Unexpected OpenClaw response shape: {data}") from exc
+        message = _completion_message(data)
         if message.get("content"):
             message["content"] = _strip_think(message["content"])
         return message
