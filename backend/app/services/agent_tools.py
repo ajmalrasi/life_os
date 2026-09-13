@@ -14,6 +14,8 @@ call to the matching method and returns a JSON-serializable result.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from time import monotonic
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -42,6 +44,13 @@ _DEFAULT_LIVE_METRICS = (
 
 # OpenAI-style function schemas advertised to the model.
 TOOL_SCHEMAS: list[dict] = [
+    {"type": "function", "function": {
+        "name": "get_life_context",
+        "description": "Read a broad overview of scores, Pulse, life state, spending, and discovered insights.",
+        "parameters": {"type": "object", "properties": {
+            "days": {"type": "integer", "description": "Trailing days, 1-365.", "default": 30}
+        }},
+    }},
     {
         "type": "function",
         "function": {
@@ -51,9 +60,12 @@ TOOL_SCHEMAS: list[dict] = [
                 "table. Use for exact spending/income questions that need arbitrary date "
                 "ranges, category/merchant/account/source filters, rankings, transaction "
                 "details, or day/week/month/category/merchant/account breakdowns. "
-                "Statement detail rows are not transactions and never count as spend. "
+                "For comparisons use compare_start_date/compare_end_date in the SAME call; "
+                "the tool computes differences and percentages. Statement detail rows "
+                "are not transactions and never count as spend. "
                 "For 'last month', send explicit start_date/end_date ISO dates from the "
-                "DATA CONTEXT current date. Effective categories match the Money page."
+                "system prompt current date. Effective categories honor Money overrides; "
+                "Ask includes EMI transactions even when the Money page hides them."
             ),
             "parameters": {
                 "type": "object",
@@ -74,6 +86,12 @@ TOOL_SCHEMAS: list[dict] = [
                     "end_date": {
                         "type": "string",
                         "description": "Inclusive ISO date YYYY-MM-DD. Defaults to today.",
+                    },
+                    "compare_start_date": {
+                        "type": "string", "description": "Baseline window start, ISO date. Requires compare_end_date.",
+                    },
+                    "compare_end_date": {
+                        "type": "string", "description": "Baseline window end, ISO date. Compare primary start/end against this period.",
                     },
                     "group_by": {
                         "type": "string",
@@ -254,8 +272,9 @@ _TOOL_NAMES = {t["function"]["name"] for t in TOOL_SCHEMAS}
 
 
 class AgentTools:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, deadline: float | None = None) -> None:
         self.db = db
+        self.deadline = deadline
         self.scores = ScoreRepository(db)
         self.states = StateRepository(db)
         self.mood = MoodRepository(db)
@@ -264,11 +283,42 @@ class AgentTools:
         self._mcp = GitHubMcpClient(token=settings.github_token)
 
     def run(self, name: str, arguments: dict | None = None) -> dict:
+        if not isinstance(arguments, (dict, type(None))):
+            return {"status": "error", "error": "Arguments must be an object"}
+        schema = next((t["function"]["parameters"] for t in TOOL_SCHEMAS
+                       if t["function"]["name"] == name), None)
+        if schema:
+            args = arguments or {}
+            properties = schema["properties"]
+            if set(args) - set(properties):
+                return {"status": "error", "error": "Unknown tool argument"}
+            for key, value in args.items():
+                kind = properties[key].get("type")
+                valid = {"string": isinstance(value, str),
+                         "integer": type(value) is int,
+                         "number": type(value) in (int, float),
+                         "object": isinstance(value, dict)}.get(kind, True)
+                if not valid:
+                    return {"status": "error", "error": f"Invalid type for {key}"}
+        result = self._run(name, arguments)
+        if "error" in result:
+            return {**result, "status": "error"}
+        return {**result, "retrieved_at": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                "timezone": "Asia/Kolkata", "source": result.get("source", name),
+                "units": {"money": "INR", "scores": "0-100", "coding_minutes": "minutes",
+                          "pulse": "recorded check-in scale"},
+                "coverage_note": "Only recorded data. Missing readings are unknown; dates describe coverage, not sync freshness."}
+
+    def _run(self, name: str, arguments: dict | None = None) -> dict:
         """Dispatch a tool call. Never raises — returns an ``error`` payload instead."""
         args = arguments or {}
         if name not in _TOOL_NAMES:
             return {"error": f"unknown tool '{name}'", "available": sorted(_TOOL_NAMES)}
         try:
+            if name == "get_life_context":
+                from app.services.chat_service import ChatService
+                days = max(1, min(365, int(args.get("days", 30))))
+                return ChatService(self.db).build_context(days)
             if name == "github_search":
                 return self.github_search(
                     tool=args.get("tool", ""),
@@ -339,7 +389,10 @@ class AgentTools:
         """Proxy a tool call to the github-mcp-server and return its result."""
         if not tool:
             return {"error": "github_search requires a 'tool' argument"}
-        result = self._mcp.call_tool(tool, arguments or {})
+        if tool not in {"list_commits", "get_commit", "search_commits", "get_file_contents",
+                        "list_branches", "search_code"}:
+            return {"error": "Unsupported read-only GitHub operation"}
+        result = self._mcp.call_tool(tool, arguments or {}, timeout=self._remaining(30))
         if result is None:
             return {"error": f"github-mcp-server unreachable or tool '{tool}' failed"}
         return {"tool": tool, "result": result}
@@ -348,7 +401,7 @@ class AgentTools:
         """Pull live Apple Health metrics from the iPhone's TCP server, summarized."""
         settings = get_settings()
         client = PhoneHealthClient(
-            settings.hae_host, settings.hae_port, settings.hae_timeout_seconds
+            settings.hae_host, settings.hae_port, self._remaining(settings.hae_timeout_seconds)
         )
         if not client.configured:
             return {"error": "live phone health is not configured (HAE_HOST is unset)."}
@@ -357,7 +410,7 @@ class AgentTools:
             window_hours = max(1, min(168, int(hours)))
         except (TypeError, ValueError):
             window_hours = 24
-        end = datetime.now().astimezone()
+        end = datetime.now(ZoneInfo("Asia/Kolkata"))
         start = end - timedelta(hours=window_hours)
 
         try:
@@ -373,11 +426,10 @@ class AgentTools:
             )
         except PhoneHealthUnavailable as exc:
             return {
-                "error": (
-                    f"iPhone live health server unreachable ({exc}). Ask the user to open "
-                    "Health Auto Export and start the server (Automations -> Server -> "
-                    "Start Server), with the phone on the same Wi-Fi."
-                )
+                "error": f"iPhone live health server could not be reached ({exc})",
+                "setup": {"app": "Health Auto Export", "path": "Automations > Server > Start Server",
+                          "network": "Phone must be on the same Wi-Fi",
+                          "availability": "The app must remain open in the foreground"},
             }
 
         summarized = [_summarize_live_metric(m) for m in extract_metrics(response)]
@@ -426,8 +478,13 @@ class AgentTools:
             "coverage": {
                 "days_with_scores": len(score_rows),
                 "days_with_pulse": len(mood_rows),
+                "latest_score_day": score_rows[-1].day.isoformat() if score_rows else None,
+                "latest_pulse_day": mood_rows[-1].day.isoformat() if mood_rows else None,
             },
         }
+
+    def _remaining(self, maximum: float) -> float:
+        return maximum if self.deadline is None else max(0.01, min(maximum, self.deadline-monotonic()))
 
 
 def _summarize_live_metric(metric: dict) -> dict | None:
@@ -463,7 +520,7 @@ def _clamp_days(value) -> int:
 
 
 def _window(days: int) -> tuple[date, date]:
-    end = date.today()
+    end = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     return end - timedelta(days=days - 1), end
 
 

@@ -137,13 +137,19 @@ data class ChatRequestDto(
 )
 
 @Serializable
-data class CitationDto(val metric: String, val value: String)
+data class CitationDto(
+    val metric: String, val value: String, val label: String? = null,
+    @SerialName("source_id") val sourceId: String? = null,
+    @SerialName("retrieved_at") val retrievedAt: String? = null,
+)
 
 @Serializable
 data class ChatResponseDto(
     val answer: String,
     val citations: List<CitationDto> = emptyList(),
     val grounded: Boolean = true,
+    val error: String? = null,
+    val incomplete: Boolean = false,
 )
 
 @Serializable
@@ -152,6 +158,8 @@ data class ChatStreamEventDto(
     val text: String? = null,
     val citations: List<CitationDto> = emptyList(),
     val grounded: Boolean = false,
+    val incomplete: Boolean = false,
+    val retryable: Boolean = true,
 )
 
 @Serializable

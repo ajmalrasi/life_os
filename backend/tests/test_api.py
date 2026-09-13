@@ -103,25 +103,41 @@ def test_state_endpoint(client):
     assert "state" in states[0]
 
 
-def test_chat_grounded_fallback_when_openclaw_down(client):
+def test_chat_explicit_error_when_model_down(client, monkeypatch):
+    from app.services.openclaw import OpenClawClient, OpenClawUnavailable
+    def unavailable(*args, **kwargs):
+        raise OpenClawUnavailable("offline")
+    monkeypatch.setattr(OpenClawClient, "count_chat_tokens", unavailable)
     _seed(client, n_days=15)
     client.post("/analytics/recompute?days=20")
     res = client.post("/chat", json={"message": "Why am I unproductive?", "context_days": 20})
     assert res.status_code == 200
     body = res.json()
-    assert body["grounded"] is True
-    # Fallback path cites real averages.
-    assert len(body["citations"]) >= 1
-
-
-def test_chat_without_data_asks_for_more(client):
-    res = client.post("/chat", json={"message": "What should I do today?"})
-    body = res.json()
-    assert "data" in body["answer"].lower()
+    assert body["grounded"] is False
+    assert body["answer"] == "" and body["error"]
     assert body["citations"] == []
 
 
-def test_chat_stream_without_data_emits_delta_and_done(client):
+def test_chat_without_data_still_uses_model(client, monkeypatch):
+    from app.services.openclaw import OpenClawClient
+    monkeypatch.setattr(OpenClawClient, "count_chat_tokens", lambda *a, **k: 100)
+    def stream(*args, **kwargs):
+        yield {"type": "content", "text": "How can I help?"}
+        yield {"type": "message", "message": {"content": "How can I help?"}}
+    monkeypatch.setattr(OpenClawClient, "stream_chat", stream)
+    res = client.post("/chat", json={"message": "What should I do today?"})
+    body = res.json()
+    assert body["answer"] == "How can I help?"
+    assert body["citations"] == []
+
+
+def test_chat_stream_without_data_emits_delta_and_done(client, monkeypatch):
+    from app.services.openclaw import OpenClawClient
+    monkeypatch.setattr(OpenClawClient, "count_chat_tokens", lambda *a, **k: 100)
+    def stream(*args, **kwargs):
+        yield {"type": "content", "text": "Hello"}
+        yield {"type": "message", "message": {"content": "Hello"}}
+    monkeypatch.setattr(OpenClawClient, "stream_chat", stream)
     with client.stream(
         "POST",
         "/chat/stream",
@@ -129,7 +145,7 @@ def test_chat_stream_without_data_emits_delta_and_done(client):
     ) as response:
         events = [line for line in response.iter_lines() if line]
     assert response.status_code == 200
-    assert '"type":"delta"' in events[1]
+    assert any('"type":"delta"' in line for line in events)
     assert '"type":"done"' in events[-1]
 
 

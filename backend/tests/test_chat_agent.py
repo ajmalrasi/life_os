@@ -1,233 +1,221 @@
-"""Tests for the OpenClaw agent loop and its data tools (Phase 1 #6)."""
-
-from __future__ import annotations
-
-from datetime import date, datetime, timedelta
-
+"""Regression tests for model-led Ask and exact read-only tools."""
+from datetime import date, timedelta
+from time import monotonic
+import json
 import pytest
 
+from app.database import SessionLocal
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
-from app.services.chat_service import MAX_AGENT_STEPS, ChatService, _is_personal_data_question
-from app.services.money_query import (
-    MoneyQueryError,
-    format_money_answer,
-    plan_money_query,
-    query_money,
-)
+from app.services.chat_service import ChatService, bounded_result
+from app.services.money_query import MoneyQueryError, query_money
+from app.schemas.chat import ChatRequest, ChatMessage
 from app.services.openclaw import (
-    OpenClawTimeout,
-    _StreamingControlTokenFilter,
-    _StreamingThinkFilter,
-    _strip_control_tokens,
+    OpenClawTimeout, OpenClawUnavailable, OpenClawRequestRejected,
+    _StreamingThinkFilter, _StreamingControlTokenFilter, _strip_control_tokens,
 )
 
+class Model:
+    def __init__(self, rounds=None):
+        self.rounds = rounds or ["Model answer."]
+        self.calls = []
+        self.counts = []
 
-class _ToolThenAnswerClient:
-    """Requests one tool call, then returns a final answer."""
+    def count_chat_tokens(self, messages, tools=None, timeout=5, **kwargs):
+        self.counts.append(json.loads(json.dumps(messages)))
+        return 1000
 
-    def __init__(self):
-        self.calls = 0
-        self.timeout = 90.0
+    def stream_chat(self, messages, **kwargs):
+        self.calls.append((json.loads(json.dumps(messages)), kwargs))
+        result = self.rounds[min(len(self.calls)-1, len(self.rounds)-1)]
+        if isinstance(result, Exception):
+            raise result
+        if isinstance(result, str):
+            yield {"type": "content", "text": result}
+            result = {"role": "assistant", "content": result}
+        yield {"type": "message", "message": result}
 
-    def chat_with_tools(self, messages, tools, temperature=0.2, timeout=None):
-        self.calls += 1
-        if self.calls == 1:
-            return {
-                "role": "assistant",
-                "tool_calls": [
-                    {"id": "t1", "function": {"name": "health_summary", "arguments": '{"days": 7}'}}
-                ],
-            }
-        return {"role": "assistant", "content": "final answer (avg sleep 78)"}
+def tool(name="health_summary", arguments='{"days":7}'):
+    return {"role": "assistant", "tool_calls": [
+        {"id": "t1", "function": {"name": name, "arguments": arguments}}]}
 
-    def chat(self, messages, temperature=0.2, timeout=None):
-        return "should-not-be-called"
+@pytest.mark.parametrize("question", [
+    "How was my sleep?", "How much did I spend today?", "Food last month?",
+    "What should I focus on today?", "Write Fibonacci code",
+])
+def test_every_answer_comes_from_model_even_without_data(client, question):
+    with SessionLocal() as db:
+        model = Model()
+        result = ChatService(db, model).ask(ChatRequest(message=question))
+    assert result.answer == "Model answer."
+    assert len(model.calls) == 1
+    assert not result.grounded and not result.citations
+    assert "DATA CONTEXT" not in str(model.calls[0][0])
+    assert model.calls[0][1]["tools"]
 
+def test_history_crosses_topics_and_followups_need_no_tool(client):
+    model = Model()
+    req = ChatRequest(message="Explain that code", history=[
+        ChatMessage(role="user", content="How was my sleep?"),
+        ChatMessage(role="assistant", content="Your sleep score was 70."),
+        ChatMessage(role="user", content="Write Fibonacci code"),
+        ChatMessage(role="assistant", content="def fib(n): ..."),
+    ])
+    with SessionLocal() as db:
+        ChatService(db, model).ask(req)
+    assert [m["content"] for m in model.calls[0][0][1:]] == [
+        m.content for m in req.history] + [req.message]
 
-class _AlwaysToolsClient:
-    timeout = 90.0
+def test_tools_supply_evidence_but_model_writes_answer(client):
+    model = Model([tool("get_life_context"), "No recent records are available."])
+    with SessionLocal() as db:
+        response = ChatService(db, model).ask(ChatRequest(message="How am I doing?"))
+    assert response.answer == "No recent records are available."
+    assert response.grounded
+    assert [c.metric for c in response.citations] == ["get_life_context"]
+    result = json.loads(model.calls[1][0][-1]["content"])
+    assert result["totals"]["days_with_scores"] == 0
+    assert result["source_ref"] == response.citations[0].source_id
 
-    def chat_with_tools(self, messages, tools, temperature=0.2, timeout=None):
-        return {
-            "role": "assistant",
-            "tool_calls": [{"id": "x", "function": {"name": "git_log", "arguments": "{}"}}],
-        }
+def test_invalid_tool_arguments_do_not_execute_default_query(client):
+    model = Model([tool("query_money", "{bad"), "Please clarify."])
+    with SessionLocal() as db:
+        response = ChatService(db, model).ask(ChatRequest(message="My money"))
+    assert not response.grounded
+    assert "error" in json.loads(model.calls[1][0][-1]["content"])
 
-    def chat(self, messages, temperature=0.2, timeout=None):
-        return "capped-summary"
+def test_optional_tool_rounds_are_bounded(client):
+    model = Model([tool(), tool("git_log"), "Done."])
+    with SessionLocal() as db:
+        result = ChatService(db, model).ask(ChatRequest(message="Compare my activity"))
+    assert result.answer == "Done."
+    assert len(model.calls) == 3
+    assert model.calls[-1][1]["tools"] is None
+    assert len(result.citations) == 2
 
+def test_model_failure_is_error_not_canned_personal_answer(client):
+    with SessionLocal() as db:
+        result = ChatService(db, Model([OpenClawTimeout("test")])).ask(ChatRequest(message="My sleep"))
+    assert result.answer == ""
+    assert result.error and result.incomplete
+    assert not result.grounded and not result.citations
 
-class _TimeoutClient:
-    timeout = 90.0
+def test_partial_response_is_preserved_on_failure(client):
+    class Partial(Model):
+        def stream_chat(self, messages, **kwargs):
+            yield {"type": "content", "text": "Partial answer"}
+            raise OpenClawTimeout("test")
+    with SessionLocal() as db:
+        result = ChatService(db, Partial()).ask(ChatRequest(message="Hi"))
+    assert result.answer == "Partial answer" and result.incomplete
 
-    def chat_with_tools(self, messages, tools, temperature=0.2, timeout=None):
-        raise OpenClawTimeout("read timed out")
+def test_token_budget_drops_complete_old_exchanges(client):
+    class Counter(Model):
+        def count_chat_tokens(self, messages, tools=None, timeout=5, **kwargs):
+            return 6500 if len(messages) > 2 else 1000
+    with SessionLocal() as db:
+        service = ChatService(db, Counter())
+        messages = service._messages(ChatRequest(message="current", history=[
+            ChatMessage(role="user", content="old"),
+            ChatMessage(role="assistant", content="old answer")]))
+        fitted, output = service._fit(messages, [], monotonic()+10)
+    assert len(fitted) == 2 and fitted[-1]["content"] == "current"
+    assert output == 1024
 
+def test_oversized_current_question_fails_without_cutting_it(client):
+    model = Model()
+    model.count_chat_tokens = lambda *a, **k: 7000
+    with SessionLocal() as db:
+        result = ChatService(db, model).ask(ChatRequest(message="long"))
+    assert result.error and not model.calls
 
-class _GeneralClient:
-    timeout = 90.0
+def test_bounding_keeps_totals_and_valid_json():
+    result = bounded_result({"summary": {"total": 999}, "rows": [{"memo": "a"*900}]*50})
+    assert result["summary"]["total"] == 999
+    assert len(result["rows"]) == 20
+    assert result["_truncated"]["rows"]["available"] == 50
+    assert json.loads(json.dumps(result)) == result
 
-    def __init__(self):
-        self.messages = []
+def test_tool_deadline_is_enforced(client, monkeypatch):
+    import time
+    monkeypatch.setattr(AgentTools, "run", lambda *a: time.sleep(0.2))
+    with SessionLocal() as db:
+        with pytest.raises(OpenClawTimeout):
+            ChatService(db)._tool("health_summary", {}, monotonic()-1)
 
-    def chat(self, messages, temperature=0.2, timeout=None):
-        self.messages = messages
-        return "def fibonacci(n):\n    return n if n < 2 else fibonacci(n - 1) + fibonacci(n - 2)"
+def test_unavailable_live_tools_are_error_data(client, monkeypatch):
+    monkeypatch.setattr(agent_tools.get_settings(), "hae_host", "")
+    with SessionLocal() as db:
+        assert AgentTools(db).run("live_health", {})["status"] == "error"
+        assert AgentTools(db).run("github_search", {"tool": "delete_repository"})["status"] == "error"
 
+def test_suggestions_cache_refresh_and_failure(client, monkeypatch):
+    from app.services import chat_suggestions as module
+    model = Model(['{"questions":["One?","Two?","Three?","Four?"]}'])
+    model.admission_status = lambda: {"active_workload": None, "waiting_interactive": 0}
+    monkeypatch.setattr(module, "OpenClawClient", lambda **kw: model)
+    key = (30, module.datetime.now(module.IST).date().isoformat())
+    module._cache.clear()
+    module._refresh(SessionLocal.kw["bind"], key)
+    assert module._cache[key][1] == ["One?", "Two?", "Three?", "Four?"]
+    with SessionLocal() as db:
+        assert module.suggestions(db, 30) == module._cache[key][1]
+    model.rounds = [OpenClawTimeout("busy")]
+    module._refresh(SessionLocal.kw["bind"], key)
+    assert len(module._cache[key][1]) == 4
+    module._cache.clear()
 
-class _StreamingGeneralClient(_GeneralClient):
-    def stream_chat(self, messages, tools=None, temperature=0.2, timeout=None):
-        self.messages = messages
-        yield {"type": "content", "text": "def fibonacci"}
-        yield {"type": "content", "text": "(n): return n"}
-        yield {
-            "type": "message",
-            "message": {"role": "assistant", "content": "def fibonacci(n): return n", "tool_calls": []},
-        }
+def test_cancelled_stream_stops_model_work(client):
+    import threading
+    import time
+    closed = threading.Event()
+    class Cancellable(Model):
+        def stream_chat(self, messages, **kwargs):
+            try:
+                yield {"type": "content", "text": "First"}
+                while not kwargs["cancel_event"].wait(0.01):
+                    yield {"type": "content", "text": " more"}
+            finally:
+                closed.set()
+    with SessionLocal() as db:
+        stream = ChatService(db, Cancellable()).stream(ChatRequest(message="hello"))
+        for event in stream:
+            if event["type"] == "delta":
+                break
+        stream.close()
+        assert closed.wait(1)
 
+def test_absolute_deadline_ends_a_stalled_model(client, monkeypatch):
+    import time
+    from app.services import chat_service
+    class Stalled(Model):
+        def stream_chat(self, messages, **kwargs):
+            kwargs["cancel_event"].wait(3)
+            yield {"type": "content", "text": "too late"}
+    monkeypatch.setattr(chat_service.settings, "openclaw_chat_deadline_seconds", 1.1)
+    started = monotonic()
+    with SessionLocal() as db:
+        response = ChatService(db, Stalled()).ask(ChatRequest(message="hello"))
+    assert monotonic()-started < 1.6
+    assert response.incomplete and "timed out" in response.error
 
-def test_agent_executes_tool_then_answers(client, monkeypatch):
-    executed = []
+def test_suggestions_defer_to_interactive_work(client, monkeypatch):
+    from app.services import chat_suggestions as module
+    model = Model()
+    model.admission_status = lambda: {"active_workload": "interactive", "waiting_interactive": 1}
+    monkeypatch.setattr(module, "OpenClawClient", lambda **kw: model)
+    key = (7, module.datetime.now(module.IST).date().isoformat())
+    module._refresh(SessionLocal.kw["bind"], key)
+    assert not model.calls and key not in module._cache
 
-    class FakeTools:
-        def __init__(self, db):
-            pass
-
-        def run(self, name, args):
-            executed.append((name, args))
-            return {"ok": True, "name": name}
-
-    monkeypatch.setattr(agent_tools, "AgentTools", FakeTools)
-    # chat_service imported the symbol directly, so patch it there too.
-    import app.services.chat_service as cs
-
-    monkeypatch.setattr(cs, "AgentTools", FakeTools)
-
-    svc = ChatService(db=None, client=_ToolThenAnswerClient())
-    answer = svc._run_agent([{"role": "user", "content": "why am I tired?"}])
-
-    assert answer == "final answer (avg sleep 78)"
-    assert executed == [("health_summary", {"days": 7})]
-
-
-def test_agent_loop_is_bounded(client, monkeypatch):
-    import app.services.chat_service as cs
-
-    class FakeTools:
-        def __init__(self, db):
-            pass
-
-        def run(self, name, args):
-            return {"ok": True}
-
-    monkeypatch.setattr(cs, "AgentTools", FakeTools)
-
-    svc = ChatService(db=None, client=_AlwaysToolsClient())
-    answer = svc._run_agent([{"role": "user", "content": "q"}])
-    assert answer == "capped-summary"
-
-
-def test_ask_reports_timeout_instead_of_claiming_openclaw_is_down(client):
-    from app.schemas.chat import ChatRequest
-
-    svc = ChatService(db=None, client=_TimeoutClient())
-    svc.build_context = lambda days: {  # type: ignore[method-assign]
-        "window": {"start": "2026-07-01", "end": "2026-07-16", "days": days},
-        "averages": {"sleep_score": 72.0},
-        "current_state": None,
-        "totals": {"days_with_scores": 1, "days_with_mood_checkin": 0},
-        "discovered_patterns": [],
-    }
-
-    response = svc.ask(ChatRequest(message="How am I doing?", context_days=30))
-    assert response.answer.startswith("The local model timed out")
-    assert "OpenClaw is unreachable" not in response.answer
-
-
-def test_agent_enforces_whole_request_deadline(client, monkeypatch):
-    import app.services.chat_service as cs
-
-    ticks = iter((0.0, cs.settings.openclaw_chat_deadline_seconds + 2.0))
-    monkeypatch.setattr(cs, "monotonic", lambda: next(ticks))
-    svc = ChatService(db=None, client=_AlwaysToolsClient())
-
-    with pytest.raises(OpenClawTimeout, match="overall time budget"):
-        svc._run_agent([{"role": "user", "content": "q"}])
-
-
-def test_general_code_question_does_not_receive_lifeos_context(client):
-    from app.schemas.chat import ChatMessage, ChatRequest
-
-    model = _GeneralClient()
-    svc = ChatService(db=None, client=model)
-    svc.build_context = lambda days: pytest.fail("general questions must not build personal context")
-
-    response = svc.ask(
-        ChatRequest(
-            message="Write Python code for Fibonacci numbers",
-            history=[
-                ChatMessage(role="user", content="How was my sleep last night?"),
-                ChatMessage(role="assistant", content="Your sleep score was low."),
-            ],
-        )
-    )
-
-    assert "def fibonacci" in response.answer
-    assert response.grounded is False
-    assert response.citations == []
-    assert "DATA CONTEXT" not in str(model.messages)
-    assert "sleep score was low" not in str(model.messages)
-
-
-def test_general_follow_up_receives_recent_conversation(client):
-    from app.schemas.chat import ChatMessage, ChatRequest
-
-    model = _GeneralClient()
-    svc = ChatService(db=None, client=model)
-    svc.build_context = lambda days: pytest.fail("general questions must not build personal context")
-
-    svc.ask(
-        ChatRequest(
-            message="Now make it iterative and add type hints",
-            history=[
-                ChatMessage(role="user", content="Write a recursive Fibonacci function"),
-                ChatMessage(role="assistant", content="def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)"),
-            ],
-        )
-    )
-
-    prompt = str(model.messages)
-    assert "Write a recursive Fibonacci function" in prompt
-    assert "def fibonacci(n)" in prompt
-    assert "Now make it iterative" in prompt
-
-
-def test_general_code_question_streams_without_personal_context(client):
-    from app.schemas.chat import ChatMessage, ChatRequest
-
-    model = _StreamingGeneralClient()
-    svc = ChatService(db=None, client=model)
-    svc.build_context = lambda days: pytest.fail("general streams must not build personal context")
-    events = list(
-        svc.stream(
-            ChatRequest(
-                message="Write Fibonacci code",
-                history=[
-                    ChatMessage(role="user", content="How was my sleep last night?"),
-                    ChatMessage(role="assistant", content="Your sleep was low"),
-                ],
-            )
-        )
-    )
-
-    assert [event["text"] for event in events if event["type"] == "delta"] == [
-        "def fibonacci",
-        "(n): return n",
-    ]
-    assert events[-1] == {"type": "done", "citations": [], "grounded": False}
-    assert "sleep was low" not in str(model.messages)
-
+def test_suggestions_invalid_json_keeps_empty_state(client, monkeypatch):
+    from app.services import chat_suggestions as module
+    model = Model(["not JSON"])
+    model.admission_status = lambda: {"active_workload": None, "waiting_interactive": 0}
+    monkeypatch.setattr(module, "OpenClawClient", lambda **kw: model)
+    key = (8, module.datetime.now(module.IST).date().isoformat())
+    module._refresh(SessionLocal.kw["bind"], key)
+    assert key not in module._cache
 
 def test_streaming_think_filter_hides_reasoning_without_buffering_normal_text():
     normal = _StreamingThinkFilter()
@@ -249,118 +237,6 @@ def test_control_tokens_are_removed_from_complete_and_split_stream_text():
     answer = "".join(pieces)
     assert answer == "Here is your answer"
     assert "im_start" not in answer
-
-
-def test_spending_only_context_counts_as_personal_data():
-    context = {
-        "totals": {"days_with_scores": 0, "days_with_mood_checkin": 0, "commits": 0},
-        "spending": {"total_spend": 654},
-    }
-    assert ChatService._context_has_data(context) is True
-
-
-def test_historical_money_coverage_keeps_table_questions_available(client):
-    from decimal import Decimal
-
-    from app.database import SessionLocal
-    from app.models.transaction import Transaction
-
-    db = SessionLocal()
-    try:
-        db.add(
-            Transaction(
-                txn_date=date.today() - timedelta(days=120),
-                amount=Decimal("750.00"),
-                currency="INR",
-                direction="debit",
-                counterparty="OLD PURCHASE",
-                account="HDFC Savings ..7672",
-                source="upi",
-                gmail_message_id="old",
-                dedup_key="old",
-            )
-        )
-        db.commit()
-
-        context = ChatService(db).build_context(30)
-        assert context["spending"] is None
-        assert context["money_table_coverage"]["transaction_count"] == 1
-        assert ChatService._context_has_data(context) is True
-    finally:
-        db.close()
-
-
-def test_timeout_fallback_includes_calendar_month_spending():
-    context = {
-        "window": {"days": 30},
-        "averages": {},
-        "current_state": None,
-        "spending": {
-            "current_month": "2026-07",
-            "current_month_total": 38712,
-            "total_spend": 42100,
-            "days_with_spend": 14,
-        },
-        "discovered_patterns": [],
-    }
-    answer = ChatService._fallback(None, context, "The local model timed out")
-    assert "spending this calendar month (2026-07): ₹38,712" in answer
-    assert "last 30 days: ₹42,100" in answer
-
-
-def test_direct_personal_answers_cover_spending_and_sleep_without_model():
-    context = {
-        "window": {"start": "2026-07-01", "end": "2026-07-18", "days": 30},
-        "averages": {"sleep_score": 44.8},
-        "spending": {
-            "current_month": "2026-07",
-            "current_month_total": 38712,
-            "total_spend": 76086,
-            "days_with_spend": 29,
-            "recent_daily_spend": [
-                {"day": "2026-07-17", "spend": 654},
-                {"day": "2026-07-18", "spend": 120},
-            ],
-        },
-        "recent_daily": [
-            {"day": "2026-07-17", "sleep": 51.2, "recovery": 62, "execution": 20}
-        ],
-    }
-    assert ChatService._direct_personal_answer(
-        "How much did I spend this month?", context
-    ) == "You spent ₹38,712 this calendar month (2026-07)."
-    assert ChatService._direct_personal_answer(
-        "How much did I spend yesterday?", context
-    ) == "You spent ₹654 yesterday (2026-07-17)."
-    assert ChatService._direct_personal_answer("How is my sleep?", context) == (
-        "Your latest sleep score is 51 on 2026-07-17; your 30-day average is 44.8."
-    )
-    # Qualified/table questions must reach query_money, never the current-month
-    # total shortcut.
-    assert ChatService._direct_personal_answer(
-        "How much did I spend on food last month?", context
-    ) is None
-    assert ChatService._direct_personal_answer(
-        "How much did I spend in the last 7 days?", context
-    ) is None
-
-
-@pytest.mark.parametrize(
-    ("question", "personal"),
-    [
-        ("How was my sleep last night?", True),
-        ("How am I doing this week?", True),
-        ("How much did I spend this month?", True),
-        ("What were my top merchants last month?", True),
-        ("How much income did I receive this year?", True),
-        ("Why am I unproductive?", True),
-        ("What should I do today?", True),
-        ("What is REM sleep?", False),
-        ("Write Fibonacci code", False),
-    ],
-)
-def test_chat_route_detection(question, personal):
-    assert _is_personal_data_question(question) is personal
 
 
 def _seed_mood_and_exec(client, n_days=10):
@@ -526,6 +402,8 @@ def test_query_money_rejects_invalid_contract_values(client):
             query_money(db, start_date="drop table transactions")
         with pytest.raises(MoneyQueryError, match="limit"):
             query_money(db, limit=5000)
+        with pytest.raises(MoneyQueryError, match="Both comparison"):
+            query_money(db, compare_start_date="2026-01-01")
 
         # Tool dispatch degrades invalid model arguments to an error payload.
         result = AgentTools(db).run("query_money", {"group_by": "raw_sql"})
@@ -541,104 +419,21 @@ def test_query_money_is_advertised_to_the_model():
     assert set(params["group_by"]["enum"]) >= {"month", "category", "counterparty", "account"}
 
 
-def test_money_query_planner_resolves_last_month_and_top_categories():
-    plan = plan_money_query(
-        "What were my top 3 spending categories last month?",
-        today=date(2026, 7, 27),
-    )
-    assert plan == {
-        "mode": "spending",
-        "start_date": "2026-06-01",
-        "end_date": "2026-06-30",
-        "group_by": "category",
-        "limit": 3,
-        "sort_by": "total",
-        "sort_order": "desc",
-    }
-
-
-def test_money_query_formatter_returns_grounded_ranked_answer():
-    answer = format_money_answer(
-        "What were my top 2 spending categories last month?",
-        {
-            "mode": "spending",
-            "window": {"start": "2026-06-01", "end": "2026-06-30"},
-            "filters": {},
-            "summary": {"total": 1500, "count": 3, "average": 500, "max": 900},
-            "group_by": "category",
-            "rows": [
-                {"group": "food", "total": 900, "count": 2, "average": 450, "max": 500},
-                {"group": "travel", "total": 600, "count": 1, "average": 600, "max": 600},
-            ],
-        },
-    )
-    assert answer is not None
-    assert "1. food: ₹900 across 2 transactions" in answer
-    assert "2. travel: ₹600 across 1 transaction" in answer
-    assert "Matched total: ₹1,500 across 3 transactions." in answer
-
-
-def test_stream_prefetches_factual_money_query_without_model_call(client):
+def test_money_comparison_computes_exact_changes(client):
     from decimal import Decimal
-
-    from app.database import SessionLocal
     from app.models.transaction import Transaction
-    from app.schemas.chat import ChatRequest
-
-    class NoModel:
-        timeout = 90.0
-
-        def __getattr__(self, name):
-            raise AssertionError(f"model must not be called for factual money query: {name}")
-
-    today = date.today()
-    previous_month_end = today.replace(day=1) - timedelta(days=1)
-    previous_month_day = previous_month_end.replace(day=2)
-    db = SessionLocal()
-    try:
-        db.add_all(
-            [
-                Transaction(
-                    txn_date=previous_month_day,
-                    amount=Decimal("900.00"),
-                    currency="INR",
-                    direction="debit",
-                    counterparty="ZOMATO",
-                    account="HDFC Savings ..7672",
-                    source="upi",
-                    gmail_message_id="prefetch-food",
-                    dedup_key="prefetch-food",
-                ),
-                Transaction(
-                    txn_date=previous_month_day,
-                    amount=Decimal("600.00"),
-                    currency="INR",
-                    direction="debit",
-                    counterparty="UBER",
-                    account="HDFC Savings ..7672",
-                    source="upi",
-                    gmail_message_id="prefetch-travel",
-                    dedup_key="prefetch-travel",
-                ),
-            ]
-        )
+    with SessionLocal() as db:
+        for day, amount, key in [(date(2026, 8, 1), "100", "before"),
+                                 (date(2026, 9, 1), "450", "after")]:
+            db.add(Transaction(txn_date=day, amount=Decimal(amount), currency="INR",
+                               direction="debit", source="upi", counterparty="ZOMATO",
+                               gmail_message_id=key, dedup_key=key))
         db.commit()
-
-        events = list(
-            ChatService(db, client=NoModel()).stream(
-                ChatRequest(
-                    message="What were my top 2 spending categories last month?",
-                    context_days=30,
-                )
-            )
-        )
-        answer = "".join(event.get("text", "") for event in events)
-        assert "1. food: ₹900 across 1 transaction" in answer
-        assert "2. travel: ₹600 across 1 transaction" in answer
-        assert events[-1]["grounded"] is True
-        assert any(
-            citation["metric"].startswith("spending_")
-            for citation in events[-1]["citations"]
-        )
-    finally:
-        db.close()
+        result = query_money(db, start_date="2026-09-01", end_date="2026-09-13",
+                             compare_start_date="2026-08-01", compare_end_date="2026-08-31",
+                             group_by="category")
+        assert result["comparison"]["change"] == {"difference": 350, "percent_change": 350}
+        assert result["comparison"]["groups"][0]["percent_change"] == 350
+        empty = query_money(db, start_date="2026-09-01", end_date="2026-09-13",
+                            compare_start_date="2026-07-01", compare_end_date="2026-07-31")
+        assert empty["comparison"]["change"]["percent_change"] is None

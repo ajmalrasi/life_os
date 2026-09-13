@@ -7,10 +7,12 @@ import com.lifeos.app.domain.model.Citation
 import com.lifeos.app.domain.repository.ChatRepository
 import com.lifeos.app.presentation.chat.ChatViewModel
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -66,6 +68,57 @@ class ChatViewModelTest {
         val vm = ChatViewModel(repository)
         vm.send("   ")
         assertEquals(0, vm.state.value.messages.size)
+    }
+
+    @Test
+    fun `partial failures stay visible and retry replaces the failed attempt`() = runTest {
+        every { repository.stream(any(), any(), any()) } returns flowOf(
+            ChatStreamEvent.Delta("Partial"),
+            ChatStreamEvent.Error("Timed out"),
+            ChatStreamEvent.Done(emptyList(), false, incomplete = true),
+        )
+        val vm = ChatViewModel(repository)
+        vm.send("My spending")
+        advanceUntilIdle()
+        assertEquals("Partial", vm.state.value.messages.last().content)
+        assertTrue(vm.state.value.messages.last().incomplete)
+        assertEquals("Timed out", vm.state.value.error)
+
+        every { repository.stream(any(), any(), any()) } returns flowOf(
+            ChatStreamEvent.Delta("Complete"),
+            ChatStreamEvent.Done(emptyList(), false),
+        )
+        vm.retry()
+        advanceUntilIdle()
+        assertEquals(2, vm.state.value.messages.size)
+        assertEquals("Complete", vm.state.value.messages.last().content)
+        assertEquals(null, vm.state.value.error)
+    }
+
+    @Test
+    fun `transport failure marks a partial answer incomplete`() = runTest {
+        every { repository.stream(any(), any(), any()) } returns flow {
+            emit(ChatStreamEvent.Delta("Partial"))
+            throw java.io.IOException("disconnected")
+        }
+        val vm = ChatViewModel(repository)
+        vm.send("Hello")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.messages.last().incomplete)
+        assertTrue(vm.state.value.error != null)
+        assertTrue(!vm.state.value.sending)
+    }
+
+    @Test
+    fun `no canned suggestions and one delayed refresh`() = runTest {
+        coEvery { repository.suggestions(any()) } returnsMany listOf(
+            emptyList(), listOf("Model question?"),
+        )
+        val vm = ChatViewModel(repository)
+        assertTrue(vm.state.value.suggestions.isEmpty())
+        advanceUntilIdle()
+        assertEquals(listOf("Model question?"), vm.state.value.suggestions)
+        coVerify(exactly = 2) { repository.suggestions(30) }
     }
 
     @Test

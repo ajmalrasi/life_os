@@ -1,8 +1,8 @@
 """Test fixtures.
 
 We point DATABASE_URL at an on-disk SQLite file *before* importing the app so
-the whole stack (models, engine, sessions) runs without Postgres. OpenClaw is
-never contacted because tests use the deterministic fallback path or stub it.
+the whole stack (models, engine, sessions) runs without Postgres. Model and
+GitHub access are disabled; tests explicitly stub any required external calls.
 """
 
 from __future__ import annotations
@@ -16,6 +16,9 @@ import pytest
 _TMP_DB = os.path.join(tempfile.gettempdir(), "lifeos_test.db")
 os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{_TMP_DB}"
 os.environ["ENVIRONMENT"] = "test"
+os.environ["OPENCLAW_BASE_URL"] = "http://127.0.0.1:1"
+os.environ["GITHUB_TOKEN"] = ""
+os.environ["GITHUB_USER"] = ""
 
 from fastapi.testclient import TestClient  # noqa: E402
 

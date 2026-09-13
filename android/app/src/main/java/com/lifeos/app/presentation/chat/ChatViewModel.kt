@@ -11,27 +11,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 data class ChatMessage(
     val role: String,
     val content: String,
     val citations: List<Citation> = emptyList(),
+    val incomplete: Boolean = false,
 )
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val input: String = "",
     val sending: Boolean = false,
-    val suggestions: List<String> = DEFAULT_SUGGESTIONS,
-)
-
-// Shown immediately while the data-grounded set loads, and if that load fails.
-private val DEFAULT_SUGGESTIONS = listOf(
-    "How am I doing this week?",
-    "Do I get more done on days I work out?",
-    "Am I moving toward burnout?",
-    "What should I focus on today?",
+    val suggestions: List<String> = emptyList(),
+    val status: String = "",
+    val error: String? = null,
+    val retryable: Boolean = true,
 )
 
 @HiltViewModel
@@ -43,14 +41,14 @@ class ChatViewModel @Inject constructor(
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     init {
-        // Tailor the starter questions to the user's actual recent data. Best-effort:
-        // the repository falls back to defaults, so the empty state is never blank.
+        // Show cached model questions immediately; check once for the background refresh.
         viewModelScope.launch {
-            val tailored = runCatching {
-                chatRepository.suggestions(contextDays = 30)
-            }.getOrDefault(DEFAULT_SUGGESTIONS)
-            if (tailored.isNotEmpty()) {
-                _state.value = _state.value.copy(suggestions = tailored)
+            repeat(2) { attempt ->
+                if (attempt == 1) delay(20_000)
+                val tailored = chatRepository.suggestions(contextDays = 30)
+                if (tailored.isNotEmpty()) {
+                    _state.value = _state.value.copy(suggestions = tailored)
+                }
             }
         }
     }
@@ -63,11 +61,13 @@ class ChatViewModel @Inject constructor(
         val message = text.trim()
         if (message.isEmpty() || _state.value.sending) return
 
-        val history = _state.value.messages.map { ChatTurn(it.role, it.content) }
+        val history = _state.value.messages.filterNot { it.incomplete }.map { ChatTurn(it.role, it.content) }
         _state.value = _state.value.copy(
             messages = _state.value.messages + ChatMessage("user", message),
             input = "",
             sending = true,
+            error = null,
+            status = "Thinking",
         )
 
         viewModelScope.launch {
@@ -75,20 +75,45 @@ class ChatViewModel @Inject constructor(
                 chatRepository.stream(message, history, contextDays = 30).collect { event ->
                     when (event) {
                         is ChatStreamEvent.Delta -> appendAssistantText(event.text)
-                        is ChatStreamEvent.Done -> finishAssistant(event.citations)
+                        is ChatStreamEvent.Status -> _state.value = _state.value.copy(status = event.text)
+                        is ChatStreamEvent.Error -> {
+                            markIncomplete()
+                            _state.value = _state.value.copy(error = event.text, retryable = event.retryable)
+                        }
+                        is ChatStreamEvent.Done -> {
+                            finishAssistant(event.citations)
+                            if (event.incomplete) {
+                                markIncomplete()
+                                if (_state.value.error == null) {
+                                    _state.value = _state.value.copy(error = "Response interrupted. Please try again.")
+                                }
+                            }
+                        }
                     }
                 }
             }.onFailure {
-                if (_state.value.messages.lastOrNull()?.role == "user") {
-                    _state.value = _state.value.copy(
-                        messages = _state.value.messages + ChatMessage(
-                            "assistant",
-                            "Couldn't reach LifeOS backend. Check the server address in Settings.",
-                        ),
-                    )
-                }
+                if (it is CancellationException) throw it
+                markIncomplete()
+                _state.value = _state.value.copy(error = "Connection interrupted. Check Settings and try again.", retryable = true)
             }
-            _state.value = _state.value.copy(sending = false)
+            _state.value = _state.value.copy(sending = false, status = "")
+        }
+    }
+
+    fun retry() {
+        if (_state.value.sending) return
+        val index = _state.value.messages.indexOfLast { it.role == "user" }
+        if (index < 0) return
+        val question = _state.value.messages[index].content
+        _state.value = _state.value.copy(messages = _state.value.messages.take(index))
+        send(question)
+    }
+
+    private fun markIncomplete() {
+        val messages = _state.value.messages.toMutableList()
+        if (messages.lastOrNull()?.role == "assistant") {
+            messages[messages.lastIndex] = messages.last().copy(incomplete = true)
+            _state.value = _state.value.copy(messages = messages)
         }
     }
 

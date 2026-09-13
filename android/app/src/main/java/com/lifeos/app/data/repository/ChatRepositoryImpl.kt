@@ -10,6 +10,7 @@ import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.Citation
 import com.lifeos.app.domain.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -33,9 +34,10 @@ class ChatRepositoryImpl @Inject constructor(
                 contextDays = contextDays,
             )
         )
+        response.error?.let { throw java.io.IOException(it) }
         return ChatAnswer(
             answer = response.answer,
-            citations = response.citations.map { Citation(it.metric, it.value) },
+            citations = response.citations.map { Citation(it.metric, it.value, it.label) },
             grounded = response.grounded,
         )
     }
@@ -54,39 +56,37 @@ class ChatRepositoryImpl @Inject constructor(
         )
         body.use {
             val source = it.source()
+            var completed = false
             while (true) {
                 val line = source.readUtf8Line() ?: break
                 if (line.isBlank()) continue
                 val event = json.decodeFromString<ChatStreamEventDto>(line)
                 when (event.type) {
+                    "status" -> event.text?.let { emit(ChatStreamEvent.Status(it)) }
+                    "error" -> emit(ChatStreamEvent.Error(event.text ?: "Response interrupted.", event.retryable))
                     "delta" -> event.text?.takeIf(String::isNotEmpty)?.let { text ->
                         emit(ChatStreamEvent.Delta(text))
                     }
-                    "done" -> emit(
-                        ChatStreamEvent.Done(
-                            citations = event.citations.map { citation ->
-                                Citation(citation.metric, citation.value)
-                            },
-                            grounded = event.grounded,
+                    "done" -> {
+                        completed = true
+                        emit(
+                            ChatStreamEvent.Done(
+                                citations = event.citations.map { citation ->
+                                    Citation(citation.metric, citation.value, citation.label)
+                                },
+                                grounded = event.grounded,
+                                incomplete = event.incomplete,
+                            ),
                         )
-                    )
+                    }
                 }
             }
+            if (!completed) throw java.io.IOException("Response interrupted. Please try again.")
         }
     }.flowOn(Dispatchers.IO)
 
     override suspend fun suggestions(contextDays: Int): List<String> =
         runCatching { api.chatSuggestions(contextDays).questions }
+            .onFailure { if (it is CancellationException) throw it }
             .getOrDefault(emptyList())
-            .ifEmpty { DEFAULT_SUGGESTIONS }
-
-    private companion object {
-        // Mirrors the backend's fallback; used when the network call fails.
-        val DEFAULT_SUGGESTIONS = listOf(
-            "How am I doing this week?",
-            "Do I get more done on days I work out?",
-            "Am I moving toward burnout?",
-            "What should I focus on today?",
-        )
-    }
 }

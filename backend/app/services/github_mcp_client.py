@@ -45,13 +45,16 @@ class GitHubMcpClient:
 
     # -- public sync API ---------------------------------------------------------
 
-    def call_tool(self, tool_name: str, arguments: dict | None = None) -> Any:
+    def call_tool(self, tool_name: str, arguments: dict | None = None,
+                  timeout: float = _TOOL_TIMEOUT) -> Any:
         """Call a tool and return the parsed JSON result, or None on error."""
         if not self.token:
             logger.debug("github-mcp: no token configured, skipping %s", tool_name)
             return None
         try:
-            return _run(self._call_tool(tool_name, arguments or {}))
+            async def bounded():
+                return await asyncio.wait_for(self._call_tool(tool_name, arguments or {}), timeout)
+            return _run(bounded())
         except Exception as exc:
             logger.warning("github-mcp tool %s failed: %s", tool_name, exc)
             return None

@@ -79,7 +79,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             .background(LifeOsColors.Background)
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        ScreenHeader("Ask LifeOS", "Streaming answers, grounded when they use your data.")
+        ScreenHeader("Ask LifeOS", "Ask about your life, or anything else.")
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(
@@ -95,7 +95,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         ) {
             if (state.messages.isEmpty()) {
                 item { EmptyState() }
-                item {
+                if (state.suggestions.isNotEmpty()) item {
                     Text(
                         "TRY ASKING",
                         style = MaterialTheme.typography.labelMedium,
@@ -109,10 +109,20 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             }
             items(state.messages) { MessageBubble(it) }
             if (waitingForFirstToken) {
-                item { TypingIndicator() }
+                item { TypingIndicator(state.status.ifBlank { "Thinking" }) }
             }
         }
 
+        if (state.sending && !waitingForFirstToken && state.status.isNotBlank()) {
+            Text(state.status, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+        }
+        state.error?.let { error ->
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (state.retryable) {
+                Text("Retry", modifier = Modifier.clickable { viewModel.retry() }.padding(8.dp),
+                    color = LifeOsColors.Primary)
+            }
+        }
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -213,13 +223,13 @@ private fun SuggestionRow(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TypingIndicator() {
+private fun TypingIndicator(status: String) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = LifeOsColors.SurfaceMuted,
     ) {
         Text(
-            "Thinking…",
+            status,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = LifeOsColors.OnSurfaceMuted,
@@ -269,6 +279,8 @@ private fun MessageBubble(message: ChatMessage) {
             }
             if (message.citations.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
+                Text("Retrieved sources", style = MaterialTheme.typography.labelSmall,
+                    color = LifeOsColors.OnSurfaceMuted)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     message.citations.take(4).forEach { c ->
                         Surface(
@@ -276,7 +288,7 @@ private fun MessageBubble(message: ChatMessage) {
                             color = if (isUser) Color.White.copy(alpha = 0.18f) else LifeOsColors.SurfaceMuted,
                         ) {
                             Text(
-                                "${c.metric.replace('_', ' ')} · ${c.value}",
+                                "${c.label ?: c.metric.replace('_', ' ')} · ${c.value}",
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (isUser) LifeOsColors.OnPrimary.copy(alpha = 0.9f) else LifeOsColors.OnSurfaceMuted,
@@ -285,6 +297,10 @@ private fun MessageBubble(message: ChatMessage) {
                         }
                     }
                 }
+            }
+            if (message.incomplete) {
+                Text("Incomplete response", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error)
             }
         }
     }

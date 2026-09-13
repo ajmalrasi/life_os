@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import socket
 from contextlib import contextmanager
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -282,11 +283,61 @@ class OpenClawClient:
             headers["Authorization"] = f"Bearer {settings.openclaw_api_key}"
         return headers
 
+    def count_chat_tokens(self, messages: list[dict], tools: list[dict] | None = None,
+                          timeout: float = 5.0, enable_thinking: bool = False) -> int:
+        """Use EdgeLLM's tokenizer/template through its non-generating count API.
+
+        Translate OpenAI messages to the Anthropic envelope accepted by the
+        endpoint. EdgeLLM converts it back before using the same prompt renderer.
+        Thinking is disabled in both counting and Ask generation.
+        """
+        body: dict = {"model": self.model, "messages": [],
+                      "thinking": {"type": "enabled" if enable_thinking else "disabled",
+                                   "budget_tokens": 1024}}
+        for message in messages:
+            role = message["role"]
+            if role == "system":
+                body["system"] = message["content"]
+                continue
+            if role == "tool":
+                body["messages"].append({"role": "user", "content": [{
+                    "type": "tool_result", "tool_use_id": message["tool_call_id"],
+                    "content": message["content"]}]})
+                continue
+            blocks = []
+            if message.get("content"):
+                blocks.append({"type": "text", "text": message["content"]})
+            for call in message.get("tool_calls") or []:
+                fn = call["function"]
+                blocks.append({"type": "tool_use", "id": call["id"],
+                               "name": fn["name"], "input": json.loads(fn["arguments"])})
+            body["messages"].append({"role": role, "content": blocks})
+        if tools:
+            body["tools"] = [
+                {"name": t["function"]["name"],
+                 "description": t["function"].get("description", ""),
+                 "input_schema": t["function"]["parameters"]}
+                for t in tools
+            ]
+            body["tool_choice"] = {"type": "auto"}
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(self.base_url + "/v1/messages/count_tokens",
+                                       json=body, headers=self._headers())
+                response.raise_for_status()
+                count = response.json()["input_tokens"]
+                if not isinstance(count, int) or count <= 0:
+                    raise ValueError("Tokenizer returned no count")
+                return count
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            raise OpenClawUnavailable("Could not count the local model input") from exc
+
     def chat(
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.2,
         timeout: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Call /v1/chat/completions and return the assistant text."""
         url = f"{self.base_url}/v1/chat/completions"
@@ -295,7 +346,7 @@ class OpenClawClient:
             "messages": messages,
             "temperature": temperature,
             "stream": False,
-            "max_tokens": settings.openclaw_max_tokens,
+            "max_tokens": max_tokens or settings.openclaw_max_tokens,
         }
         try:
             with self._admitted(timeout) as request_timeout:
@@ -318,6 +369,9 @@ class OpenClawClient:
         tools: list[dict] | None = None,
         temperature: float = 0.2,
         timeout: float | None = None,
+        max_tokens: int | None = None,
+        enable_thinking: bool | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Iterator[dict]:
         """Stream one OpenAI-compatible completion.
 
@@ -333,8 +387,10 @@ class OpenClawClient:
             "messages": messages,
             "temperature": temperature,
             "stream": True,
-            "max_tokens": settings.openclaw_max_tokens,
+            "max_tokens": max_tokens or settings.openclaw_max_tokens,
         }
+        if enable_thinking is not None:
+            payload["enable_thinking"] = enable_thinking
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -344,56 +400,49 @@ class OpenClawClient:
         finish_reason: str | None = None
         visibility = _StreamingThinkFilter()
         controls = _StreamingControlTokenFilter()
+        deadline = monotonic() + (timeout or self.timeout)
         try:
             with self._admitted(timeout) as request_timeout:
                 with httpx.Client(timeout=request_timeout) as client:
                     with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
                         resp.raise_for_status()
-                        for line in resp.iter_lines():
-                            if not line or line.startswith(":"):
-                                continue
-                            raw = line[5:].strip() if line.startswith("data:") else line.strip()
-                            if raw == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(raw)
-                                choice = data["choices"][0]
-                                delta = choice.get("delta") or {}
-                                finish_reason = choice.get("finish_reason") or finish_reason
-                            except (ValueError, KeyError, IndexError, TypeError) as exc:
-                                raise OpenClawUnavailable(
-                                    f"Unexpected OpenClaw stream event: {raw[:200]}"
-                                ) from exc
-
-                            piece = delta.get("content") or ""
-                            if piece:
-                                visible = visibility.push(piece)
-                                if visible:
-                                    clean = controls.push(visible)
-                                    if clean:
-                                        content_parts.append(clean)
-                                        yield {"type": "content", "text": clean}
-
-                            for fragment in delta.get("tool_calls") or []:
-                                index = int(fragment.get("index", 0))
-                                call = calls.setdefault(
-                                    index,
-                                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
-                                )
-                                if fragment.get("id"):
-                                    call["id"] = fragment["id"]
-                                fn = fragment.get("function") or {}
-                                call["function"]["name"] += fn.get("name") or ""
-                                call["function"]["arguments"] += fn.get("arguments") or ""
+                        finished = threading.Event()
+                        def interrupt_read():
+                            # httpx read timeouts reset on each token. Interrupt a
+                            # stalled socket at the absolute deadline or cancellation.
+                            while not finished.wait(0.1):
+                                if monotonic() >= deadline or (cancel_event and cancel_event.is_set()):
+                                    network = resp.extensions.get("network_stream")
+                                    sock = network.get_extra_info("socket") if network else None
+                                    try:
+                                        if sock:
+                                            sock.shutdown(socket.SHUT_RDWR)
+                                        else:
+                                            resp.close()
+                                    except (OSError, RuntimeError):
+                                        pass
+                                    return
+                        threading.Thread(target=interrupt_read, daemon=True,
+                                         name="ask-stream-deadline").start()
+                        try:
+                            yield from self._read_stream(resp, deadline, visibility, controls,
+                                                         content_parts, calls, cancel_event)
+                            finish_reason = resp.extensions.get("lifeos_finish_reason")
+                        finally:
+                            finished.set()
         except httpx.TimeoutException as exc:
             raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
         except httpx.HTTPStatusError as exc:
             raise _translate_http_error(exc, "streaming request") from exc
         except httpx.HTTPError as exc:
+            if monotonic() >= deadline:
+                raise OpenClawTimeout("Local model exceeded its generation deadline") from exc
             raise OpenClawUnavailable(f"OpenClaw streaming request failed: {exc}") from exc
 
         if finish_reason == "length":
             raise OpenClawTruncated("Local model output reached its token limit")
+        if finish_reason is None:
+            raise OpenClawUnavailable("The model stream ended without a completion marker")
 
         tail = visibility.finish()
         if tail:
@@ -413,6 +462,51 @@ class OpenClawClient:
                 "tool_calls": [calls[i] for i in sorted(calls)],
             },
         }
+
+    @staticmethod
+    def _read_stream(resp, deadline, visibility, controls, content_parts, calls, cancel_event):
+        finish_reason = None
+        for line in resp.iter_lines():
+            if cancel_event and cancel_event.is_set():
+                raise OpenClawUnavailable("Request cancelled")
+            if monotonic() >= deadline:
+                raise OpenClawTimeout("Local model exceeded its generation deadline")
+            if not line or line.startswith(":"):
+                continue
+            raw = line[5:].strip() if line.startswith("data:") else line.strip()
+            if raw == "[DONE]":
+                break
+            try:
+                data = json.loads(raw)
+                choice = data["choices"][0]
+                delta = choice.get("delta") or {}
+                finish_reason = choice.get("finish_reason") or finish_reason
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise OpenClawUnavailable(
+                    f"Unexpected OpenClaw stream event: {raw[:200]}"
+                ) from exc
+
+            piece = delta.get("content") or ""
+            if piece:
+                visible = visibility.push(piece)
+                if visible:
+                    clean = controls.push(visible)
+                    if clean:
+                        content_parts.append(clean)
+                        yield {"type": "content", "text": clean}
+
+            for fragment in delta.get("tool_calls") or []:
+                index = int(fragment.get("index", 0))
+                call = calls.setdefault(
+                    index,
+                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                )
+                if fragment.get("id"):
+                    call["id"] = fragment["id"]
+                fn = fragment.get("function") or {}
+                call["function"]["name"] += fn.get("name") or ""
+                call["function"]["arguments"] += fn.get("arguments") or ""
+        resp.extensions["lifeos_finish_reason"] = finish_reason
 
     def chat_structured(
         self,

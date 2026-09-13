@@ -121,11 +121,13 @@ data class ChatAnswer(
     val grounded: Boolean,
 )
 
-data class Citation(val metric: String, val value: String)
+data class Citation(val metric: String, val value: String, val label: String? = null)
 
 sealed interface ChatStreamEvent {
     data class Delta(val text: String) : ChatStreamEvent
-    data class Done(val citations: List<Citation>, val grounded: Boolean) : ChatStreamEvent
+    data class Status(val text: String) : ChatStreamEvent
+    data class Error(val text: String, val retryable: Boolean = true) : ChatStreamEvent
+    data class Done(val citations: List<Citation>, val grounded: Boolean, val incomplete: Boolean = false) : ChatStreamEvent
 }
 
 data class ExecutionSyncReport(

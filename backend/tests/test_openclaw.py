@@ -25,6 +25,69 @@ class _Response:
         return {"choices": [{"message": {"content": "ok"}}]}
 
 
+def test_token_counter_preserves_tools_and_tool_results(monkeypatch):
+    captured = {}
+    class CounterHttp:
+        def __init__(self, timeout):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, url, json, headers):
+            captured.update(json)
+            return httpx.Response(200, json={"input_tokens": 123},
+                                  request=httpx.Request("POST", url))
+    monkeypatch.setattr(openclaw.httpx, "Client", CounterHttp)
+    count = OpenClawClient().count_chat_tokens([
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "my spend"},
+        {"role": "assistant", "tool_calls": [{"id": "t", "function": {
+            "name": "query_money", "arguments": '{"category":"food"}'}}]},
+        {"role": "tool", "tool_call_id": "t", "name": "query_money", "content": '{"total":12}'},
+    ], [{"type": "function", "function": {"name": "query_money",
+          "description": "Money", "parameters": {"type": "object"}}}])
+    assert count == 123
+    assert captured["thinking"]["type"] == "disabled"
+    assert captured["messages"][1]["content"][0]["input"] == {"category": "food"}
+    assert captured["messages"][2]["content"][0]["tool_use_id"] == "t"
+    assert captured["tools"][0]["input_schema"] == {"type": "object"}
+
+
+@pytest.mark.parametrize("finished", [True, False])
+def test_stream_requires_completion_marker_and_accepts_ask_budget(monkeypatch, finished):
+    import json
+    captured = {}
+    chunks = [{"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]}]
+    if finished:
+        chunks.append({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+    content = "\n".join("data: "+json.dumps(c) for c in chunks) + "\ndata: [DONE]\n"
+    class StreamHttp:
+        def __init__(self, timeout):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def stream(self, method, url, json, headers):
+            from contextlib import contextmanager
+            captured.update(json)
+            @contextmanager
+            def response():
+                yield httpx.Response(200, text=content, request=httpx.Request("POST", url))
+            return response()
+    monkeypatch.setattr(openclaw.httpx, "Client", StreamHttp)
+    stream = OpenClawClient().stream_chat([{"role": "user", "content": "Hi"}],
+                                          max_tokens=1024, enable_thinking=False)
+    if finished:
+        events = list(stream)
+        assert events[-1]["message"]["content"] == "Hello"
+    else:
+        with pytest.raises(openclaw.OpenClawUnavailable, match="completion marker"):
+            list(stream)
+    assert captured["max_tokens"] == 1024 and captured["enable_thinking"] is False
+
+
 def test_chat_caps_generation_tokens(monkeypatch):
     captured: dict = {}
 

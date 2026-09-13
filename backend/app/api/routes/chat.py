@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 @router.post("", response_model=ChatResponse)
 def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
-    """Ask LifeOS a question. The answer is grounded in your data and cites metrics."""
+    """Ask Qwen, optionally retrieving personal evidence through tools."""
     return ChatService(db).ask(req)
 
 
@@ -37,9 +37,10 @@ def stream_chat(req: ChatRequest, db: Session = Depends(get_db)) -> StreamingRes
 
 
 @router.get("/suggestions", response_model=SuggestionsResponse)
-def suggestions(days: int = 30, db: Session = Depends(get_db)) -> SuggestionsResponse:
-    """Data-grounded starter questions for the Ask screen (falls back to defaults)."""
-    return SuggestionsResponse(questions=ChatService(db).suggest(days))
+def suggestions(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)) -> SuggestionsResponse:
+    """Return cached model-generated starters; refresh in the background."""
+    from app.services.chat_suggestions import suggestions as cached_suggestions
+    return SuggestionsResponse(questions=cached_suggestions(db, days))
 
 
 @router.get("/health")
