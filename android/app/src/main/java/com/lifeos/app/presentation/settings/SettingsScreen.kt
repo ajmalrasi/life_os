@@ -21,7 +21,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Refresh
@@ -66,7 +65,6 @@ private data class MailDisconnectPrompt(
 
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -100,14 +98,7 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back",
-                    tint = LifeOsColors.OnBackground,
-                )
-            }
-            Column(modifier = Modifier.padding(start = 4.dp)) {
+            Column {
                 Text("Settings", style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "Connection and quiet automation.",

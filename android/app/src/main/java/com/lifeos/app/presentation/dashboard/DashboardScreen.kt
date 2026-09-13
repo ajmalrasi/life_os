@@ -93,7 +93,9 @@ fun DashboardScreen(
             )
         }
 
-        // Historical trend graph with metric toggle, the heart of the redesign.
+        // Put the actionable daily readings ahead of the longer history.
+        item { SectionHeader("Your vitals") }
+        item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
         item { TrendChart(history = state.scoreHistory) }
 
         // Why-this-state explanation, only when the model gives a rationale.
@@ -117,9 +119,6 @@ fun DashboardScreen(
             }
         }
 
-        // All five vitals, grouped. Tap a row for its detail + trend.
-        item { SectionHeader("Today's vitals") }
-        item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
 
         if (state.message != null) {
             item {

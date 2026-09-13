@@ -1,6 +1,9 @@
 package com.lifeos.app.presentation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -11,6 +14,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
@@ -20,12 +25,14 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -89,13 +97,16 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
     val scope = rememberCoroutineScope()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    val previousRoute = currentBackStackEntry?.let {
+        navController.previousBackStackEntry?.destination?.route
+    }
     var moneyOverviewRequest by remember { mutableStateOf(0L) }
 
     val navigateTo: (Destination) -> Unit = { destination ->
         navController.navigate(destination.route) {
-            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            // Keep the page we came from so both visible and system Back retrace
+            // the user's journey, including Today -> Settings -> Today.
             launchSingleTop = true
-            restoreState = true
         }
         scope.launch { drawerState.close() }
     }
@@ -134,6 +145,15 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = LifeOsColors.Background,
+            topBar = {
+                if (previousRoute != null) {
+                    LifeOsBackBar(
+                        previousLabel = Destination.entries.firstOrNull { it.route == previousRoute }?.label,
+                        onBack = { navController.popBackStack() },
+                        onOpenNavigation = { scope.launch { drawerState.open() } },
+                    )
+                }
+            },
         ) { contentPadding ->
             NavHost(
                 navController = navController,
@@ -143,6 +163,8 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
                 composable(Destination.MONEY.route) {
                     MoneyScreen(
                         overviewRequestId = moneyOverviewRequest,
+                        showNavigationButton = previousRoute == null,
+                        navigationDrawerOpen = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open,
                         onOpenNavigation = { scope.launch { drawerState.open() } },
                         onOpenStatement = { id -> navController.navigate("statement/$id") },
                         onOpenCurrentCycle = { bank, cardLast4 ->
@@ -160,7 +182,7 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
                 composable(Destination.INSIGHTS.route) { InsightsScreen() }
                 composable(Destination.CHAT.route) { ChatScreen() }
                 composable(Destination.SETTINGS.route) {
-                    SettingsScreen(onBack = { navController.popBackStack() })
+                    SettingsScreen()
                 }
                 composable(
                     route = STATEMENT_DETAILS_ROUTE,
@@ -181,9 +203,36 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
                     route = PRIORITY_DETAILS_ROUTE,
                     arguments = listOf(navArgument("itemId") { type = NavType.IntType }),
                 ) {
-                    PriorityDetailsScreen(onBack = { navController.popBackStack() })
+                    PriorityDetailsScreen()
                 }
             }
+        }
+    }
+    // Register after the page handlers: Back dismisses an open/opening drawer
+    // before it can change a Money section or pop a destination.
+    BackHandler(enabled = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open) {
+        scope.launch { drawerState.close() }
+    }
+}
+
+/** Outside the scrolling page, so Back is available even in long detail views. */
+@Composable
+private fun LifeOsBackBar(previousLabel: String?, onBack: () -> Unit, onOpenNavigation: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+            Text(
+                text = previousLabel?.let { "Back to $it" } ?: "Back",
+                modifier = Modifier.padding(start = 8.dp),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onOpenNavigation) {
+            Icon(Icons.Rounded.Menu, contentDescription = "Open navigation drawer")
         }
     }
 }

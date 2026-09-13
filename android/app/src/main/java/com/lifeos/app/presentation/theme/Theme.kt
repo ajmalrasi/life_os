@@ -148,20 +148,20 @@ private val DarkScheme = darkColorScheme(
     tertiary = Color(0xFF66C3D2),
 )
 
-// Serif for display + headlines (Claude's editorial voice); clean sans for the rest.
+// A consistent sans-serif hierarchy; tabular figures keep amounts easy to compare.
 private val LifeOsTypography = Typography(
-    headlineLarge = TextStyle(fontFamily = FontFamily.Serif, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-    headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontSize = 22.sp, fontWeight = FontWeight.Bold),
+    headlineLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp),
+    headlineMedium = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 22.sp, fontWeight = FontWeight.Bold),
     titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp),
+    titleSmall = TextStyle(fontFeatureSettings = "tnum", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp),
     bodyLarge = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
     labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.5.sp),
     labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
-    displaySmall = TextStyle(fontFamily = FontFamily.Serif, fontSize = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
+    displaySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontFeatureSettings = "tnum", fontSize = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
 )
 
 @Composable

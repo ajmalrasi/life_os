@@ -16,14 +16,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -69,7 +67,6 @@ fun StatementDetailsScreen(
                 details = state.details!!,
                 error = state.error,
                 savingPaid = state.savingPaid,
-                onBack = onBack,
                 onTogglePaid = viewModel::togglePaid,
             )
             else -> StatementLoadError(
@@ -86,7 +83,6 @@ private fun StatementDetailsContent(
     details: CardStatementDetails,
     error: String?,
     savingPaid: Boolean,
-    onBack: () -> Unit,
     onTogglePaid: () -> Unit,
 ) {
     val statement = details.statement
@@ -117,9 +113,6 @@ private fun StatementDetailsContent(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to Money")
-                }
                 Column {
                     Text("Card statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(

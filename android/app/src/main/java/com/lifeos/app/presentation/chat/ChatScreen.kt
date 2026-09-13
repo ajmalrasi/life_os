@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,8 +36,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Brush
@@ -54,7 +63,6 @@ import com.lifeos.app.presentation.theme.LifeOsColors
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val fieldColors = lifeOsFieldColors()
-    val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
     // Submit + drop focus so the soft keyboard dismisses (it used to linger,
@@ -62,15 +70,6 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     fun submit() {
         viewModel.send()
         focusManager.clearFocus()
-    }
-
-    // Keep the newest message / "Thinking…" in view near the input instead of
-    // stranded at the top.
-    val waitingForFirstToken = state.sending && state.messages.lastOrNull()?.role == "user"
-    val itemCount = state.messages.size + if (waitingForFirstToken) 1 else 0
-    val lastContentLength = state.messages.lastOrNull()?.content?.length ?: 0
-    LaunchedEffect(itemCount, lastContentLength) {
-        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
     }
 
     Column(
@@ -82,37 +81,16 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         ScreenHeader("Ask LifeOS", "Ask about your life, or anything else.")
         Spacer(Modifier.height(16.dp))
 
-        LazyColumn(
-            state = listState,
+        StreamingMessageList(
+            messages = state.messages,
+            sending = state.sending,
+            status = state.status,
+            suggestions = state.suggestions,
+            onSuggestion = { viewModel.send(it) },
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            // Empty: lay the prompts out from the top. In a conversation: anchor
-            // the thread to the bottom so new messages rise from the input.
-            verticalArrangement = if (state.messages.isEmpty()) {
-                Arrangement.spacedBy(12.dp)
-            } else {
-                Arrangement.spacedBy(12.dp, Alignment.Bottom)
-            },
-        ) {
-            if (state.messages.isEmpty()) {
-                item { EmptyState() }
-                if (state.suggestions.isNotEmpty()) item {
-                    Text(
-                        "TRY ASKING",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = LifeOsColors.OnSurfaceMuted,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                    )
-                }
-                items(state.suggestions) { s ->
-                    SuggestionRow(text = s, onClick = { viewModel.send(s) })
-                }
-            }
-            items(state.messages) { MessageBubble(it) }
-            if (waitingForFirstToken) {
-                item { TypingIndicator(state.status.ifBlank { "Thinking" }) }
-            }
-        }
+        )
 
+        val waitingForFirstToken = state.sending && state.messages.lastOrNull()?.role == "user"
         if (state.sending && !waitingForFirstToken && state.status.isNotBlank()) {
             Text(state.status, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
         }
@@ -153,6 +131,117 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                     tint = LifeOsColors.OnPrimary,
                     modifier = Modifier.size(22.dp),
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Follows the growing bottom edge of a streamed assistant reply. A LazyColumn
+ * item can become taller than the viewport; scrolling merely to that item's
+ * index leaves its newest text below the screen, so each update scrolls to the
+ * list's true maximum instead. A user drag pauses following until they return
+ * to the bottom or tap the affordance.
+ */
+@Composable
+internal fun StreamingMessageList(
+    messages: List<ChatMessage>,
+    sending: Boolean,
+    status: String,
+    suggestions: List<String> = emptyList(),
+    onSuggestion: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    val waitingForFirstToken = sending && messages.lastOrNull()?.role == "user"
+    val itemCount = messages.size + if (waitingForFirstToken) 1 else 0
+    val lastContentLength = messages.lastOrNull()?.content?.length ?: 0
+    var followLatest by remember { mutableStateOf(true) }
+    val userScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) followLatest = false
+                return Offset.Zero
+            }
+        }
+    }
+
+    fun isAtBottom(): Boolean {
+        val layout = listState.layoutInfo
+        val last = layout.visibleItemsInfo.lastOrNull() ?: return true
+        return last.index == layout.totalItemsCount - 1 &&
+            last.offset + last.size <= layout.viewportEndOffset + 8
+    }
+
+    LaunchedEffect(sending) {
+        if (sending) followLatest = true
+    }
+    LaunchedEffect(itemCount, lastContentLength, followLatest) {
+        if (followLatest && itemCount > 0) {
+            // Wait until the streamed text has been measured, then request an
+            // offset beyond its end. LazyColumn clamps it to the true maximum,
+            // including within one very tall Markdown message.
+            withFrameNanos { }
+            listState.scrollToItem(itemCount - 1, Int.MAX_VALUE)
+        }
+    }
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress && !followLatest && isAtBottom()) {
+            followLatest = true
+        }
+    }
+
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().nestedScroll(userScrollConnection),
+            verticalArrangement = if (messages.isEmpty()) {
+                Arrangement.spacedBy(12.dp)
+            } else {
+                Arrangement.spacedBy(12.dp, Alignment.Bottom)
+            },
+        ) {
+            if (messages.isEmpty()) {
+                item { EmptyState() }
+                if (suggestions.isNotEmpty()) item {
+                    Text(
+                        "TRY ASKING",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LifeOsColors.OnSurfaceMuted,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                    )
+                }
+                items(suggestions) { suggestion ->
+                    SuggestionRow(text = suggestion, onClick = { onSuggestion(suggestion) })
+                }
+            }
+            items(messages) { MessageBubble(it) }
+            if (waitingForFirstToken) {
+                item { TypingIndicator(status.ifBlank { "Thinking" }) }
+            }
+        }
+
+        if (messages.isNotEmpty() && !followLatest) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)
+                    .clickable { followLatest = true },
+                shape = RoundedCornerShape(50),
+                color = LifeOsColors.Primary,
+                shadowElevation = 4.dp,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.ArrowDownward,
+                        contentDescription = null,
+                        tint = LifeOsColors.OnPrimary,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Jump to latest", style = MaterialTheme.typography.labelMedium, color = LifeOsColors.OnPrimary)
+                }
             }
         }
     }

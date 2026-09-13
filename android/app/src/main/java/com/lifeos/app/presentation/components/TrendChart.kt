@@ -4,9 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,9 +15,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.runtime.saveable.rememberSaveable
+import java.time.LocalDate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,66 +105,64 @@ private fun TrendMetric.valueOf(score: DailyScore): Double? = when (this) {
  */
 @Composable
 fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
-    var metric by remember { mutableStateOf(TrendMetric.OVERALL) }
-    var range by remember { mutableStateOf(TrendRange.MONTH) }
+    var metric by rememberSaveable { mutableStateOf(TrendMetric.OVERALL) }
+    var range by rememberSaveable { mutableStateOf(TrendRange.MONTH) }
+    var showMetrics by remember { mutableStateOf(false) }
     val color = metric.color()
 
-    // Chronological order for plotting (state holds newest-first), then sliced
-    // to the selected look-back window.
+    // Calendar-day slots preserve real gaps, rather than joining unrelated days.
     val chrono = remember(history, range) {
-        history.reversed().takeLast(range.days)
+        val end = history.maxOfOrNull { it.day } ?: LocalDate.now()
+        List(range.days) { end.minusDays((range.days - 1 - it).toLong()) }
     }
-    val values = chrono.map { metric.valueOf(it) }
+    val byDay = remember(history) { history.associateBy { it.day } }
+    val values = chrono.map { day -> byDay[day]?.let { metric.valueOf(it) } }
     val present = values.filterNotNull()
 
     val current = present.lastOrNull()
     val avg = if (present.isNotEmpty()) present.average() else null
-    val delta = if (present.size >= 2) present.last() - present[present.size - 2] else null
 
     // The headline value is the most recent reading in the window. When that
     // reading is NOT the window's latest day (e.g. today has no sleep yet, but an
     // earlier night does), the number is stale. Flag it so it doesn't read as
     // "today's score". `lastDataIdx` is the slot of that reading in `chrono`.
     val lastDataIdx = values.indexOfLast { it != null }
-    val latestDay = chrono.getOrNull(lastDataIdx)?.day
-    val isStale = lastDataIdx in 0 until values.lastIndex
+    val latestDay = chrono.getOrNull(lastDataIdx)
+    val isStale = latestDay != null && (lastDataIdx < values.lastIndex || latestDay < LocalDate.now())
 
     LifeOsCard(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            // Header: title + current value + delta vs previous reading.
-            Row(verticalAlignment = Alignment.Bottom) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "TREND · ${range.label}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LifeOsColors.OnSurfaceMuted,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${metric.label} score",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = LifeOsColors.OnBackground,
-                    )
-                }
-                if (current != null) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            current.roundToInt().toString(),
-                            style = MaterialTheme.typography.displaySmall,
-                            // Mute the number when it's an older reading so it no
-                            // longer reads as the current/today score.
-                            color = if (isStale) LifeOsColors.OnSurfaceMuted else color,
-                        )
-                        when {
-                            delta != null -> DeltaPill(delta)
-                            isStale && latestDay != null -> Text(
-                                "latest · ${formatShort(latestDay)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = LifeOsColors.OnSurfaceMuted,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Trends",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Box {
+                    TextButton(onClick = { showMetrics = true }) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+                        Spacer(Modifier.width(6.dp))
+                        Text(metric.label)
+                        Icon(Icons.Rounded.ExpandMore, contentDescription = "Choose metric")
+                    }
+                    DropdownMenu(expanded = showMetrics, onDismissRequest = { showMetrics = false }) {
+                        TrendMetric.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                onClick = { metric = option; showMetrics = false },
                             )
                         }
                     }
                 }
+            }
+            // The overall score already appears above; keep context for other
+            // metrics and always identify an older reading by its date.
+            if (current != null && latestDay != null && (metric != TrendMetric.OVERALL || isStale)) {
+                Text(
+                    "Latest ${current.roundToInt()} · ${formatShort(latestDay)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
             }
 
             // Range selector: segmented control for the look-back window.
@@ -180,26 +185,9 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                 }
             }
 
-            // Metric toggle chips.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TrendMetric.entries.forEach { m ->
-                    MetricChip(
-                        label = m.label,
-                        color = m.color(),
-                        selected = m == metric,
-                        onClick = { metric = m },
-                    )
-                }
-            }
-
             if (present.isEmpty()) {
                 Box(
-                    Modifier.fillMaxWidth().height(176.dp),
+                    Modifier.fillMaxWidth().height(152.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -224,7 +212,7 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                         "${range.days} days. A trend line needs 2+."
                 }
                 Box(
-                    Modifier.fillMaxWidth().height(176.dp),
+                    Modifier.fillMaxWidth().height(152.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
@@ -253,7 +241,7 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                 }
             } else {
                 // Y-axis labels + plot area.
-                Row(modifier = Modifier.fillMaxWidth().height(176.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().height(152.dp)) {
                     Column(
                         modifier = Modifier.fillMaxHeight().padding(end = 8.dp),
                         verticalArrangement = Arrangement.SpaceBetween,
@@ -278,13 +266,13 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                 // X-axis range labels.
                 Row(modifier = Modifier.fillMaxWidth().padding(start = 28.dp)) {
                     Text(
-                        chrono.firstOrNull()?.day?.let { formatShort(it) } ?: "",
+                        chrono.firstOrNull()?.let { formatShort(it) } ?: "",
                         style = MaterialTheme.typography.labelSmall,
                         color = LifeOsColors.ChartAxisText,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "Today",
+                        chrono.lastOrNull()?.let { if (it == LocalDate.now()) "Today" else formatShort(it) } ?: "",
                         style = MaterialTheme.typography.labelSmall,
                         color = LifeOsColors.ChartAxisText,
                     )
@@ -406,7 +394,8 @@ private fun RangeSegment(
         modifier = modifier
             .clip(shape)
             .background(if (selected) LifeOsColors.Surface else Color.Transparent)
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .heightIn(min = 44.dp)
             .padding(vertical = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -420,53 +409,13 @@ private fun RangeSegment(
 }
 
 @Composable
-private fun MetricChip(label: String, color: Color, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(50)
-    Row(
-        modifier = Modifier
-            .clip(shape)
-            .background(if (selected) color.copy(alpha = 0.12f) else LifeOsColors.SurfaceMuted)
-            .border(1.dp, if (selected) color else Color.Transparent, shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(6.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) color else LifeOsColors.OnSurfaceMuted,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
-private fun DeltaPill(delta: Double) {
-    val up = delta >= 0
-    val c = if (up) LifeOsColors.ScoreHigh else LifeOsColors.ScoreLow
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            (if (up) "▲ " else "▼ ") + "%.0f".format(kotlin.math.abs(delta)),
-            style = MaterialTheme.typography.labelMedium,
-            color = c,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-@Composable
 private fun StatChip(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(LifeOsColors.SurfaceMuted)
-            .padding(vertical = 10.dp),
+        modifier = modifier.padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(value, style = MaterialTheme.typography.titleMedium, color = LifeOsColors.OnBackground, fontWeight = FontWeight.Bold)
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
     }
 }
 

@@ -432,10 +432,7 @@ fun WeeklyTrendCard(
     }
 }
 
-/**
- * Top-of-dashboard focal point: the composite Life Score for today, its day-over-day
- * delta, and the inferred current state in one gradient hero so the eye lands here first.
- */
+/** Compact daily summary; blue provides emphasis without a bright filled panel. */
 @Composable
 fun LifeScoreHero(
     score: Double?,
@@ -444,75 +441,41 @@ fun LifeScoreHero(
     confidence: Int?,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(26.dp)
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(5.dp, shape, ambientColor = LifeOsColors.Primary.copy(alpha = 0.18f), spotColor = LifeOsColors.Primary.copy(alpha = 0.18f))
-            .clip(shape)
-            .background(
-                Brush.linearGradient(
-                    listOf(LifeOsColors.Primary, LifeOsColors.AccentSky),
-                ),
-            )
-            .padding(22.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                "TODAY'S LIFE SCORE",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.8f),
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = score?.let { kotlin.math.round(it).toInt().toString() } ?: "N/A",
-                    fontSize = 56.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "/100",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-                Spacer(Modifier.weight(1f))
-                if (delta != null) {
-                    val up = delta >= 0
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = Color.White.copy(alpha = 0.18f),
-                        modifier = Modifier.padding(bottom = 12.dp),
-                    ) {
+    LifeOsCard(modifier = modifier, accent = LifeOsColors.Primary) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Life score", style = MaterialTheme.typography.labelLarge, color = LifeOsColors.OnSurfaceMuted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = score?.let { kotlin.math.round(it).toInt().toString() } ?: "N/A",
+                        style = MaterialTheme.typography.displaySmall,
+                        color = LifeOsColors.Primary,
+                    )
+                    Text(
+                        " / 100",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LifeOsColors.OnSurfaceMuted,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
+                Spacer(Modifier.width(18.dp))
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        buildString {
+                            append(stateLabel)
+                            if (confidence != null) append(" · $confidence%")
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LifeOsColors.OnBackground,
+                    )
+                    if (delta != null) {
                         Text(
-                            (if (up) "▲ " else "▼ ") + "${kotlin.math.abs(delta).toInt()} vs yesterday",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            (if (delta >= 0) "↑ " else "↓ ") + "${kotlin.math.abs(delta).toInt()} vs yesterday",
                             style = MaterialTheme.typography.labelMedium,
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
+                            color = LifeOsColors.OnSurfaceMuted,
                         )
                     }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.16f))
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-            ) {
-                Text(
-                    buildString {
-                        append("◆  ")
-                        append(stateLabel)
-                        if (confidence != null) append("  ·  $confidence%")
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                )
             }
         }
     }

@@ -645,6 +645,41 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Android navigation and spending UI pass (2026-09-11, extended 2026-09-13).** A shared, fixed
+  back bar now covers every non-root route, including loading/error states and
+  long statement/Priority detail pages. In-app drawer navigation preserves the
+  actual previous route; do not reinstate `popUpTo(Money)` for ordinary screen
+  changes, which broke Today -> Settings -> Back. External widget/notification
+  routing retains its explicit home-stack behavior. Root Money Transactions and
+  Cards return to Overview through either the visible arrow or Android Back;
+  an open drawer or modal gets Back first. Money's header/tabs are fixed, with
+  separate remembered scroll positions per section. Today uses a compact neutral
+  score card, vitals before history, a metric dropdown, and calendar-day chart
+  slots with explicit stale dates. Money Overview shows a five-category preview
+  and a **View all** bottom sheet containing every category, including long
+  labels. Its interactive spending chart follows the selected range: daily bars
+  for week/month, seven-day buckets for six months, and calendar-month bars for
+  year. Day and custom-range views stay uncluttered without a chart. Overview's
+  chart, total, recent activity, and categories use the same period/source/EMI
+  subset; transaction-category drill-down filters apply only to Transactions.
+  Statement/cycle accounting is unchanged. Builds, 23 unit tests, and all 11
+  Compose device tests pass. The debug APK is installed and the top-five list,
+  all-category sheet, and year chart were visually verified against real data on
+  Samsung `RZCX60SNHHE`. Test APKs can be installed with `adb install -r` and run
+  using `am instrument`, avoiding a runner cleanup that uninstalls the user app.
+
+- **Ask streaming follows the newest text (2026-09-13).** A streamed assistant
+  response is one growing `LazyColumn` item, so scrolling only to its item index
+  left the viewport near the item's beginning once it exceeded one screen. The
+  Ask list now waits for the new text to be measured and scrolls to the list's
+  true maximum offset. A user drag pauses automatic following so earlier text
+  remains readable; a floating **Jump to latest** action resumes it. The Compose
+  regression test grows a reply past the viewport and covers follow, pause, and
+  resume. It passes within the full 11-test device suite. A long live Qwen essay
+  was also verified on Samsung `RZCX60SNHHE`: new paragraphs remained visible
+  during generation, manual scrolling exposed the jump action, and tapping it
+  returned to the response tail.
+
 - **UI pass in Android Studio** (the user has a list of visual issues). Done so
   far: the two unbuilt files (built/verified), the Sleep trend stale-headline +
   sparse-state fix, and the Ask-tab Enter fix. More UI issues likely to come from

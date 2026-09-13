@@ -4,12 +4,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.money.MoneySection
+import com.lifeos.app.presentation.money.SpendTrendChart
+import com.lifeos.app.presentation.components.TrendChart
+import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.presentation.money.MoneySectionTabs
 import com.lifeos.app.presentation.money.PeriodSelector
 import com.lifeos.app.presentation.money.SpendPeriod
@@ -123,6 +128,45 @@ class MoneyFirstUiTest {
 
         compose.onNodeWithText("Highest amount").performClick()
         compose.runOnIdle { assertEquals(TransactionSort.HIGHEST, selected) }
+    }
+
+    @Test
+    fun daily_chart_can_select_empty_and_recorded_days() {
+        compose.setContent {
+            LifeOsTheme {
+                SpendTrendChart(
+                    transactions = listOf(transaction().copy(txnDate = LocalDate.of(2020, 2, 2))),
+                    period = SpendPeriod.MONTH,
+                    start = LocalDate.of(2020, 2, 1),
+                    end = LocalDate.of(2020, 2, 29),
+                )
+            }
+        }
+        compose.onNodeWithText("₹1,250").assertIsDisplayed()
+        compose.onNodeWithText("Sun, 2 Feb").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Previous period").performClick()
+        compose.onNodeWithText("₹0").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next period").performClick()
+        compose.onNodeWithText("₹1,250").assertIsDisplayed()
+    }
+
+    @Test
+    fun trend_metric_picker_keeps_sparse_readings_dated() {
+        val today = LocalDate.now()
+        compose.setContent {
+            LifeOsTheme {
+                TrendChart(listOf(
+                    DailyScore(today, null, 60.0, null, null, null),
+                    DailyScore(today.minusDays(2), 72.0, null, null, null, null),
+                ))
+            }
+        }
+        compose.onNodeWithText("Overall").performClick()
+        compose.onNodeWithText("Sleep").performClick()
+        compose.onNodeWithText("Latest 72 ·", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Only one day with sleep data", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("1D").performClick()
+        compose.onNodeWithText("No sleep data in this range yet.", substring = true).assertIsDisplayed()
     }
 
     private fun transaction() = Transaction(

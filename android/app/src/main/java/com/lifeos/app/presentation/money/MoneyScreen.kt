@@ -1,5 +1,6 @@
 package com.lifeos.app.presentation.money
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -25,7 +26,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -77,6 +80,7 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -108,6 +112,8 @@ private fun BigDecimal.rupees(): String {
     }
     return (if (negative) "-₹" else "₹") + grouped
 }
+
+internal fun formatSpendAmount(amount: BigDecimal): String = amount.rupees()
 
 private val CURRENCY_SYMBOLS = mapOf("INR" to "₹", "USD" to "$", "EUR" to "€", "GBP" to "£")
 
@@ -274,6 +280,8 @@ internal fun sortTransactions(
 fun MoneyScreen(
     overviewRequestId: Long = 0L,
     onOpenNavigation: () -> Unit = {},
+    showNavigationButton: Boolean = true,
+    navigationDrawerOpen: Boolean = false,
     onOpenStatement: (Int) -> Unit = {},
     onOpenCurrentCycle: (String, String) -> Unit = { _, _ -> },
     viewModel: MoneyViewModel = hiltViewModel(),
@@ -283,8 +291,16 @@ fun MoneyScreen(
     var showPeriodMenu by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
     var showSort by remember { mutableStateOf(false) }
+    var showAllCategories by remember { mutableStateOf(false) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val sectionScrollStates = MoneySection.entries.map { rememberLazyListState() }
+
+    // A root Money section has an in-app way home as well as Android Back.
+    // Modal sheets/dialogs declared below retain first refusal on Back.
+    BackHandler(enabled = showNavigationButton && !navigationDrawerOpen && state.section != MoneySection.OVERVIEW) {
+        viewModel.setSection(MoneySection.OVERVIEW)
+    }
 
     LaunchedEffect(overviewRequestId) {
         if (overviewRequestId != 0L) viewModel.setSection(MoneySection.OVERVIEW)
@@ -346,15 +362,18 @@ fun MoneyScreen(
     val total = remember(spendTxns) {
         spendTxns.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
     }
-    val byCategory = remember(spendTxns) {
-        spendTxns.groupBy { it.spendCategory!! }
+    val overviewTotal = remember(sliceBeforeCategory) {
+        sliceBeforeCategory.fold(BigDecimal.ZERO) { sum, txn -> sum + txn.amount }
+    }
+    val byCategory = remember(sliceBeforeCategory) {
+        sliceBeforeCategory.groupBy { it.spendCategory!! }
             .map { (cat, list) -> CategoryTotal(cat, list.fold(BigDecimal.ZERO) { a, t -> a + t.amount }, list.size) }
             .sortedByDescending { it.total }
     }
     val canGoNext = state.period != SpendPeriod.CUSTOM && slice.end.isBefore(LocalDate.now())
     val canGoPrev = state.period != SpendPeriod.CUSTOM
-    val recentTransactions = remember(spendTxns) {
-        sortTransactions(spendTxns, TransactionSort.RECENT).take(5)
+    val recentTransactions = remember(sliceBeforeCategory) {
+        sortTransactions(sliceBeforeCategory, TransactionSort.RECENT).take(5)
     }
     val orderedTransactions = remember(spendTxns, state.transactionSort) {
         sortTransactions(spendTxns, state.transactionSort)
@@ -366,15 +385,15 @@ fun MoneyScreen(
             emptyMap()
         }
     }
-    val todayTotal = remember(categoryFilteredTransactions) {
+    val todayTotal = remember(emiFilteredTransactions) {
         val today = LocalDate.now()
-        categoryFilteredTransactions.filter { it.txnDate == today }
+        emiFilteredTransactions.filter { it.txnDate == today }
             .fold(BigDecimal.ZERO) { sum, transaction -> sum + transaction.amount }
     }
     val previousSlice = remember(state.period, slice) { previousPeriodSlice(state.period, slice) }
-    val previousTotal = remember(categoryFilteredTransactions, previousSlice) {
+    val previousTotal = remember(emiFilteredTransactions, previousSlice) {
         previousSlice?.let { previous ->
-            categoryFilteredTransactions.filter {
+            emiFilteredTransactions.filter {
                 !it.txnDate.isBefore(previous.start) && !it.txnDate.isAfter(previous.end)
             }.fold(BigDecimal.ZERO) { sum, transaction -> sum + transaction.amount }
         }
@@ -416,6 +435,20 @@ fun MoneyScreen(
                 showSort = false
             },
             onDismiss = { showSort = false },
+        )
+    }
+
+    if (showAllCategories) {
+        AllCategoriesSheet(
+            categories = byCategory,
+            total = overviewTotal,
+            onSelect = { category ->
+                showAllCategories = false
+                viewModel.clearCategoryFilter()
+                viewModel.toggleCategoryFilter(category)
+                viewModel.setSection(MoneySection.TRANSACTIONS)
+            },
+            onDismiss = { showAllCategories = false },
         )
     }
 
@@ -511,211 +544,238 @@ fun MoneyScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
-        ) {
-            item {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(Modifier.padding(horizontal = 20.dp)) {
                 MoneyTopBar(
                     lastSyncAt = state.lastSyncAt,
                     onOpenNavigation = onOpenNavigation,
+                    showNavigationButton = showNavigationButton,
+                    onBackToOverview = if (state.section != MoneySection.OVERVIEW) {
+                        { viewModel.setSection(MoneySection.OVERVIEW) }
+                    } else null,
                 )
+                MoneySectionTabs(selected = state.section, onSelect = viewModel::setSection)
+                Spacer(Modifier.height(16.dp))
             }
-            item {
-                MoneySectionTabs(
-                    selected = state.section,
-                    onSelect = viewModel::setSection,
-                )
-                Spacer(Modifier.height(18.dp))
-            }
-
-            state.error?.let { error ->
-                item {
-                    CachedDataBanner(error)
-                    Spacer(Modifier.height(14.dp))
+            LazyColumn(
+                state = sectionScrollStates[state.section.ordinal],
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                state.error?.let { error ->
+                    item {
+                        CachedDataBanner(error)
+                        Spacer(Modifier.height(14.dp))
+                    }
                 }
-            }
 
-            if (state.loading && state.transactions.isEmpty()) {
-                item { MoneyLoadingState() }
-            } else {
-                when (state.section) {
-                    MoneySection.OVERVIEW -> {
-                        item {
-                            PeriodSelector(
-                                label = periodLabel(state.period, state.anchor, slice),
-                                expanded = showPeriodMenu,
-                                canGoPrev = canGoPrev,
-                                canGoNext = canGoNext,
-                                onToggleMenu = { showPeriodMenu = !showPeriodMenu },
-                                onDismissMenu = { showPeriodMenu = false },
-                                onSelectPeriod = { period ->
-                                    showPeriodMenu = false
-                                    if (period == SpendPeriod.CUSTOM) showRangePicker = true
-                                    else viewModel.setPeriod(period)
-                                },
-                                onPrev = viewModel::prevPeriod,
-                                onNext = viewModel::nextPeriod,
-                            )
-                            Spacer(Modifier.height(10.dp))
-                        }
-                        item {
-                            OverviewSpendCard(
-                                total = total,
-                                transactionCount = spendTxns.size,
-                                todayTotal = todayTotal,
-                                previousTotal = previousTotal,
-                                period = state.period,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                        }
-                        if (state.cardDues.isNotEmpty()) {
+                if (state.loading && state.transactions.isEmpty()) {
+                    item { MoneyLoadingState() }
+                } else {
+                    when (state.section) {
+                        MoneySection.OVERVIEW -> {
                             item {
-                                UpcomingBillsRow(
-                                    totalDue = state.totalDue ?: BigDecimal.ZERO,
-                                    cards = state.cardDues,
-                                    onClick = { viewModel.setSection(MoneySection.CARDS) },
+                                PeriodSelector(
+                                    label = periodLabel(state.period, state.anchor, slice),
+                                    expanded = showPeriodMenu,
+                                    canGoPrev = canGoPrev,
+                                    canGoNext = canGoNext,
+                                    onToggleMenu = { showPeriodMenu = !showPeriodMenu },
+                                    onDismissMenu = { showPeriodMenu = false },
+                                    onSelectPeriod = { period ->
+                                        showPeriodMenu = false
+                                        if (period == SpendPeriod.CUSTOM) showRangePicker = true
+                                        else viewModel.setPeriod(period)
+                                    },
+                                    onPrev = viewModel::prevPeriod,
+                                    onNext = viewModel::nextPeriod,
                                 )
+                                Spacer(Modifier.height(10.dp))
+                            }
+                            item {
+                                OverviewSpendCard(
+                                    total = overviewTotal,
+                                    transactionCount = sliceBeforeCategory.size,
+                                    scopeLabel = listOfNotNull(
+                                        if (state.includeEmi) "EMI included" else "EMI excluded",
+                                        state.bankUpiFilter?.let { key ->
+                                            bankUpiAccounts.firstOrNull { it.key == key }?.label ?: "Bank UPI"
+                                        },
+                                    ).joinToString(" · "),
+                                    todayTotal = todayTotal,
+                                    previousTotal = previousTotal,
+                                    period = state.period,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                            }
+                            if (state.cardDues.isNotEmpty()) {
+                                item {
+                                    UpcomingBillsRow(
+                                        totalDue = state.totalDue ?: BigDecimal.ZERO,
+                                        cards = state.cardDues,
+                                        onClick = { viewModel.setSection(MoneySection.CARDS) },
+                                    )
+                                    Spacer(Modifier.height(24.dp))
+                                }
+                            } else {
+                                item { Spacer(Modifier.height(12.dp)) }
+                            }
+                            if (state.period in setOf(
+                                    SpendPeriod.WEEK,
+                                    SpendPeriod.MONTH,
+                                    SpendPeriod.SIX_MONTHS,
+                                    SpendPeriod.YEAR,
+                                )
+                            ) {
+                                item {
+                                    SpendTrendChart(
+                                        transactions = sliceBeforeCategory,
+                                        period = state.period,
+                                        start = slice.start,
+                                        end = slice.end,
+                                    )
+                                    Spacer(Modifier.height(24.dp))
+                                }
+                            }
+                            item {
+                                MoneySectionHeading(
+                                    title = "Recent activity",
+                                    subtitle = "Latest recorded spending",
+                                    action = "View all",
+                                    onAction = {
+                                        viewModel.clearCategoryFilter()
+                                        viewModel.setSection(MoneySection.TRANSACTIONS)
+                                    },
+                                )
+                                if (recentTransactions.isEmpty()) {
+                                    EmptyInlineMessage("No spend recorded for this period.")
+                                } else {
+                                    Column {
+                                        recentTransactions.forEach { transaction ->
+                                            TransactionRow(
+                                                txn = transaction,
+                                                onClick = { selectedTransaction = transaction },
+                                            )
+                                        }
+                                    }
+                                }
                                 Spacer(Modifier.height(24.dp))
                             }
-                        } else {
-                            item { Spacer(Modifier.height(12.dp)) }
+                            if (byCategory.isNotEmpty()) {
+                                item {
+                                    TopCategoriesSection(
+                                        categories = byCategory.take(5),
+                                        total = overviewTotal,
+                                        categoryCount = byCategory.size,
+                                        onViewAll = { showAllCategories = true },
+                                        onSelect = { category ->
+                                            viewModel.clearCategoryFilter()
+                                            viewModel.toggleCategoryFilter(category)
+                                            viewModel.setSection(MoneySection.TRANSACTIONS)
+                                        },
+                                    )
+                                }
+                            }
                         }
-                        item {
-                            MoneySectionHeading(
-                                title = "Recent activity",
-                                subtitle = "Latest recorded spending",
-                                action = "View all",
-                                onAction = { viewModel.setSection(MoneySection.TRANSACTIONS) },
-                            )
-                            if (recentTransactions.isEmpty()) {
-                                EmptyInlineMessage("No spend recorded for this period.")
-                            } else {
-                                Column {
-                                    recentTransactions.forEach { transaction ->
+
+                        MoneySection.TRANSACTIONS -> {
+                            item {
+                                TransactionListHeader(
+                                    label = periodLabel(state.period, state.anchor, slice),
+                                    transactionCount = spendTxns.size,
+                                    total = total,
+                                    filterCount = activeFilterCount,
+                                    sort = state.transactionSort,
+                                    onOpenSort = { showSort = true },
+                                    onOpenFilters = { showFilters = true },
+                                )
+                                if (activeFilterCount > 0) {
+                                    ActiveFiltersRow(
+                                        selectedCategories = filter,
+                                        bankUpiFilter = state.bankUpiFilter,
+                                        bankUpiAccounts = bankUpiAccounts,
+                                        includeEmi = state.includeEmi,
+                                        onClearCategories = viewModel::clearCategoryFilter,
+                                        onClearBank = { viewModel.setBankUpiFilter(null) },
+                                        onToggleEmi = viewModel::toggleIncludeEmi,
+                                    )
+                                }
+                                Spacer(Modifier.height(10.dp))
+                            }
+                            if (orderedTransactions.isEmpty()) {
+                                item { EmptyInlineMessage("No spend matches these filters.") }
+                            } else if (
+                                state.transactionSort == TransactionSort.HIGHEST ||
+                                state.transactionSort == TransactionSort.LOWEST
+                            ) {
+                                orderedTransactions.forEach { transaction ->
+                                    item(key = "transaction-${transaction.id}") {
                                         TransactionRow(
                                             txn = transaction,
                                             onClick = { selectedTransaction = transaction },
                                         )
                                     }
                                 }
-                            }
-                            Spacer(Modifier.height(24.dp))
-                        }
-                        if (byCategory.isNotEmpty()) {
-                            item {
-                                TopCategoriesSection(
-                                    categories = byCategory.take(5),
-                                    total = total,
-                                    onSelect = { category ->
-                                        viewModel.clearCategoryFilter()
-                                        viewModel.toggleCategoryFilter(category)
-                                        viewModel.setSection(MoneySection.TRANSACTIONS)
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    MoneySection.TRANSACTIONS -> {
-                        item {
-                            TransactionListHeader(
-                                label = periodLabel(state.period, state.anchor, slice),
-                                transactionCount = spendTxns.size,
-                                total = total,
-                                filterCount = activeFilterCount,
-                                sort = state.transactionSort,
-                                onOpenSort = { showSort = true },
-                                onOpenFilters = { showFilters = true },
-                            )
-                            if (activeFilterCount > 0) {
-                                ActiveFiltersRow(
-                                    selectedCategories = filter,
-                                    bankUpiFilter = state.bankUpiFilter,
-                                    bankUpiAccounts = bankUpiAccounts,
-                                    includeEmi = state.includeEmi,
-                                    onClearCategories = viewModel::clearCategoryFilter,
-                                    onClearBank = { viewModel.setBankUpiFilter(null) },
-                                    onToggleEmi = viewModel::toggleIncludeEmi,
-                                )
-                            }
-                            Spacer(Modifier.height(10.dp))
-                        }
-                        if (orderedTransactions.isEmpty()) {
-                            item { EmptyInlineMessage("No spend matches these filters.") }
-                        } else if (
-                            state.transactionSort == TransactionSort.HIGHEST ||
-                            state.transactionSort == TransactionSort.LOWEST
-                        ) {
-                            orderedTransactions.forEach { transaction ->
-                                item(key = "transaction-${transaction.id}") {
-                                    TransactionRow(
-                                        txn = transaction,
-                                        onClick = { selectedTransaction = transaction },
-                                    )
-                                }
-                            }
-                        } else {
-                            transactionGroups.forEach { (date, transactions) ->
-                                item {
-                                    TransactionDayGroup(
-                                        date = date,
-                                        transactions = transactions,
-                                        onSelectTransaction = { selectedTransaction = it },
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    MoneySection.CARDS -> {
-                        item {
-                            CardsSummary(
-                                billedTotal = state.totalDue ?: BigDecimal.ZERO,
-                                billedCount = state.cardDues.size,
-                                currentTotal = state.currentCardCycles.fold(BigDecimal.ZERO) { sum, cycle ->
-                                    sum + cycle.currentSpend
-                                },
-                            )
-                            Spacer(Modifier.height(24.dp))
-                        }
-                        item {
-                            MoneySectionHeading(
-                                title = "Already billed",
-                                subtitle = "Statements awaiting payment",
-                            )
-                            if (state.cardDues.isEmpty()) {
-                                EmptyInlineMessage("No card bills are currently due.")
                             } else {
-                                Column {
-                                    state.cardDues.forEach { card ->
-                                        BilledCardRow(card, onOpenStatement)
+                                transactionGroups.forEach { (date, transactions) ->
+                                    item {
+                                        TransactionDayGroup(
+                                            date = date,
+                                            transactions = transactions,
+                                            onSelectTransaction = { selectedTransaction = it },
+                                        )
                                     }
                                 }
                             }
-                            Spacer(Modifier.height(24.dp))
                         }
-                        item {
-                            MoneySectionHeading(
-                                title = "Current cycles",
-                                subtitle = "Spend since the latest statement",
-                            )
-                            if (state.currentCardCycles.isEmpty()) {
-                                EmptyInlineMessage("No current card-cycle data is available.")
-                            } else {
-                                Column {
-                                    state.currentCardCycles.forEach { cycle ->
-                                        CurrentCycleRow(cycle, onOpenCurrentCycle)
+
+                        MoneySection.CARDS -> {
+                            item {
+                                CardsSummary(
+                                    billedTotal = state.totalDue ?: BigDecimal.ZERO,
+                                    billedCount = state.cardDues.size,
+                                    currentTotal = state.currentCardCycles.fold(BigDecimal.ZERO) { sum, cycle ->
+                                        sum + cycle.currentSpend
+                                    },
+                                )
+                                Spacer(Modifier.height(24.dp))
+                            }
+                            item {
+                                MoneySectionHeading(
+                                    title = "Already billed",
+                                    subtitle = "Statements awaiting payment",
+                                )
+                                if (state.cardDues.isEmpty()) {
+                                    EmptyInlineMessage("No card bills are currently due.")
+                                } else {
+                                    Column {
+                                        state.cardDues.forEach { card ->
+                                            BilledCardRow(card, onOpenStatement)
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(24.dp))
+                            }
+                            item {
+                                MoneySectionHeading(
+                                    title = "Current cycles",
+                                    subtitle = "Spend since the latest statement",
+                                )
+                                if (state.currentCardCycles.isEmpty()) {
+                                    EmptyInlineMessage("No current card-cycle data is available.")
+                                } else {
+                                    Column {
+                                        state.currentCardCycles.forEach { cycle ->
+                                            CurrentCycleRow(cycle, onOpenCurrentCycle)
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+                item { Spacer(Modifier.height(36.dp)) }
             }
-            item { Spacer(Modifier.height(36.dp)) }
         }
         SnackbarHost(
             hostState = snackbarHostState,
@@ -745,36 +805,52 @@ private fun previousPeriodSlice(period: SpendPeriod, current: PeriodSlice): Peri
 private fun MoneyTopBar(
     lastSyncAt: Long?,
     onOpenNavigation: () -> Unit,
+    showNavigationButton: Boolean,
+    onBackToOverview: (() -> Unit)?,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            modifier = Modifier.size(44.dp).clickable(onClick = onOpenNavigation),
-            shape = RoundedCornerShape(14.dp),
-            color = LifeOsColors.SurfaceMuted,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Rounded.Menu,
-                    contentDescription = "Open navigation drawer",
-                    tint = LifeOsColors.OnBackground,
-                    modifier = Modifier.size(22.dp),
-                )
+        if (showNavigationButton) {
+            Surface(
+                modifier = Modifier.size(48.dp).clickable(onClick = onBackToOverview ?: onOpenNavigation),
+                shape = RoundedCornerShape(14.dp),
+                color = LifeOsColors.SurfaceMuted,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (onBackToOverview != null) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu,
+                        contentDescription = if (onBackToOverview != null) "Back to Overview" else "Open navigation drawer",
+                        tint = LifeOsColors.OnBackground,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
+            Spacer(Modifier.width(14.dp))
         }
-        Spacer(Modifier.width(14.dp))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Money", style = MaterialTheme.typography.headlineLarge, color = LifeOsColors.OnBackground)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(7.dp).clip(CircleShape).background(LifeOsColors.Positive))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(
+                    when {
+                        lastSyncAt == null -> LifeOsColors.OnSurfaceMuted
+                        System.currentTimeMillis() - lastSyncAt > Duration.ofDays(1).toMillis() -> LifeOsColors.Warning
+                        else -> LifeOsColors.Positive
+                    },
+                ))
                 Spacer(Modifier.width(7.dp))
                 Text(
                     syncFreshness(lastSyncAt),
                     style = MaterialTheme.typography.labelMedium,
                     color = LifeOsColors.OnSurfaceMuted,
                 )
+            }
+        }
+        if (showNavigationButton && onBackToOverview != null) {
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onOpenNavigation) {
+                Icon(Icons.Rounded.Menu, contentDescription = "Open navigation drawer")
             }
         }
     }
@@ -816,7 +892,7 @@ internal fun MoneySectionTabs(selected: MoneySection, onSelect: (MoneySection) -
             ) {
                 Text(
                     label,
-                    modifier = Modifier.padding(vertical = 9.dp),
+                    modifier = Modifier.heightIn(min = 44.dp).padding(vertical = 13.dp),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (active) LifeOsColors.Primary else LifeOsColors.OnSurfaceMuted,
@@ -840,7 +916,7 @@ internal fun PeriodSelector(
     onNext: () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onPrev, enabled = canGoPrev, modifier = Modifier.size(34.dp)) {
+        IconButton(onClick = onPrev, enabled = canGoPrev, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Rounded.ChevronLeft, contentDescription = "Previous period")
         }
         Box(modifier = Modifier.weight(1f)) {
@@ -865,7 +941,7 @@ internal fun PeriodSelector(
                 }
             }
         }
-        IconButton(onClick = onNext, enabled = canGoNext, modifier = Modifier.size(34.dp)) {
+        IconButton(onClick = onNext, enabled = canGoNext, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Rounded.ChevronRight, contentDescription = "Next period")
         }
     }
@@ -875,6 +951,7 @@ internal fun PeriodSelector(
 private fun OverviewSpendCard(
     total: BigDecimal,
     transactionCount: Int,
+    scopeLabel: String,
     todayTotal: BigDecimal,
     previousTotal: BigDecimal?,
     period: SpendPeriod,
@@ -895,6 +972,12 @@ private fun OverviewSpendCard(
                 fontWeight = FontWeight.Bold,
                 color = LifeOsColors.OnBackground,
                 modifier = Modifier.padding(top = 5.dp, bottom = 15.dp),
+            )
+            Text(
+                scopeLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.padding(bottom = 12.dp),
             )
             Box(Modifier.fillMaxWidth().height(1.dp).background(LifeOsColors.SurfaceBorder))
             Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
@@ -1017,32 +1100,84 @@ private fun MoneySectionHeading(
 private fun TopCategoriesSection(
     categories: List<CategoryTotal>,
     total: BigDecimal,
+    categoryCount: Int,
+    onViewAll: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    MoneySectionHeading("Top categories", "Share of spending")
+    MoneySectionHeading(
+        title = "Top categories",
+        subtitle = "$categoryCount categories · Tap to see transactions",
+        action = if (categoryCount > categories.size) "View all" else null,
+        onAction = if (categoryCount > categories.size) onViewAll else null,
+    )
     val max = categories.maxOfOrNull { it.total.toDouble() }?.coerceAtLeast(1.0) ?: 1.0
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         categories.forEach { category ->
-            val share = if (total > BigDecimal.ZERO) category.total.toDouble() / total.toDouble() * 100 else 0.0
-            Column(
-                modifier = Modifier.fillMaxWidth().clickable { onSelect(category.category) },
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            CategorySpendRow(category, total, max, onSelect)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AllCategoriesSheet(
+    categories: List<CategoryTotal>,
+    total: BigDecimal,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val max = categories.maxOfOrNull { it.total.toDouble() }?.coerceAtLeast(1.0) ?: 1.0
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LifeOsColors.SurfaceElevated) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            Text("All categories", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "${categories.size} categories in this period",
+                style = MaterialTheme.typography.bodySmall,
+                color = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.padding(top = 3.dp, bottom = 14.dp),
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(prettyCategory(category.category), style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "${category.total.rupees()} · ${share.toInt()}%",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                items(categories, key = { it.category }) { category ->
+                    CategorySpendRow(category, total, max, onSelect)
                 }
-                Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(LifeOsColors.SurfaceMuted)) {
-                    Box(
-                        Modifier.fillMaxWidth((category.total.toDouble() / max).toFloat().coerceIn(0.03f, 1f))
-                            .height(5.dp).clip(RoundedCornerShape(3.dp)).background(categoryColor(category.category)),
-                    )
-                }
+                item { Spacer(Modifier.height(24.dp)) }
             }
+        }
+    }
+}
+
+@Composable
+private fun CategorySpendRow(
+    category: CategoryTotal,
+    total: BigDecimal,
+    max: Double,
+    onSelect: (String) -> Unit,
+) {
+    val share = if (total > BigDecimal.ZERO) category.total.toDouble() / total.toDouble() * 100 else 0.0
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable { onSelect(category.category) },
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                prettyCategory(category.category),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Text(
+                "${category.total.rupees()} · ${share.toInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(LifeOsColors.SurfaceMuted)) {
+            Box(
+                Modifier.fillMaxWidth((category.total.toDouble() / max).toFloat().coerceIn(0.03f, 1f))
+                    .height(5.dp).clip(RoundedCornerShape(3.dp)).background(categoryColor(category.category)),
+            )
         }
     }
 }
@@ -1963,20 +2098,16 @@ private fun TransactionRow(txn: Transaction, onClick: (() -> Unit)? = null) {
                 fontWeight = FontWeight.Medium,
                 color = LifeOsColors.OnBackground,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             val datePart = txn.txnDate.format(DateTimeFormatter.ofPattern("dd MMM"))
-            // Show the time only when we actually know it; otherwise stay
-            // date-only rather than render a placeholder.
-            val timePart = txn.txnAt
-                ?.atZone(ZoneId.systemDefault())
-                ?.format(DateTimeFormatter.ofPattern("h:mm a"))
-            val whenText = if (timePart != null) "$datePart, $timePart" else datePart
             val category = txn.spendCategory?.let(::prettyCategory)
             Text(
-                listOfNotNull(whenText, txn.account ?: txn.source, category).joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
+                listOfNotNull(datePart, category).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
                 color = LifeOsColors.OnSurfaceMuted,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(12.dp))

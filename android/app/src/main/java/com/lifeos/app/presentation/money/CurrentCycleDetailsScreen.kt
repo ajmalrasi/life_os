@@ -16,13 +16,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -68,7 +66,6 @@ fun CurrentCycleDetailsScreen(
                 CurrentCycleDetailsContent(
                     details = state.details!!,
                     error = state.error,
-                    onBack = onBack,
                 )
             }
             else -> {
@@ -86,7 +83,6 @@ fun CurrentCycleDetailsScreen(
 private fun CurrentCycleDetailsContent(
     details: CurrentCardCycleDetails,
     error: String?,
-    onBack: () -> Unit,
 ) {
     val cycle = details.cycle
     val fullDate = DateTimeFormatter.ofPattern("dd MMM yyyy")
@@ -129,9 +125,6 @@ private fun CurrentCycleDetailsContent(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to Money")
-                }
                 Column {
                     Text(
                         "Current billing cycle",
