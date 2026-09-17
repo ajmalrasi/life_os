@@ -9,6 +9,8 @@ plugins {
     // alias(libs.plugins.google.services)
 }
 
+val mapsApiKey = providers.gradleProperty("MAPS_API_KEY").orElse("")
+
 android {
     namespace = "com.lifeos.app"
     compileSdk = 35
@@ -25,6 +27,8 @@ android {
         // Backend base URL. Override per-build; defaults to the Jetson on LAN.
         // 10.0.2.2 is the host loopback from the Android emulator.
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"http://10.0.2.2:8000/\"")
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey.get()
+        buildConfigField("Boolean", "MAPS_CONFIGURED", mapsApiKey.get().isNotBlank().toString())
     }
 
     buildTypes {
@@ -101,6 +105,10 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.work.runtime)
     implementation(libs.coroutines.android)
+    implementation(libs.maps.compose)
+    implementation(libs.play.services.location)
+    implementation(libs.places)
+    implementation(libs.material)
 
     // Push notifications (Phase 1 #5). The FCM SDK compiles without Firebase
     // configured; to actually receive pushes, add app/google-services.json and

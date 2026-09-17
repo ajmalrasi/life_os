@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from time import monotonic
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -31,6 +32,7 @@ from app.services.phone_health_client import (
     extract_metrics,
     format_hae_date,
 )
+from app.models.trip import TripBackup
 
 _MAX_DAYS = 90
 
@@ -44,6 +46,13 @@ _DEFAULT_LIVE_METRICS = (
 
 # OpenAI-style function schemas advertised to the model.
 TOOL_SCHEMAS: list[dict] = [
+    {"type": "function", "function": {
+        "name": "get_trip_context",
+        "description": "Read a backed-up trip itinerary, completed activities, visits, and expenses. Use for questions about travel plans or what happened during a trip.",
+        "parameters": {"type": "object", "properties": {
+            "trip_id": {"type": "string", "description": "LifeOS trip id. Omit to read the most recently updated trip."}
+        }},
+    }},
     {"type": "function", "function": {
         "name": "get_life_context",
         "description": "Read a broad overview of scores, Pulse, life state, spending, and discovered insights.",
@@ -319,6 +328,8 @@ class AgentTools:
                 from app.services.chat_service import ChatService
                 days = max(1, min(365, int(args.get("days", 30))))
                 return ChatService(self.db).build_context(days)
+            if name == "get_trip_context":
+                return self.get_trip_context(args.get("trip_id"))
             if name == "github_search":
                 return self.github_search(
                     tool=args.get("tool", ""),
@@ -342,6 +353,26 @@ class AgentTools:
             return {"error": f"{name} failed: {exc}"}
 
     # -- tools ---------------------------------------------------------------------------
+
+    def get_trip_context(self, trip_id: str | None = None) -> dict:
+        query = select(TripBackup).where(TripBackup.deleted_at.is_(None))
+        if trip_id:
+            query = query.where(TripBackup.id == trip_id)
+        else:
+            query = query.order_by(TripBackup.updated_at.desc()).limit(1)
+        row = self.db.scalar(query)
+        if row is None:
+            return {"error": "No matching trip backup is available."}
+        payload = dict(row.payload)
+        locations = payload.pop("locations", [])
+        return {
+            "trip_id": row.id,
+            "revision": row.revision,
+            "updated_at": row.updated_at.isoformat(),
+            "trip": payload,
+            "recorded_location_count": len(locations),
+            "freshness_note": "This is the last phone backup; unsynced phone changes are not included.",
+        }
 
     def git_log(self, days: int) -> dict:
         start, end = _window(days)

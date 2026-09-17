@@ -27,6 +27,7 @@ from app.models.synthesized_insight import SynthesizedInsight
 from app.models.transaction import Transaction
 from app.models.transaction_adjustment import TransactionAdjustment
 from app.models.transaction_reconciliation import TransactionReconciliation
+from app.models.trip import TripAttachmentBackup, TripBackup
 
 __all__ = [
     "CardStatement",
@@ -55,4 +56,6 @@ __all__ = [
     "PriorityItemMessage",
     "PriorityNotification",
     "RawBankEmail",
+    "TripBackup",
+    "TripAttachmentBackup",
 ]

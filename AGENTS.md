@@ -1,5 +1,22 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Trips update (2026-09-17)
+
+Trips is now a phone-first Android feature under the navigation drawer. It uses a
+separate `lifeos-trips.db` Room database (no destructive fallback), imports the
+versioned JSON contract in `docs/trips/trip-v1.schema.json`, preserves conditional
+activities, and stores plans, raw GPS samples, inferred visits, expenses,
+reminders, and app-private attachment copies. `TripLocationService` records only
+after explicit Start tracking and runs as a location foreground service. Maps
+Compose uses a `MAPS_API_KEY` Gradle property; without it the itinerary still
+works but the embedded map cannot authenticate.
+
+The backend now exposes revision-guarded trip backup/restore metadata under
+`/trips`, with raw attachment upload/download and soft deletion. Ask has a
+read-only `get_trip_context` tool over the most recent successful phone backup.
+The backend remains optional during travel: Android records and edits locally,
+and backup is explicit. New backend tables are created by `create_all`.
+
 ## Ask update (2026-09-13; supersedes older Ask/MLC notes below)
 
 Ask now uses one model-led conversation: no keyword router, canned factual

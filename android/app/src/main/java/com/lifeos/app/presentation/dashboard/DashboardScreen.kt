@@ -1,8 +1,10 @@
 package com.lifeos.app.presentation.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,16 +36,21 @@ import com.lifeos.app.presentation.components.TrendChart
 import com.lifeos.app.presentation.components.VitalsCard
 import com.lifeos.app.presentation.components.compositeScore
 import com.lifeos.app.presentation.theme.LifeOsColors
+import com.lifeos.app.trips.ui.TripsViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun DashboardScreen(
     onOpenSettings: () -> Unit = {},
+    onOpenTrips: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
+    tripsViewModel: TripsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
+    val tripsState by tripsViewModel.state.collectAsStateWithLifecycle()
+    val activeTrip = tripsState.trips.firstOrNull { it.status == "active" || it.status == "paused" }
 
     val composite = compositeScore(state.latestScore)
     val prevComposite = state.scoreHistory.getOrNull(1)?.let { compositeScore(it) }
@@ -91,6 +99,26 @@ fun DashboardScreen(
                 stateLabel = stateLabel,
                 confidence = confidence,
             )
+        }
+
+        if (activeTrip != null) {
+            item {
+                LifeOsCard(
+                    modifier = Modifier.clickable(onClick = onOpenTrips),
+                    accent = LifeOsColors.AccentSky,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Rounded.TravelExplore, null, tint = LifeOsColors.Primary)
+                        Column {
+                            Text(activeTrip.title, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (activeTrip.status == "active") "Trip tracking is active" else "Trip tracking is paused",
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Put the actionable daily readings ahead of the longer history.

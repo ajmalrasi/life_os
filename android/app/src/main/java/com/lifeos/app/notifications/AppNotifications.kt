@@ -22,6 +22,7 @@ object AppNotifications {
 
     const val CHANNEL_PULSE = "pulse_reminder"
     const val CHANNEL_INSIGHTS = "insights"
+    const val CHANNEL_TRIPS = "trip_reminders"
 
     const val EXTRA_OPEN_TAB = "open_tab"
     const val EXTRA_OPEN_ITEM_ID = "priority_item_id"
@@ -35,6 +36,13 @@ object AppNotifications {
                 "Pulse reminders",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply { description = "Evening reminder to log your daily Pulse check-in." }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_TRIPS,
+                "Trip reminders",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "Reminders you enabled for itinerary items." }
         )
         manager.createNotificationChannel(
             NotificationChannel(

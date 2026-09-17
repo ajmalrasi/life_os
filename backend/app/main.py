@@ -23,6 +23,7 @@ from app.api.routes import (
     payee_labels,
     priority,
     statements,
+    trips,
 )
 from app.config import get_settings
 from app.database import init_db, purge_seed_data
@@ -75,6 +76,7 @@ app.include_router(analytics.router)
 app.include_router(chat.router)
 app.include_router(notifications.router)
 app.include_router(device.router)
+app.include_router(trips.router)
 
 
 @app.get("/", tags=["meta"])

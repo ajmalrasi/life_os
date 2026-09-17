@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "trip": {
+    "id": "delhi-family-2026",
+    "title": "Delhi family trip",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-05",
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "original_text": "Preserve the complete readable itinerary here if desired."
+  },
+  "places": [
+    { "id": "igi", "name": "Indira Gandhi International Airport", "kind": "airport", "verification": "unresolved" },
+    { "id": "aerocity", "name": "Delhi Aerocity", "kind": "area", "verification": "unresolved" }
+  ],
+  "days": [
+    {
+      "id": "day-1",
+      "date": "2026-10-01",
+      "title": "Arrival",
+      "activities": [
+        {
+          "id": "arrival",
+          "title": "Land at Delhi",
+          "type": "arrival",
+          "start_time": "21:00",
+          "place_id": "igi",
+          "flexibility": "fixed",
+          "notes": "Allow 45–75 minutes for baggage and exiting.",
+          "alternatives": [
+            { "id": "t3-transfer", "title": "Airport Express to Aerocity", "condition": "Arrival terminal is T3", "place_id": "aerocity", "transport_mode": "transit", "duration_minutes": 6 },
+            { "id": "t1-transfer", "title": "Cab to Aerocity hotel", "condition": "Arrival terminal is T1", "place_id": "aerocity", "transport_mode": "driving" }
+          ]
+        }
+      ]
+    }
+  ],
+  "reminders": [
+    { "id": "isha", "title": "Isha at hotel if still due", "activity_id": "arrival", "note": "No separate mosque trip." }
+  ],
+  "open_questions": ["Confirm the arrival terminal", "Add the exact Aerocity hotel"]
+}

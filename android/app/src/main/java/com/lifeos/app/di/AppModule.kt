@@ -16,6 +16,8 @@ import com.lifeos.app.data.local.MoodDao
 import com.lifeos.app.data.local.ScoreDao
 import com.lifeos.app.data.local.StateDao
 import com.lifeos.app.data.local.TransactionDao
+import com.lifeos.app.trips.data.TripDao
+import com.lifeos.app.trips.data.TripDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -47,6 +49,14 @@ object AppModule {
             .addMigrations(MIGRATION_12_13)
             .fallbackToDestructiveMigration()
             .build()
+
+    @Provides
+    @Singleton
+    fun tripDatabase(@ApplicationContext context: Context): TripDatabase =
+        Room.databaseBuilder(context, TripDatabase::class.java, "lifeos-trips.db").build()
+
+    @Provides
+    fun tripDao(db: TripDatabase): TripDao = db.tripDao()
 
     @Provides
     fun moodDao(db: LifeOsDatabase): MoodDao = db.moodDao()

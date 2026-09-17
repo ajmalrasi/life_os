@@ -41,6 +41,8 @@ import com.lifeos.app.data.remote.dto.SuggestionsResponseDto
 import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
+import com.lifeos.app.trips.data.TripBackupRequestDto
+import com.lifeos.app.trips.data.TripBackupResponseDto
 import com.lifeos.app.data.remote.dto.StatementPaidUpdateDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -48,11 +50,32 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.PATCH
+import retrofit2.http.PUT
 import retrofit2.http.Query
 import retrofit2.http.Streaming
+import retrofit2.http.Header
+import okhttp3.RequestBody
+import retrofit2.Response
 import okhttp3.ResponseBody
 
 interface LifeOsApi {
+
+    @PUT("trips/{tripId}")
+    suspend fun backupTrip(
+        @Path("tripId") tripId: String,
+        @Body body: TripBackupRequestDto,
+    ): TripBackupResponseDto
+
+    @GET("trips/{tripId}")
+    suspend fun getTripBackup(@Path("tripId") tripId: String): TripBackupResponseDto
+
+    @PUT("trips/{tripId}/attachments/{attachmentId}")
+    suspend fun backupTripAttachment(
+        @Path("tripId") tripId: String,
+        @Path("attachmentId") attachmentId: String,
+        @Header("X-Filename") filename: String,
+        @Body body: RequestBody,
+    ): Response<Unit>
 
     @GET("priority")
     suspend fun listPriority(

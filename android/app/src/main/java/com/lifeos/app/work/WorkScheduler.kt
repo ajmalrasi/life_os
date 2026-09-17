@@ -5,12 +5,16 @@ import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.workDataOf
 import androidx.work.WorkManager
 import com.lifeos.app.widget.SpendWidgetWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -78,6 +82,18 @@ class WorkScheduler @Inject constructor(
 
     fun cancelPulseReminder() {
         workManager.cancelUniqueWork(PulseReminderWorker.UNIQUE_NAME)
+    }
+
+    fun scheduleTripReminder(id: String, title: String, body: String, at: Instant) {
+        val delay = Duration.between(Instant.now(), at).coerceAtLeast(Duration.ZERO)
+        val request = OneTimeWorkRequestBuilder<TripReminderWorker>()
+            .setInitialDelay(delay)
+            .setInputData(workDataOf(
+                TripReminderWorker.KEY_TITLE to title,
+                TripReminderWorker.KEY_BODY to body,
+            ))
+            .build()
+        workManager.enqueueUniqueWork("trip-reminder-$id", ExistingWorkPolicy.REPLACE, request)
     }
 
     /** Delay from now until the next occurrence of [target] time-of-day. */

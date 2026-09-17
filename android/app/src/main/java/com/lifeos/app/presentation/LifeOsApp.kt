@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -64,6 +65,8 @@ import com.lifeos.app.presentation.priority.PriorityDetailsScreen
 import com.lifeos.app.presentation.priority.PriorityScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
+import com.lifeos.app.trips.ui.TripDetailScreen
+import com.lifeos.app.trips.ui.TripsScreen
 import kotlinx.coroutines.launch
 
 enum class Destination(val route: String, val label: String, val icon: ImageVector) {
@@ -73,6 +76,7 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
     PRIORITY("priority", "Priority", Icons.Rounded.Mail),
     INSIGHTS("insights", "Insights", Icons.Rounded.Insights),
     CHAT("chat", "Ask", Icons.Rounded.AutoAwesome),
+    TRIPS("trips", "Trips", Icons.Rounded.TravelExplore),
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
@@ -83,11 +87,13 @@ internal val navigationDestinations = listOf(
     Destination.MOOD,
     Destination.INSIGHTS,
     Destination.CHAT,
+    Destination.TRIPS,
     Destination.SETTINGS,
 )
 private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
 private const val CURRENT_CYCLE_DETAILS_ROUTE = "cycle/{bank}/{cardLast4}"
 private const val PRIORITY_DETAILS_ROUTE = "priority/{itemId}"
+private const val TRIP_DETAILS_ROUTE = "trip/{tripId}"
 internal const val DEFAULT_DESTINATION_ROUTE = "money"
 
 @Composable
@@ -101,6 +107,11 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
         navController.previousBackStackEntry?.destination?.route
     }
     var moneyOverviewRequest by remember { mutableStateOf(0L) }
+    var tripMapFullscreen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != TRIP_DETAILS_ROUTE) tripMapFullscreen = false
+    }
 
     val navigateTo: (Destination) -> Unit = { destination ->
         navController.navigate(destination.route) {
@@ -135,6 +146,9 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        // Let the map own every drag while it is full screen. The drawer can
+        // still be opened again after leaving the map.
+        gesturesEnabled = !tripMapFullscreen,
         drawerContent = {
             LifeOsNavigationDrawer(
                 currentRoute = currentRoute,
@@ -146,7 +160,7 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
             modifier = Modifier.fillMaxSize(),
             containerColor = LifeOsColors.Background,
             topBar = {
-                if (previousRoute != null) {
+                if (previousRoute != null && !tripMapFullscreen) {
                     LifeOsBackBar(
                         previousLabel = Destination.entries.firstOrNull { it.route == previousRoute }?.label,
                         onBack = { navController.popBackStack() },
@@ -173,7 +187,10 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
                     )
                 }
                 composable(Destination.DASHBOARD.route) {
-                    DashboardScreen(onOpenSettings = { navigateTo(Destination.SETTINGS) })
+                    DashboardScreen(
+                        onOpenSettings = { navigateTo(Destination.SETTINGS) },
+                        onOpenTrips = { navigateTo(Destination.TRIPS) },
+                    )
                 }
                 composable(Destination.MOOD.route) { MoodScreen() }
                 composable(Destination.PRIORITY.route) {
@@ -181,6 +198,9 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
                 }
                 composable(Destination.INSIGHTS.route) { InsightsScreen() }
                 composable(Destination.CHAT.route) { ChatScreen() }
+                composable(Destination.TRIPS.route) {
+                    TripsScreen(onOpenTrip = { id -> navController.navigate("trip/$id") })
+                }
                 composable(Destination.SETTINGS.route) {
                     SettingsScreen()
                 }
@@ -204,6 +224,12 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
                     arguments = listOf(navArgument("itemId") { type = NavType.IntType }),
                 ) {
                     PriorityDetailsScreen()
+                }
+                composable(
+                    route = TRIP_DETAILS_ROUTE,
+                    arguments = listOf(navArgument("tripId") { type = NavType.StringType }),
+                ) {
+                    TripDetailScreen(onMapFullscreenChanged = { tripMapFullscreen = it })
                 }
             }
         }
@@ -302,4 +328,5 @@ private fun destinationSupportingText(destination: Destination): String = when (
     Destination.SETTINGS -> "Sync and preferences"
     Destination.MONEY -> "Spending and cards"
     Destination.PRIORITY -> "Important mail and schedules"
+    Destination.TRIPS -> "Plans, places and memories"
 }
