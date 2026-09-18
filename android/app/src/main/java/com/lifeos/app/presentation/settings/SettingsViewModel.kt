@@ -21,6 +21,7 @@ data class SettingsUiState(
     val lastSyncAt: Long? = null,
     val pulseReminderEnabled: Boolean = false,
     val pulseReminderHour: Int = 21,
+    val reopenLastTab: Boolean = true,
     val syncing: Boolean = false,
     val syncMessage: String? = null,
     val syncError: Boolean = false,
@@ -49,11 +50,17 @@ class SettingsViewModel @Inject constructor(
                 lastSyncAt = settingsRepository.lastSyncAt.first(),
                 pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first(),
                 pulseReminderHour = settingsRepository.pulseReminderHour.first(),
+                reopenLastTab = settingsRepository.reopenLastTab.first(),
             )
         }
         viewModelScope.launch {
             settingsRepository.lastSyncAt.collect { lastSyncAt ->
                 _state.value = _state.value.copy(lastSyncAt = lastSyncAt)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.reopenLastTab.collect { reopen ->
+                _state.value = _state.value.copy(reopenLastTab = reopen)
             }
         }
         refreshMailAccounts()
@@ -85,6 +92,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.setPulseReminderHour(clamped)
             if (_state.value.pulseReminderEnabled) workScheduler.schedulePulseReminder(clamped)
+        }
+    }
+
+    fun setReopenLastTab(enabled: Boolean) {
+        _state.value = _state.value.copy(reopenLastTab = enabled)
+        viewModelScope.launch {
+            settingsRepository.setReopenLastTab(enabled)
         }
     }
 

@@ -30,8 +30,20 @@ class SettingsRepositoryImpl @Inject constructor(
     private val lastSyncAtKey = longPreferencesKey("last_sync_at")
     private val pulseReminderEnabledKey = booleanPreferencesKey("pulse_reminder_enabled")
     private val pulseReminderHourKey = intPreferencesKey("pulse_reminder_hour")
+    private val reopenLastTabKey = booleanPreferencesKey("reopen_last_tab")
+    private val lastUsedTabKey = stringPreferencesKey("last_used_tab")
     private val defaultBaseUrl = com.lifeos.app.BuildConfig.DEFAULT_API_BASE_URL
     private val defaultReminderHour = 21 // 9 PM
+    private val defaultDestination = "money"
+    private val validStartupDestinations = setOf(
+        "money",
+        "dashboard",
+        "mood",
+        "priority",
+        "insights",
+        "chat",
+        "trips",
+    )
 
     // Must be declared BEFORE init because init launches a coroutine that reads this Flow.
     override val apiBaseUrl: Flow<String> =
@@ -75,6 +87,28 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setPulseReminderHour(hour: Int) {
         dataStore.edit { it[pulseReminderHourKey] = hour.coerceIn(0, 23) }
+    }
+
+    override val reopenLastTab: Flow<Boolean> =
+        dataStore.data.map { prefs -> prefs[reopenLastTabKey] ?: true }
+
+    override suspend fun setReopenLastTab(enabled: Boolean) {
+        dataStore.edit { it[reopenLastTabKey] = enabled }
+    }
+
+    override val lastUsedTab: Flow<String?> =
+        dataStore.data.map { prefs -> prefs[lastUsedTabKey] }
+
+    override suspend fun setLastUsedTab(route: String) {
+        dataStore.edit { it[lastUsedTabKey] = route }
+    }
+
+    override suspend fun startupDestination(): String {
+        val prefs = dataStore.data.first()
+        val reopen = prefs[reopenLastTabKey] ?: true
+        if (!reopen) return defaultDestination
+        val saved = prefs[lastUsedTabKey]
+        return if (saved != null && saved in validStartupDestinations) saved else defaultDestination
     }
 
     suspend fun currentBaseUrl(): String = apiBaseUrl.first()

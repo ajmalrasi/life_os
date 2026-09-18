@@ -320,6 +320,34 @@ fun SettingsScreen(
             }
         }
 
+        SettingsSectionLabel("Navigation")
+        SettingsGroup {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Reopen last used screen", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (state.reopenLastTab) {
+                                "Opens the area you were last using (e.g. Trips or Today) when launching the app."
+                            } else {
+                                "Always starts on Money when opening the app."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
+                    Switch(
+                        checked = state.reopenLastTab,
+                        onCheckedChange = viewModel::setReopenLastTab,
+                    )
+                }
+            }
+        }
+
         SettingsSectionLabel("About")
         SettingsGroup {
             Column(

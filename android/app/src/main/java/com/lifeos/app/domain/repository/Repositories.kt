@@ -143,4 +143,11 @@ interface SettingsRepository {
     suspend fun setPulseReminderEnabled(enabled: Boolean)
     val pulseReminderHour: Flow<Int>
     suspend fun setPulseReminderHour(hour: Int)
+
+    /** Navigation and startup screen preferences. */
+    val reopenLastTab: Flow<Boolean>
+    suspend fun setReopenLastTab(enabled: Boolean)
+    val lastUsedTab: Flow<String?>
+    suspend fun setLastUsedTab(route: String)
+    suspend fun startupDestination(): String
 }

@@ -1,6 +1,7 @@
 package com.lifeos.app.presentation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -97,7 +98,13 @@ private const val TRIP_DETAILS_ROUTE = "trip/{tripId}"
 internal const val DEFAULT_DESTINATION_ROUTE = "money"
 
 @Composable
-fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityItemId: Int? = null) {
+fun LifeOsApp(
+    startTab: String? = null,
+    openRequestId: Long = 0L,
+    openPriorityItemId: Int? = null,
+    startDestination: String = DEFAULT_DESTINATION_ROUTE,
+    onDestinationChanged: ((Destination) -> Unit)? = null,
+) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -111,6 +118,9 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
 
     LaunchedEffect(currentRoute) {
         if (currentRoute != TRIP_DETAILS_ROUTE) tripMapFullscreen = false
+        topLevelDestinationFor(currentRoute)?.let { dest ->
+            onDestinationChanged?.invoke(dest)
+        }
     }
 
     val navigateTo: (Destination) -> Unit = { destination ->
@@ -160,18 +170,24 @@ fun LifeOsApp(startTab: String? = null, openRequestId: Long = 0L, openPriorityIt
             modifier = Modifier.fillMaxSize(),
             containerColor = LifeOsColors.Background,
             topBar = {
-                if (previousRoute != null && !tripMapFullscreen) {
-                    LifeOsBackBar(
-                        previousLabel = Destination.entries.firstOrNull { it.route == previousRoute }?.label,
-                        onBack = { navController.popBackStack() },
-                        onOpenNavigation = { scope.launch { drawerState.open() } },
-                    )
+                if (!tripMapFullscreen) {
+                    if (previousRoute != null) {
+                        LifeOsBackBar(
+                            previousLabel = Destination.entries.firstOrNull { it.route == previousRoute }?.label,
+                            onBack = { navController.popBackStack() },
+                            onOpenNavigation = { scope.launch { drawerState.open() } },
+                        )
+                    } else if (currentRoute != Destination.MONEY.route) {
+                        LifeOsTopMenuBar(
+                            onOpenNavigation = { scope.launch { drawerState.open() } },
+                        )
+                    }
                 }
             },
         ) { contentPadding ->
             NavHost(
                 navController = navController,
-                startDestination = DEFAULT_DESTINATION_ROUTE,
+                startDestination = startDestination,
                 modifier = Modifier.padding(contentPadding),
             ) {
                 composable(Destination.MONEY.route) {
@@ -261,6 +277,35 @@ private fun LifeOsBackBar(previousLabel: String?, onBack: () -> Unit, onOpenNavi
             Icon(Icons.Rounded.Menu, contentDescription = "Open navigation drawer")
         }
     }
+}
+
+/** Shown when a non-Money area is the root screen, giving quick access to the drawer. */
+@Composable
+private fun LifeOsTopMenuBar(onOpenNavigation: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onOpenNavigation) {
+            Icon(Icons.Rounded.Menu, contentDescription = "Open navigation drawer")
+        }
+    }
+}
+
+internal fun topLevelDestinationFor(route: String?): Destination? = when {
+    route == null -> null
+    route == Destination.MONEY.route || route.startsWith("statement/") || route.startsWith("cycle/") -> Destination.MONEY
+    route == Destination.TRIPS.route || route.startsWith("trip/") -> Destination.TRIPS
+    route == Destination.PRIORITY.route || route.startsWith("priority/") -> Destination.PRIORITY
+    route == Destination.DASHBOARD.route -> Destination.DASHBOARD
+    route == Destination.MOOD.route -> Destination.MOOD
+    route == Destination.INSIGHTS.route -> Destination.INSIGHTS
+    route == Destination.CHAT.route -> Destination.CHAT
+    else -> null
 }
 
 @Composable

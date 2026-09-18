@@ -7,14 +7,27 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.notifications.AppNotifications
 import com.lifeos.app.presentation.LifeOsApp
+import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.presentation.theme.LifeOsTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var settingsRepository: SettingsRepository
+
     private val openRequest = mutableStateOf(OpenRequest(null, null, 0L))
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,12 +49,26 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             LifeOsTheme {
-                val request = openRequest.value
-                LifeOsApp(
-                    startTab = request.route,
-                    openRequestId = request.id,
-                    openPriorityItemId = request.priorityItemId,
-                )
+                val startupDestination by produceState<String?>(initialValue = null) {
+                    value = settingsRepository.startupDestination()
+                }
+                val startDestination = startupDestination
+                if (startDestination != null) {
+                    val request = openRequest.value
+                    LifeOsApp(
+                        startDestination = startDestination,
+                        startTab = request.route,
+                        openRequestId = request.id,
+                        openPriorityItemId = request.priorityItemId,
+                        onDestinationChanged = { dest ->
+                            lifecycleScope.launch {
+                                settingsRepository.setLastUsedTab(dest.route)
+                            }
+                        },
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background))
+                }
             }
         }
     }

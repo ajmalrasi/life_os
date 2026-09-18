@@ -44,6 +44,8 @@ class BackNavigationUiTest {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Your vitals", ignoreCase = true).assertIsDisplayed()
         compose.onNodeWithText("Back to Money").assertIsDisplayed()
+        compose.onNodeWithText("Back to Money").performClick()
+        compose.onNodeWithText("Overview").assertIsDisplayed()
     }
 
     @Test
