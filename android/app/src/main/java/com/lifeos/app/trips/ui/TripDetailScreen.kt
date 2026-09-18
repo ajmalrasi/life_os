@@ -10,13 +10,22 @@ import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
+import com.lifeos.app.trips.location.TripDistanceCalculator
+import java.util.concurrent.ConcurrentHashMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,12 +35,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -70,16 +82,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -129,6 +145,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private object PlacePredictionCache {
     private const val MAX_ENTRIES = 40
@@ -152,8 +169,8 @@ fun TripDetailScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val detail = state.detail
-    var tab by remember { mutableIntStateOf(0) }
-    var mapFullscreen by remember { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var mapFullscreen by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -168,9 +185,13 @@ fun TripDetailScreen(
             Text("Loading trip…")
         }
     } else {
-        BackHandler(enabled = mapFullscreen) {
-            mapFullscreen = false
-            onMapFullscreenChanged(false)
+        BackHandler(enabled = mapFullscreen || tab != 0) {
+            if (mapFullscreen) {
+                mapFullscreen = false
+                onMapFullscreenChanged(false)
+            } else {
+                tab = 0
+            }
         }
 
         val zone = remember(detail.trip.timezone) {
@@ -189,6 +210,29 @@ fun TripDetailScreen(
             else -> "In progress"
         }
 
+        val days = remember(detail.days) { detail.days.sortedBy { it.sortOrder } }
+        var planSelectedDayId by rememberSaveable(detail.trip.id) {
+            mutableStateOf(days.firstOrNull { it.date == today.toString() }?.id ?: days.firstOrNull()?.id)
+        }
+        var mapSelectedDayId by rememberSaveable(detail.trip.id) {
+            mutableStateOf<String?>(null)
+        }
+        val planListState = rememberLazyListState()
+        val detailsListState = rememberLazyListState()
+        val mapListState = rememberLazyListState()
+        val coroutineScope = rememberCoroutineScope()
+
+        val isHeaderExpanded by remember(tab) {
+            derivedStateOf {
+                when (tab) {
+                    0 -> planListState.firstVisibleItemIndex == 0 && planListState.firstVisibleItemScrollOffset < 40
+                    1 -> mapListState.firstVisibleItemIndex == 0 && mapListState.firstVisibleItemScrollOffset < 40
+                    2 -> detailsListState.firstVisibleItemIndex == 0 && detailsListState.firstVisibleItemScrollOffset < 40
+                    else -> true
+                }
+            }
+        }
+
         // Hoist map state so it is created once per trip and never destroyed across tab switches or day filters
         val resolvedPlaces = remember(detail.places) {
             detail.places.filter { it.latitude != null && it.longitude != null }
@@ -205,53 +249,91 @@ fun TripDetailScreen(
 
         Column(Modifier.fillMaxSize().background(LifeOsColors.Background)) {
             if (!mapFullscreen) {
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    ScreenHeader(detail.trip.title, formatTripRange(startDate, endDate))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (detail.trip.status == "active") {
-                            AssistChip(onClick = {
-                                context.startService(Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP))
-                                viewModel.setStatus("paused")
-                            }, label = { Text("Pause tracking") }, leadingIcon = { Icon(Icons.Rounded.Pause, null, Modifier.size(18.dp)) })
-                        } else {
-                            AssistChip(onClick = {
-                                permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                            }, label = { Text("Track trip") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)) })
-                        }
-                        Surface(
-                            modifier = Modifier.height(32.dp),
-                            color = LifeOsColors.Primary.copy(alpha = 0.10f),
-                            shape = MaterialTheme.shapes.large,
+                AnimatedVisibility(
+                    visible = isHeaderExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
+                        ScreenHeader(detail.trip.title, formatTripRange(startDate, endDate))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                                Text(displayStatus, color = LifeOsColors.Primary, style = MaterialTheme.typography.labelLarge)
+                            if (detail.trip.status == "active") {
+                                AssistChip(onClick = {
+                                    context.startService(Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP))
+                                    viewModel.setStatus("paused")
+                                }, label = { Text("Pause tracking") }, leadingIcon = { Icon(Icons.Rounded.Pause, null, Modifier.size(18.dp)) })
+                            } else {
+                                AssistChip(onClick = {
+                                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                }, label = { Text("Track trip") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)) })
+                            }
+                            Surface(
+                                modifier = Modifier.height(32.dp),
+                                color = LifeOsColors.Primary.copy(alpha = 0.10f),
+                                shape = MaterialTheme.shapes.large,
+                            ) {
+                                Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                                    Text(displayStatus, color = LifeOsColors.Primary, style = MaterialTheme.typography.labelLarge)
+                                }
                             }
                         }
+                        permissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     }
-                    permissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
                 TabRow(selectedTabIndex = tab) {
-                    tabs.forEachIndexed { index, title -> Tab(tab == index, { tab = index }, text = { Text(title) }) }
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = tab == index,
+                            onClick = {
+                                if (tab == index) {
+                                    coroutineScope.launch {
+                                        when (index) {
+                                            0 -> planListState.animateScrollToItem(0)
+                                            1 -> mapListState.animateScrollToItem(0)
+                                            2 -> detailsListState.animateScrollToItem(0)
+                                        }
+                                    }
+                                } else {
+                                    tab = index
+                                }
+                            },
+                            text = { Text(title) },
+                        )
+                    }
                 }
             }
 
+            val showMap = tab == 1 || mapFullscreen
             Box(modifier = Modifier.fillMaxSize().then(if (!mapFullscreen) Modifier.weight(1f) else Modifier)) {
                 if (!mapFullscreen) {
-                    when (tab) {
-                        0 -> PlanTab(detail, viewModel, today)
-                        2 -> TripTab(detail, viewModel, state.backupMessage)
-                        3 -> MemoriesTab(detail, viewModel)
+                    Box(
+                        modifier = Modifier.fillMaxSize().zIndex(if (!showMap) 1f else 0f),
+                    ) {
+                        when (tab) {
+                            0 -> PlanTab(
+                                detail = detail,
+                                viewModel = viewModel,
+                                today = today,
+                                selectedDayId = planSelectedDayId,
+                                onSelectDay = {
+                                    planSelectedDayId = it
+                                    mapSelectedDayId = it
+                                },
+                                listState = planListState,
+                            )
+                            2 -> TripTab(detail, viewModel, state.backupMessage, listState = detailsListState)
+                            3 -> MemoriesTab(detail, viewModel)
+                        }
                     }
                 }
                 // Keep ExploreTab alive across tab switches so the GoogleMap instance and cached tiles are retained
-                val showMap = tab == 1 || mapFullscreen
                 Box(
-                    modifier = if (showMap) Modifier.fillMaxSize()
-                               else Modifier.fillMaxSize().alpha(0f),
+                    modifier = if (showMap) Modifier.fillMaxSize().zIndex(1f)
+                               else Modifier.fillMaxSize().offset(x = (-10000).dp).alpha(0f).zIndex(-1f),
                 ) {
                     if (showMap || mapReadyState.value) {
                         ExploreTab(
@@ -268,6 +350,12 @@ fun TripDetailScreen(
                             mapReadyState = mapReadyState,
                             cameraByFilter = cameraByFilter,
                             focus = focus,
+                            selectedDayId = mapSelectedDayId,
+                            onSelectDay = {
+                                mapSelectedDayId = it
+                                if (it != null) planSelectedDayId = it
+                            },
+                            listState = mapListState,
                         )
                     }
                 }
@@ -277,15 +365,20 @@ fun TripDetailScreen(
 }
 
 @Composable
-private fun PlanTab(detail: TripDetail, viewModel: TripDetailViewModel, today: LocalDate) {
-    val days = detail.days.sortedBy { it.sortOrder }
-    var selectedDayId by remember(detail.trip.id) {
-        mutableStateOf(days.firstOrNull { it.date == today.toString() }?.id ?: days.firstOrNull()?.id)
-    }
+private fun PlanTab(
+    detail: TripDetail,
+    viewModel: TripDetailViewModel,
+    today: LocalDate,
+    selectedDayId: String?,
+    onSelectDay: (String) -> Unit,
+    listState: LazyListState,
+) {
+    val days = remember(detail.days) { detail.days.sortedBy { it.sortOrder } }
     val day = days.firstOrNull { it.id == selectedDayId } ?: days.firstOrNull()
     val activities = detail.activities.filter { it.dayId == day?.id }.sortedBy { it.sortOrder }
     val groups = remember(activities) { groupActivities(activities) }
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -298,7 +391,7 @@ private fun PlanTab(detail: TripDetail, viewModel: TripDetailViewModel, today: L
                         val date = LocalDate.parse(item.date)
                         FilterChip(
                             selected = item.id == day.id,
-                            onClick = { selectedDayId = item.id },
+                            onClick = { onSelectDay(item.id) },
                             label = { Text("${date.format(DateTimeFormatter.ofPattern("EEE d"))} · Day ${index + 1}") },
                         )
                     }
@@ -421,9 +514,28 @@ private fun ExploreTab(
     mapReadyState: MutableState<Boolean>,
     cameraByFilter: MutableMap<String, CameraPosition>,
     focus: LatLng,
+    selectedDayId: String?,
+    onSelectDay: (String?) -> Unit,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var editingPlaces by remember { mutableStateOf(false) }
+    var mapUserCollapsed by rememberSaveable(detail.trip.id) { mutableStateOf(false) }
+    val isListScrolledDown by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40
+        }
+    }
+    val isMapCollapsed = !fullscreen && (mapUserCollapsed || isListScrolledDown)
+    val mapHeight by animateDpAsState(
+        targetValue = when {
+            fullscreen -> 0.dp
+            isMapCollapsed -> 0.dp
+            else -> 260.dp
+        },
+        label = "mapHeight",
+    )
     var hasLocationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -446,7 +558,6 @@ private fun ExploreTab(
     }
 
     val days = detail.days.sortedBy { it.sortOrder }
-    var selectedDayId by remember(detail.trip.id) { mutableStateOf<String?>(null) }
     val points = locations.map { LatLng(it.latitude, it.longitude) }
     val resolvedPlaces = remember(detail.places) {
         detail.places.filter { it.latitude != null && it.longitude != null }
@@ -473,6 +584,12 @@ private fun ExploreTab(
             .map { LatLng(it.latitude!!, it.longitude!!) }
             .toList()
     }.orEmpty()
+    val legs = remember(displayedPlaces) {
+        TripDistanceCalculator.calculateConsecutiveLegs(context, displayedPlaces)
+    }
+    val legByFromId = remember(legs) { legs.associateBy { it.fromPlaceId } }
+    val legByToId = remember(legs) { legs.associateBy { it.toPlaceId } }
+    val totalDistanceKm = remember(legs) { legs.sumOf { it.distanceKm } }
 
     var mapReady by mapReadyState
     var mapTimedOut by remember(detail.trip.id) { mutableStateOf(false) }
@@ -508,7 +625,7 @@ private fun ExploreTab(
     }
     val selectFilter: (String?) -> Unit = { nextDayId ->
         cameraByFilter[selectedDayId ?: ALL_STOPS_CAMERA_KEY] = camera.position
-        selectedDayId = nextDayId
+        onSelectDay(nextDayId)
         showCurrentLocation = false
     }
     val refitCurrentFilter: () -> Unit = {
@@ -529,7 +646,7 @@ private fun ExploreTab(
         if (BuildConfig.MAPS_CONFIGURED) {
             Box(
                 if (fullscreen) Modifier.fillMaxSize()
-                else Modifier.fillMaxWidth().height(260.dp),
+                else Modifier.fillMaxWidth().height(mapHeight).clipToBounds(),
             ) {
                 GoogleMap(
                     modifier = Modifier.fillMaxSize(),
@@ -544,7 +661,7 @@ private fun ExploreTab(
                     mapColorScheme = if (darkMap) ComposeMapColorScheme.DARK else ComposeMapColorScheme.LIGHT,
                     onMapLoaded = { mapReady = true },
                 ) {
-                    if (routePoints.size >= 2) Polyline(points = routePoints, color = Color(0xFF175D9C), width = 8f)
+                    if (routePoints.size >= 2) Polyline(points = routePoints, color = Color(0xFFE53935), width = 8f)
                     if (detail.trip.status == "active" && points.size >= 2) {
                         Polyline(points = points, color = Color(0xFF18A999), width = 7f)
                     }
@@ -554,10 +671,14 @@ private fun ExploreTab(
                         val number = markerNumberById.getValue(place.id)
                         val markerState = remember(place.id, position) { MarkerState(position) }
                         val icon = remember(number, darkMap) { numberedMarkerIcon(context, number, darkMap) }
+                        val legFromPrev = legByToId[place.id]
+                        val distPrefix = if (legFromPrev != null) "${legFromPrev.formattedDistance} from #${number - 1} · " else ""
+                        val baseSnippet = activity?.let { listOfNotNull(it.startTime, it.title).joinToString(" · ") } ?: place.address
+                        val snippet = if (baseSnippet != null) "$distPrefix$baseSnippet" else distPrefix.removeSuffix(" · ").ifEmpty { null }
                         Marker(
                             state = markerState,
                             title = place.name,
-                            snippet = activity?.let { listOfNotNull(it.startTime, it.title).joinToString(" · ") } ?: place.address,
+                            snippet = snippet,
                             icon = icon,
                             anchor = Offset(0.5f, 0.5f),
                             onInfoWindowClick = { openPlace(context, place) },
@@ -635,6 +756,9 @@ private fun ExploreTab(
                             IconButton(onClick = refitCurrentFilter) {
                                 Icon(Icons.Rounded.CenterFocusStrong, contentDescription = "Fit selected route")
                             }
+                            IconButton(onClick = { mapUserCollapsed = true }) {
+                                Icon(Icons.Rounded.Map, contentDescription = "Hide map")
+                            }
                             IconButton(onClick = { editingPlaces = true }) {
                                 Icon(Icons.Rounded.Edit, contentDescription = "Edit trip places")
                             }
@@ -666,6 +790,7 @@ private fun ExploreTab(
             }
         }
         if (!fullscreen) LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -680,6 +805,28 @@ private fun ExploreTab(
             }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (BuildConfig.MAPS_CONFIGURED) {
+                        item {
+                            AssistChip(
+                                onClick = {
+                                    if (isMapCollapsed) {
+                                        mapUserCollapsed = false
+                                        scope.launch { listState.animateScrollToItem(0) }
+                                    } else {
+                                        mapUserCollapsed = true
+                                    }
+                                },
+                                label = { Text(if (isMapCollapsed) "Show map" else "Hide map") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Rounded.Map,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                            )
+                        }
+                    }
                     item {
                         AssistChip(
                             onClick = {
@@ -723,24 +870,62 @@ private fun ExploreTab(
                     Text("Finding itinerary locations… ${mapState.resolvedCount}/${mapState.totalCount}", color = LifeOsColors.OnSurfaceMuted)
                 }
             }
-            item { Text("Places", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
-            items(displayedListPlaces, key = { it.id }) { place ->
+            item {
                 Row(
-                    Modifier.fillMaxWidth().clickable {
-                        if (place.latitude != null) openPlace(context, place)
-                        else searchPlace(context, place)
-                    }.padding(vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("${markerNumberById.getValue(place.id)}. ${place.name}")
+                    Text("Places", style = MaterialTheme.typography.titleMedium)
+                    if (displayedPlaces.size >= 2 && totalDistanceKm > 0.0) {
                         Text(
-                            if (place.latitude != null && place.longitude != null) "Tap to view in Google Maps" else "Tap to search in Google Maps",
-                            style = MaterialTheme.typography.bodySmall,
+                            "${displayedListPlaces.size} stops · ${TripDistanceCalculator.formatCompactDistance(totalDistanceKm)} total",
+                            style = MaterialTheme.typography.labelMedium,
                             color = LifeOsColors.OnSurfaceMuted,
                         )
                     }
-                    Icon(Icons.Rounded.LocationOn, contentDescription = "View place in Google Maps")
+                }
+            }
+            itemsIndexed(displayedListPlaces, key = { _, it -> it.id }) { index, place ->
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            if (place.latitude != null) openPlace(context, place)
+                            else searchPlace(context, place)
+                        }.padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${markerNumberById.getValue(place.id)}. ${place.name}")
+                            Text(
+                                if (place.latitude != null && place.longitude != null) "Tap to view in Google Maps" else "Tap to search in Google Maps",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
+                        Icon(Icons.Rounded.LocationOn, contentDescription = "View place in Google Maps", tint = Color(0xFFE53935))
+                    }
+                    val leg = legByFromId[place.id]
+                    if (leg != null && index < displayedListPlaces.lastIndex) {
+                        Row(
+                            modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Directions,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = Color(0xFFE53935),
+                            )
+                            Text(
+                                "${leg.formattedDistance} to stop #${index + 2}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
+                    }
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
@@ -1155,7 +1340,12 @@ private fun PlaceAutocompleteField(
 }
 
 @Composable
-private fun TripTab(detail: TripDetail, viewModel: TripDetailViewModel, backupMessage: String?) {
+private fun TripTab(
+    detail: TripDetail,
+    viewModel: TripDetailViewModel,
+    backupMessage: String?,
+    listState: LazyListState = rememberLazyListState(),
+) {
     var expenseDialog by remember { mutableStateOf(false) }
     val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.addAttachment(it.toString(), kind = "document") }
@@ -1163,6 +1353,7 @@ private fun TripTab(detail: TripDetail, viewModel: TripDetailViewModel, backupMe
     val total = detail.expenses.mapNotNull { runCatching { BigDecimal(it.amount) }.getOrNull() }
         .fold(BigDecimal.ZERO, BigDecimal::add)
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -1323,29 +1514,37 @@ private fun startTracking(context: Context, tripId: String) {
     ContextCompat.startForegroundService(context, intent)
 }
 
+private val markerIconCache = ConcurrentHashMap<String, BitmapDescriptor>()
+
 private fun numberedMarkerIcon(context: Context, number: Int, dark: Boolean): BitmapDescriptor {
+    val key = "${number}_$dark"
+    markerIconCache[key]?.let { return it }
+
     val density = context.resources.displayMetrics.density
-    val size = (18f * density).toInt().coerceAtLeast(42)
+    val size = (19f * density).toInt().coerceAtLeast(46)
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bitmap)
     val center = size / 2f
     val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (dark) AndroidColor.rgb(226, 239, 255) else AndroidColor.WHITE
+        color = if (dark) AndroidColor.rgb(255, 235, 238) else AndroidColor.WHITE
     }
     val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (dark) AndroidColor.rgb(80, 157, 224) else AndroidColor.rgb(21, 93, 156)
+        // Vibrant Vermilion Red (light) / Bright Coral Red (dark) - high contrast against all map layers
+        color = if (dark) AndroidColor.rgb(255, 82, 82) else AndroidColor.rgb(229, 57, 53)
     }
     canvas.drawCircle(center, center, center - 1f, border)
-    canvas.drawCircle(center, center, center - (1.5f * density), fill)
+    canvas.drawCircle(center, center, center - (1.6f * density), fill)
     val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = AndroidColor.WHITE
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        textSize = (if (number < 10) 9f else 7.5f) * density
+        textSize = (if (number < 10) 9.5f else 8f) * density
     }
     val baseline = center - (text.ascent() + text.descent()) / 2f
     canvas.drawText(number.toString(), center, baseline, text)
-    return BitmapDescriptorFactory.fromBitmap(bitmap)
+    val descriptor = BitmapDescriptorFactory.fromBitmap(bitmap)
+    markerIconCache[key] = descriptor
+    return descriptor
 }
 
 private fun openPlace(context: Context, place: TripPlaceEntity) {
