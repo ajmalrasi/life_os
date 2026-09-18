@@ -93,6 +93,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
@@ -377,6 +380,9 @@ private fun PlanTab(
     val day = days.firstOrNull { it.id == selectedDayId } ?: days.firstOrNull()
     val activities = detail.activities.filter { it.dayId == day?.id }.sortedBy { it.sortOrder }
     val groups = remember(activities) { groupActivities(activities) }
+    LaunchedEffect(selectedDayId) {
+        listState.scrollToItem(0)
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -522,9 +528,30 @@ private fun ExploreTab(
     val scope = rememberCoroutineScope()
     var editingPlaces by remember { mutableStateOf(false) }
     var mapUserCollapsed by rememberSaveable(detail.trip.id) { mutableStateOf(false) }
+    LaunchedEffect(selectedDayId) {
+        listState.scrollToItem(0)
+        mapUserCollapsed = false
+    }
     val isListScrolledDown by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40
+        }
+    }
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -12f && !mapUserCollapsed) {
+                    mapUserCollapsed = true
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 12f && listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 && mapUserCollapsed) {
+                    mapUserCollapsed = false
+                }
+                return Offset.Zero
+            }
         }
     }
     val isMapCollapsed = !fullscreen && (mapUserCollapsed || isListScrolledDown)
@@ -627,6 +654,8 @@ private fun ExploreTab(
         cameraByFilter[selectedDayId ?: ALL_STOPS_CAMERA_KEY] = camera.position
         onSelectDay(nextDayId)
         showCurrentLocation = false
+        mapUserCollapsed = false
+        scope.launch { listState.scrollToItem(0) }
     }
     val refitCurrentFilter: () -> Unit = {
         showCurrentLocation = false
@@ -791,7 +820,7 @@ private fun ExploreTab(
         }
         if (!fullscreen) LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(nestedScrollConnection).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             item {
@@ -928,7 +957,7 @@ private fun ExploreTab(
                     }
                 }
             }
-            item { Spacer(Modifier.height(24.dp)) }
+            item { Spacer(Modifier.height(if (isMapCollapsed) 32.dp else 240.dp)) }
         }
         } // closes Column
         if (editingPlaces && !fullscreen) {
