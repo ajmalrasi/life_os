@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -125,7 +127,7 @@ class TripRepository @Inject constructor(
 
 private fun TripDetail.toBackupJson(locations: List<TripLocationSampleEntity>) = JsonObject(
     mapOf(
-        "schema_version" to JsonPrimitive(1),
+        "schema_version" to JsonPrimitive(2),
         "trip" to JsonObject(mapOf(
             "id" to JsonPrimitive(trip.id), "title" to JsonPrimitive(trip.title),
             "start_date" to JsonPrimitive(trip.startDate), "end_date" to JsonPrimitive(trip.endDate),
@@ -141,11 +143,26 @@ private fun TripDetail.toBackupJson(locations: List<TripLocationSampleEntity>) =
             "latitude" to (it.latitude?.let(::JsonPrimitive) ?: JsonNull),
             "longitude" to (it.longitude?.let(::JsonPrimitive) ?: JsonNull),
         )) }),
-        "activities" to JsonArray(activities.map { JsonObject(mapOf(
-            "id" to JsonPrimitive(it.id), "day_id" to JsonPrimitive(it.dayId),
-            "title" to JsonPrimitive(it.title), "type" to JsonPrimitive(it.type),
-            "status" to JsonPrimitive(it.status), "notes" to (it.notes?.let(::JsonPrimitive) ?: JsonNull),
-        )) }),
+        "activities" to JsonArray(activities.map { act ->
+            val fields = mutableMapOf<String, JsonElement>(
+                "id" to JsonPrimitive(act.id),
+                "day_id" to JsonPrimitive(act.dayId),
+                "title" to JsonPrimitive(act.title),
+                "type" to JsonPrimitive(act.type),
+                "status" to JsonPrimitive(act.status),
+                "notes" to (act.notes?.let(::JsonPrimitive) ?: JsonNull),
+                "place_id" to (act.placeId?.let(::JsonPrimitive) ?: JsonNull),
+                "from_place_id" to (act.fromPlaceId?.let(::JsonPrimitive) ?: JsonNull),
+                "to_place_id" to (act.toPlaceId?.let(::JsonPrimitive) ?: JsonNull),
+                "transport_mode" to (act.transportMode?.let(::JsonPrimitive) ?: JsonNull),
+            )
+            act.stepsJson?.let { stepsRaw ->
+                runCatching { Json.parseToJsonElement(stepsRaw) }.getOrNull()?.let {
+                    fields["steps"] = it
+                }
+            }
+            JsonObject(fields)
+        }),
         "visits" to JsonArray(visits.map { JsonObject(mapOf(
             "id" to JsonPrimitive(it.id), "name" to JsonPrimitive(it.name),
             "latitude" to JsonPrimitive(it.latitude), "longitude" to JsonPrimitive(it.longitude),

@@ -53,7 +53,9 @@ object AppModule {
     @Provides
     @Singleton
     fun tripDatabase(@ApplicationContext context: Context): TripDatabase =
-        Room.databaseBuilder(context, TripDatabase::class.java, "lifeos-trips.db").build()
+        Room.databaseBuilder(context, TripDatabase::class.java, "lifeos-trips.db")
+            .addMigrations(TripDatabase.MIGRATION_1_2)
+            .build()
 
     @Provides
     fun tripDao(db: TripDatabase): TripDao = db.tripDao()

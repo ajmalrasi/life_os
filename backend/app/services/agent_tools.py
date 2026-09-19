@@ -48,7 +48,7 @@ _DEFAULT_LIVE_METRICS = (
 TOOL_SCHEMAS: list[dict] = [
     {"type": "function", "function": {
         "name": "get_trip_context",
-        "description": "Read a backed-up trip itinerary, completed activities, visits, and expenses. Use for questions about travel plans or what happened during a trip.",
+        "description": "Read a backed-up trip itinerary, completed activities, visits, multi-step transit routes (metro stations, lines, platforms, train coaches, seats, road pickup zones), and expenses. Use for questions about travel plans, routes, transfers, or what happened during a trip.",
         "parameters": {"type": "object", "properties": {
             "trip_id": {"type": "string", "description": "LifeOS trip id. Omit to read the most recently updated trip."}
         }},

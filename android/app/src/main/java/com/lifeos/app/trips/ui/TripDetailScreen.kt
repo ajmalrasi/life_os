@@ -53,6 +53,14 @@ import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Directions
+import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.DirectionsSubway
+import androidx.compose.material.icons.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Flight
+import androidx.compose.material.icons.rounded.Train
+import com.lifeos.app.trips.importer.ImportTransitStep
+import kotlinx.serialization.json.Json
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Fullscreen
@@ -165,6 +173,7 @@ private object PlacePredictionCache {
 }
 
 private const val ALL_STOPS_CAMERA_KEY = "all-stops"
+private val transitStepsJsonParser = Json { ignoreUnknownKeys = true }
 
 @Composable
 fun TripDetailScreen(
@@ -484,6 +493,7 @@ private fun ActivityCard(activity: TripActivityEntity, viewModel: TripDetailView
             )
             activity.condition?.let { Text("When: $it", color = LifeOsColors.AccentAmber) }
             activity.notes?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted) }
+            activity.stepsJson?.let { TransitStepsSection(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = activity.status == "completed",
@@ -541,6 +551,7 @@ private fun AlternativeChoiceCard(alternatives: List<TripActivityEntity>, viewMo
                         Text(optionLabel(option), fontWeight = FontWeight.SemiBold)
                         Text(option.title, style = MaterialTheme.typography.bodyMedium)
                         option.notes?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted) }
+                        option.stepsJson?.let { TransitStepsSection(it) }
                     }
                 }
             }
@@ -551,6 +562,18 @@ private fun AlternativeChoiceCard(alternatives: List<TripActivityEntity>, viewMo
 private fun optionLabel(option: TripActivityEntity): String {
     val terminal = Regex("(?i)\\bT[1-3]\\b").find(option.condition.orEmpty())?.value?.uppercase()
     return terminal ?: option.condition ?: "Option"
+}
+
+@Composable
+private fun TransitStepsSection(stepsJson: String) {
+    val steps = remember(stepsJson) {
+        runCatching {
+            transitStepsJsonParser.decodeFromString<List<ImportTransitStep>>(stepsJson)
+        }.getOrNull() ?: emptyList()
+    }
+    if (steps.isEmpty()) return
+
+    TransitRouteTimeline(steps = steps, modifier = Modifier.padding(vertical = 4.dp))
 }
 
 @Composable

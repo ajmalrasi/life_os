@@ -1,0 +1,341 @@
+{
+  "schema_version": 2,
+  "trip": {
+    "id": "delhi-agra-2026",
+    "title": "Delhi & Agra Explorer",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-04",
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "original_text": "Flight arrival at Delhi IGI, metro transfer, hotel stay, early morning Shatabdi train to Agra, and local travel."
+  },
+  "places": [
+    {
+      "id": "del-airport",
+      "name": "Indira Gandhi International Airport (DEL)",
+      "address": "New Delhi, Delhi 110037",
+      "latitude": 28.5562,
+      "longitude": 77.1000,
+      "kind": "airport",
+      "station_code": "DEL",
+      "city": "New Delhi",
+      "verification": "verified"
+    },
+    {
+      "id": "igi-metro-station",
+      "name": "IGI Airport Metro Station",
+      "latitude": 28.5571,
+      "longitude": 77.0869,
+      "kind": "metro_station",
+      "city": "New Delhi",
+      "verification": "verified"
+    },
+    {
+      "id": "ndls-metro-station",
+      "name": "New Delhi Metro Station",
+      "latitude": 28.6431,
+      "longitude": 77.2223,
+      "kind": "metro_station",
+      "city": "New Delhi",
+      "verification": "verified"
+    },
+    {
+      "id": "ndls-railway-station",
+      "name": "New Delhi Railway Station (NDLS)",
+      "address": "Bhavbhuti Marg, Ratan Lal Market, Kamla Market, Ajmeri Gate, New Delhi, Delhi 110006",
+      "latitude": 28.6415,
+      "longitude": 77.2195,
+      "kind": "railway_station",
+      "station_code": "NDLS",
+      "city": "New Delhi",
+      "verification": "verified"
+    },
+    {
+      "id": "connaught-hotel",
+      "name": "The Lalit New Delhi",
+      "address": "Barakhamba Avenue, Connaught Place, New Delhi",
+      "latitude": 28.6315,
+      "longitude": 77.2285,
+      "kind": "hotel",
+      "city": "New Delhi",
+      "verification": "supplied"
+    },
+    {
+      "id": "agra-cantt-station",
+      "name": "Agra Cantt Railway Station (AGC)",
+      "latitude": 27.1585,
+      "longitude": 78.0098,
+      "kind": "railway_station",
+      "station_code": "AGC",
+      "city": "Agra",
+      "verification": "verified"
+    },
+    {
+      "id": "taj-mahal",
+      "name": "Taj Mahal",
+      "address": "Dharmapuri, Forest Colony, Tajganj, Agra, Uttar Pradesh 282001",
+      "latitude": 27.1751,
+      "longitude": 78.0421,
+      "kind": "monument",
+      "city": "Agra",
+      "verification": "verified"
+    }
+  ],
+  "days": [
+    {
+      "id": "day-1",
+      "date": "2026-10-01",
+      "title": "Arrival & City Transfer",
+      "activities": [
+        {
+          "id": "act-arrival-flight",
+          "title": "Flight Arrival at Delhi",
+          "type": "arrival",
+          "start_time": "18:30",
+          "end_time": "19:15",
+          "duration_minutes": 45,
+          "place_id": "del-airport",
+          "flexibility": "fixed",
+          "notes": "Deplane, collect baggage at belt 6, and proceed to exit.",
+          "alternatives": [
+            {
+              "id": "alt-t3-metro",
+              "title": "Airport Express Metro to City",
+              "condition": "Landing at Terminal 3",
+              "place_id": "ndls-metro-station",
+              "transport_mode": "metro",
+              "duration_minutes": 35,
+              "steps": [
+                {
+                  "step_order": 1,
+                  "mode": "walk",
+                  "title": "Walk from Arrivals to Metro",
+                  "duration_minutes": 7,
+                  "departure": {
+                    "terminal": "Terminal 3",
+                    "gate": "Gate 4",
+                    "notes": "Follow orange markers to Airport Express"
+                  },
+                  "arrival": {
+                    "station_name": "IGI Airport Metro Station"
+                  }
+                },
+                {
+                  "step_order": 2,
+                  "mode": "metro",
+                  "title": "Orange Line Express to New Delhi",
+                  "duration_minutes": 22,
+                  "departure": {
+                    "station_name": "IGI Airport Metro Station",
+                    "terminal": "T3",
+                    "platform": "Platform 1"
+                  },
+                  "arrival": {
+                    "station_name": "New Delhi Metro Station",
+                    "platform": "Platform 2",
+                    "exit_gate": "Gate 2 (Ajmeri Gate side)"
+                  },
+                  "transit_details": {
+                    "line_name": "Airport Express Line",
+                    "line_color": "Orange",
+                    "direction": "Towards New Delhi",
+                    "stops_count": 3,
+                    "intermediate_stops": ["Delhi Aerocity", "Dhaula Kuan", "Shivaji Stadium"],
+                    "frequency_minutes": 10,
+                    "fare": { "amount": "60", "currency": "INR" }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "alt-t1-cab",
+              "title": "Prepaid Cab or Uber from Terminal 1",
+              "condition": "Landing at Terminal 1",
+              "place_id": "connaught-hotel",
+              "transport_mode": "car",
+              "duration_minutes": 45,
+              "steps": [
+                {
+                  "step_order": 1,
+                  "mode": "car",
+                  "title": "Uber from T1 to Hotel",
+                  "duration_minutes": 45,
+                  "departure": {
+                    "terminal": "Terminal 1",
+                    "pickup_location": "T1 App-based Cab Pickup Lane 3"
+                  },
+                  "arrival": {
+                    "name": "The Lalit Hotel Porch"
+                  },
+                  "transit_details": {
+                    "road_type": "rideshare",
+                    "service_provider": "Uber Premier",
+                    "route_name": "Via Vandemataram Marg",
+                    "fare": { "amount": "450", "currency": "INR" }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "act-journey-to-hotel",
+          "title": "Metro + Auto to Hotel",
+          "type": "transport",
+          "start_time": "19:30",
+          "end_time": "20:20",
+          "duration_minutes": 50,
+          "from_place_id": "igi-metro-station",
+          "to_place_id": "connaught-hotel",
+          "steps": [
+            {
+              "step_order": 1,
+              "mode": "metro",
+              "title": "Airport Express Line to Shivaji Stadium",
+              "duration_minutes": 18,
+              "departure": {
+                "station_name": "IGI Airport Metro Station",
+                "terminal": "T3",
+                "platform": "Platform 1",
+                "scheduled_time": "19:35"
+              },
+              "arrival": {
+                "station_name": "Shivaji Stadium Metro Station",
+                "platform": "Platform 2",
+                "exit_gate": "Gate 1"
+              },
+              "transit_details": {
+                "line_name": "Airport Express Line",
+                "line_color": "Orange",
+                "direction": "Towards New Delhi",
+                "stops_count": 2,
+                "intermediate_stops": ["Delhi Aerocity", "Dhaula Kuan"]
+              }
+            },
+            {
+              "step_order": 2,
+              "mode": "car",
+              "title": "Auto-rickshaw to Hotel",
+              "duration_minutes": 12,
+              "departure": {
+                "station_name": "Shivaji Stadium Exit",
+                "pickup_location": "Auto Stand at Baba Kharak Singh Rd"
+              },
+              "arrival": {
+                "name": "The Lalit Hotel",
+                "dropoff_location": "Main Lobby entrance"
+              },
+              "transit_details": {
+                "road_type": "auto_rickshaw",
+                "fare": { "amount": "70", "currency": "INR" },
+                "notes": "Ask driver to go via Barakhamba Road"
+              }
+            }
+          ]
+        },
+        {
+          "id": "act-hotel-checkin",
+          "title": "Check in at The Lalit",
+          "type": "rest",
+          "start_time": "20:30",
+          "place_id": "connaught-hotel",
+          "notes": "Rest and prepare for early morning Shatabdi."
+        }
+      ]
+    },
+    {
+      "id": "day-2",
+      "date": "2026-10-02",
+      "title": "Day Trip to Agra",
+      "activities": [
+        {
+          "id": "act-train-to-agra",
+          "title": "Bhopal Shatabdi Express to Agra",
+          "type": "transport",
+          "start_time": "06:00",
+          "end_time": "07:50",
+          "duration_minutes": 110,
+          "from_place_id": "ndls-railway-station",
+          "to_place_id": "agra-cantt-station",
+          "flexibility": "fixed",
+          "steps": [
+            {
+              "step_order": 1,
+              "mode": "car",
+              "title": "Pre-booked Cab from Hotel to Station",
+              "duration_minutes": 15,
+              "departure": {
+                "name": "The Lalit Hotel",
+                "pickup_location": "Hotel Porch",
+                "scheduled_time": "05:15"
+              },
+              "arrival": {
+                "station_name": "New Delhi Railway Station",
+                "dropoff_location": "Paharganj side entrance",
+                "scheduled_time": "05:30"
+              },
+              "transit_details": {
+                "road_type": "taxi",
+                "service_provider": "Hotel Travel Desk",
+                "fare": { "amount": "250", "currency": "INR" }
+              }
+            },
+            {
+              "step_order": 2,
+              "mode": "train",
+              "title": "Train #12002 Bhopal Shatabdi Express",
+              "duration_minutes": 110,
+              "distance_km": 195,
+              "departure": {
+                "station_name": "New Delhi Railway Station",
+                "station_code": "NDLS",
+                "platform": "Platform 1",
+                "scheduled_time": "06:00",
+                "notes": "Train is usually spotted at Platform 1 early."
+              },
+              "arrival": {
+                "station_name": "Agra Cantt Railway Station",
+                "station_code": "AGC",
+                "platform": "Platform 1",
+                "scheduled_time": "07:50",
+                "exit_gate": "Main Exit Gate"
+              },
+              "transit_details": {
+                "train_number": "12002",
+                "train_name": "New Delhi - Rani Kamlapati (Bhopal) Shatabdi Express",
+                "operator": "Indian Railways",
+                "coach": "C2",
+                "seat_or_berth": "Seat 45 (Window)",
+                "booking_class": "AC Chair Car (CC)",
+                "pnr": "284-9182741",
+                "fare": { "amount": "755", "currency": "INR" },
+                "notes": "Morning tea and breakfast served on board."
+              }
+            }
+          ]
+        },
+        {
+          "id": "act-visit-taj",
+          "title": "Visit Taj Mahal",
+          "type": "visit",
+          "start_time": "08:30",
+          "end_time": "12:00",
+          "duration_minutes": 210,
+          "place_id": "taj-mahal",
+          "notes": "Enter via East Gate. Shoe covers and electric golf cart included with ticket."
+        }
+      ]
+    }
+  ],
+  "reminders": [
+    {
+      "id": "rem-shatabdi",
+      "title": "Reach NDLS Platform 1 before 05:45 AM",
+      "activity_id": "act-train-to-agra",
+      "local_date_time": "2026-10-02T05:30:00"
+    }
+  ],
+  "open_questions": [
+    "Confirm whether flight lands at Delhi Terminal 3 or Terminal 1."
+  ]
+}

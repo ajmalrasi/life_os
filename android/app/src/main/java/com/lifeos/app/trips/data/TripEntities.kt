@@ -66,10 +66,13 @@ data class TripActivityEntity(
     val endTime: String? = null,
     val durationMinutes: Int? = null,
     val placeId: String? = null,
+    val fromPlaceId: String? = null,
+    val toPlaceId: String? = null,
     val notes: String? = null,
     val flexibility: String = "flexible",
     val condition: String? = null,
     val transportMode: String? = null,
+    val stepsJson: String? = null,
     val status: String = "planned",
     val sortOrder: Int,
 )
