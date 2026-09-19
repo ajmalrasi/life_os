@@ -95,11 +95,83 @@ curl -s localhost:8000/healthz                       # {"status":"healthy"}
 - Tests: `cd backend && pytest` (uses SQLite).
 
 ## 3. Build & test the Android app
-- Standard Gradle/Android Studio project under `android/`. **Backend changes are
-  verified on the Jetson; Android changes are NOT auto-built — build & eye-check
-  them in Android Studio.**
-- The app's backend base URL is set in-app (see `DynamicBaseUrlInterceptor` /
-  settings) — point it at `http://192.168.3.30:8000`.
+
+### Environment & Tooling Paths (Dev Mac)
+- **Java Home (Android Studio JBR):** Plain `java` or `adb` may not be in default `PATH`. Always invoke Gradle with Android Studio's bundled JBR:
+  ```bash
+  export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+  ```
+- **ADB Path:**
+  ```bash
+  export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
+  # Or run directly: ~/Library/Android/sdk/platform-tools/adb
+  ```
+- **Device:** Samsung S24 (`SM-S921B`, serial e.g. `RZCX60SNHHE`) connected via USB/Wi-Fi ADB. Verify with `~/Library/Android/sdk/platform-tools/adb devices`.
+
+### Build Commands (Run from `android/`)
+- **Unit tests:**
+  ```bash
+  JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest
+  ```
+- **Assemble Debug APK:**
+  ```bash
+  JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew assembleDebug
+  # Output APK: android/app/build/outputs/apk/debug/app-debug.apk
+  ```
+- **Connected Tests (on physical phone):**
+  ```bash
+  JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew connectedDebugAndroidTest
+  # Or run specific test class:
+  JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.lifeos.app.trips.data.TripDatabaseTest
+  ```
+
+### ADB Operations: Install, Run, View Screen & Inspect DB
+- **Install APK onto phone:**
+  ```bash
+  ~/Library/Android/sdk/platform-tools/adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+  ```
+- **Launch app:**
+  ```bash
+  ~/Library/Android/sdk/platform-tools/adb shell am start -n com.lifeos.app/.MainActivity
+  ```
+- **Capture screenshot (to visually verify UI changes):**
+  ```bash
+  ~/Library/Android/sdk/platform-tools/adb exec-out screencap -p > /tmp/lifeos_screen.png
+  # Use view_file on /tmp/lifeos_screen.png to inspect
+  ```
+- **Inspect Room SQLite DB directly on device:**
+  The debug app is debuggable, allowing `run-as com.lifeos.app` access to the private `/data/data/com.lifeos.app/databases/` directory.
+  - Inspect Trips DB (`lifeos-trips.db`):
+    ```bash
+    ~/Library/Android/sdk/platform-tools/adb shell "run-as com.lifeos.app cat databases/lifeos-trips.db" > /tmp/lifeos-trips.db
+    ~/Library/Android/sdk/platform-tools/adb shell "run-as com.lifeos.app cat databases/lifeos-trips.db-wal" > /tmp/lifeos-trips.db-wal
+    sqlite3 /tmp/lifeos-trips.db "SELECT id, title, startDate, endDate FROM trips;"
+    sqlite3 /tmp/lifeos-trips.db "SELECT id, tripId, name FROM trip_places;"
+    ```
+  - Inspect Main DB (`lifeos.db`):
+    ```bash
+    ~/Library/Android/sdk/platform-tools/adb shell "run-as com.lifeos.app cat databases/lifeos.db" > /tmp/lifeos.db
+    ~/Library/Android/sdk/platform-tools/adb shell "run-as com.lifeos.app cat databases/lifeos.db-wal" > /tmp/lifeos.db-wal
+    sqlite3 /tmp/lifeos.db ".tables"
+    ```
+
+### App Structure & Key Locations
+The app is 100% Jetpack Compose + Room + Hilt + Retrofit under `android/app/src/main/java/com/lifeos/app/`:
+- `MainActivity.kt`: Entry point hosting Compose navigation.
+- `presentation/LifeOsApp.kt`: Root scaffold, navigation drawer, and `NavHost` routes (`Today`, `Pulse`, `Money`, `Ask`, `Trips`, `Settings`).
+- **Feature Packages:**
+  - `presentation/dashboard/`: Today dashboard (`DashboardScreen.kt`, `DashboardViewModel.kt`).
+  - `presentation/trends/`: Health and recovery score trend charts (`TrendsScreen.kt`, `TrendChart.kt`).
+  - `presentation/money/`: Financial tracker, statement cycles, EMI (`MoneyScreen.kt`).
+  - `presentation/chat/`: Grounded Ask chat (`ChatScreen.kt`, `ChatViewModel.kt`).
+  - `trips/`:
+    - `importer/TripImport.kt`: Parses and validates trip JSON against schema, builds scoped entities (`${tripId}_${childId}`) so multiple trip versions never collide. Schema in `docs/trips/trip-v1.schema.json`.
+    - `data/TripDatabase.kt`, `TripEntities.kt`, `TripDao.kt`: Separate `lifeos-trips.db` Room database with foreign key cascades.
+    - `data/TripRepository.kt`: Repository coordinating Room DB, attachment storage (`TripFileStore.kt`), and backend backup (`LifeOsApi.kt`).
+    - `ui/TripsScreen.kt`, `TripsViewModel.kt`: Trip list, import dialog (with "Add as new trip" vs "Replace existing trip" and title editing), and trip deletion.
+    - `ui/TripDetailScreen.kt`: Multi-tab trip view (Plan/Today, Map with Google Maps Compose, Details with overview and deletion, Memories/Journal).
+    - `location/TripLocationService.kt`: Foreground GPS tracking service recording samples and detecting stops/visits.
+  - `data/remote/LifeOsApi.kt`: Retrofit client communicating with FastAPI backend at `http://192.168.3.30:8000`.
 
 ---
 

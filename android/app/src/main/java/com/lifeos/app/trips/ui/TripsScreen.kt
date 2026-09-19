@@ -47,6 +47,13 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.Alignment
+
 @Composable
 fun TripsScreen(
     onOpenTrip: (String) -> Unit,
@@ -54,6 +61,7 @@ fun TripsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showImport by remember { mutableStateOf(false) }
+    var tripToDelete by remember { mutableStateOf<TripEntity?>(null) }
     var json by remember { mutableStateOf("") }
     val context = LocalContext.current
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -92,9 +100,25 @@ fun TripsScreen(
                 items(state.trips, key = { it.id }) { trip ->
                     LifeOsCard(modifier = Modifier.clickable { onOpenTrip(trip.id) }) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Text(trip.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                                AssistChip(onClick = { onOpenTrip(trip.id) }, label = { Text(tripDisplayStatus(trip)) })
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    AssistChip(onClick = { onOpenTrip(trip.id) }, label = { Text(tripDisplayStatus(trip)) })
+                                    IconButton(onClick = { tripToDelete = trip }) {
+                                        Icon(
+                                            Icons.Rounded.DeleteOutline,
+                                            contentDescription = "Delete trip",
+                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                        )
+                                    }
+                                }
                             }
                             Text(tripListDate(trip), color = LifeOsColors.OnSurfaceMuted)
                         }
@@ -110,6 +134,30 @@ fun TripsScreen(
                 }
             }
         }
+    }
+
+    tripToDelete?.let { trip ->
+        AlertDialog(
+            onDismissRequest = { tripToDelete = null },
+            title = { Text("Delete trip?") },
+            text = {
+                Text("Are you sure you want to delete \"${trip.title}\"? All planned stops, recorded visits, photos, and tracking data for this trip will be permanently removed.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteTrip(trip.id)
+                        tripToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { tripToDelete = null }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showImport) {
@@ -135,11 +183,68 @@ fun TripsScreen(
                     }
                 } else {
                     val preview = state.preview!!
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(preview.bundle.trip.title, fontWeight = FontWeight.Bold)
-                        Text("${preview.bundle.days.size} days · ${preview.bundle.activities.size} activities · ${preview.bundle.places.size} places")
-                        if (preview.warnings.isEmpty()) Text("No import warnings.")
-                        else preview.warnings.take(8).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    val existingTrip = remember(preview, state.trips) {
+                        preview.originalTripId?.let { id -> state.trips.firstOrNull { it.id == id } }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = state.editedTitle,
+                            onValueChange = viewModel::setEditedTitle,
+                            label = { Text("Trip title") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "${preview.bundle.days.size} days · ${preview.bundle.activities.size} activities · ${preview.bundle.places.size} places",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (existingTrip != null) {
+                            LifeOsCard {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        "Existing trip with same ID: \"${existingTrip.title}\"",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = LifeOsColors.AccentAmber,
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().clickable { viewModel.setAsNewTrip(true) },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = state.asNewTrip,
+                                            onClick = { viewModel.setAsNewTrip(true) },
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Column {
+                                            Text("Add as new trip", fontWeight = FontWeight.SemiBold)
+                                            Text("Creates a separate trip with unique IDs", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().clickable { viewModel.setAsNewTrip(false) },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = !state.asNewTrip,
+                                            onClick = { viewModel.setAsNewTrip(false) },
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Column {
+                                            Text("Replace existing trip", fontWeight = FontWeight.SemiBold)
+                                            Text("Replaces itinerary stops of \"${existingTrip.title}\"", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (preview.warnings.isEmpty()) {
+                            Text("No import warnings.", style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Warnings:", style = MaterialTheme.typography.labelSmall, color = LifeOsColors.AccentAmber)
+                                preview.warnings.take(6).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
                     }
                 }
             },
@@ -149,7 +254,9 @@ fun TripsScreen(
                         if (state.importing) CircularProgressIndicator(modifier = Modifier.padding(4.dp)) else Text("Review")
                     }
                 } else {
-                    Button(onClick = { viewModel.savePreview { showImport = false; onOpenTrip(it) } }) { Text("Save trip") }
+                    Button(onClick = { viewModel.savePreview { showImport = false; onOpenTrip(it) } }) {
+                        Text(if (state.asNewTrip) "Save new trip" else "Replace trip")
+                    }
                 }
             },
             dismissButton = {

@@ -145,6 +145,18 @@ interface TripDao {
     @Query("DELETE FROM trips WHERE id = :tripId")
     suspend fun deleteTrip(tripId: String)
 
+    @Query("DELETE FROM trip_activities WHERE tripId = :tripId")
+    suspend fun deleteTripActivities(tripId: String)
+
+    @Query("DELETE FROM trip_reminders WHERE tripId = :tripId")
+    suspend fun deleteTripReminders(tripId: String)
+
+    @Query("DELETE FROM trip_days WHERE tripId = :tripId")
+    suspend fun deleteTripDays(tripId: String)
+
+    @Query("DELETE FROM trip_places WHERE tripId = :tripId")
+    suspend fun deleteTripPlaces(tripId: String)
+
     @Transaction
     suspend fun importTrip(bundle: ImportedTripBundle) {
         if (insertTrip(bundle.trip) == -1L) {
@@ -153,6 +165,24 @@ interface TripDao {
                 bundle.trip.timezone, bundle.trip.currency, bundle.trip.originalText,
             )
         }
+        upsertDays(bundle.days)
+        upsertPlaces(bundle.places)
+        upsertActivities(bundle.activities)
+        upsertReminders(bundle.reminders)
+    }
+
+    @Transaction
+    suspend fun replaceTripItinerary(bundle: ImportedTripBundle) {
+        if (insertTrip(bundle.trip) == -1L) {
+            updateImportedTrip(
+                bundle.trip.id, bundle.trip.title, bundle.trip.startDate, bundle.trip.endDate,
+                bundle.trip.timezone, bundle.trip.currency, bundle.trip.originalText,
+            )
+        }
+        deleteTripActivities(bundle.trip.id)
+        deleteTripReminders(bundle.trip.id)
+        deleteTripDays(bundle.trip.id)
+        deleteTripPlaces(bundle.trip.id)
         upsertDays(bundle.days)
         upsertPlaces(bundle.places)
         upsertActivities(bundle.activities)

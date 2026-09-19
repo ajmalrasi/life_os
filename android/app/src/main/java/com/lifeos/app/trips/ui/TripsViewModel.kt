@@ -22,6 +22,8 @@ import com.lifeos.app.trips.data.TripRepository
 import com.lifeos.app.trips.importer.TripImportPreview
 import com.lifeos.app.trips.importer.TripImporter
 import com.lifeos.app.work.WorkScheduler
+import android.content.Intent
+import com.lifeos.app.trips.location.TripLocationService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +45,8 @@ data class TripsUiState(
     val preview: TripImportPreview? = null,
     val importError: String? = null,
     val importing: Boolean = false,
+    val editedTitle: String = "",
+    val asNewTrip: Boolean = true,
 )
 
 @HiltViewModel
@@ -58,19 +62,38 @@ class TripsViewModel @Inject constructor(
     fun preview(raw: String) {
         controls.update { it.copy(importing = true, importError = null, preview = null) }
         runCatching { importer.parse(raw) }
-            .onSuccess { result -> controls.update { it.copy(importing = false, preview = result) } }
+            .onSuccess { result ->
+                controls.update {
+                    it.copy(
+                        importing = false,
+                        preview = result,
+                        editedTitle = result.bundle.trip.title,
+                        asNewTrip = true,
+                    )
+                }
+            }
             .onFailure { error -> controls.update { it.copy(importing = false, importError = error.message) } }
     }
 
+    fun setAsNewTrip(asNew: Boolean) = controls.update { it.copy(asNewTrip = asNew) }
+    fun setEditedTitle(title: String) = controls.update { it.copy(editedTitle = title) }
+
     fun cancelPreview() = controls.update { it.copy(preview = null, importError = null) }
 
+    fun deleteTrip(tripId: String) = viewModelScope.launch { repository.delete(tripId) }
+
     fun savePreview(onSaved: (String) -> Unit) {
-        val preview = controls.value.preview ?: return
+        val current = controls.value
+        val preview = current.preview ?: return
+        val asNew = current.asNewTrip
+        val title = current.editedTitle.trim().ifBlank { preview.bundle.trip.title }
+        val targetTripId = if (asNew) UUID.randomUUID().toString() else preview.bundle.trip.id
+        val bundle = preview.buildBundle(targetTripId, title)
         viewModelScope.launch {
-            runCatching { repository.import(preview) }
+            runCatching { repository.import(bundle, replaceExisting = !asNew) }
                 .onSuccess {
                     controls.update { it.copy(preview = null, importError = null) }
-                    onSaved(preview.bundle.trip.id)
+                    onSaved(targetTripId)
                 }
                 .onFailure { error -> controls.update { it.copy(importError = error.message) } }
         }
@@ -135,7 +158,15 @@ class TripDetailViewModel @Inject constructor(
         ))
     }
 
-    fun delete() = viewModelScope.launch { repository.delete(tripId) }
+    fun delete(onDeleted: () -> Unit = {}) = viewModelScope.launch {
+        if (state.value.detail?.trip?.status == "active") {
+            context.startService(
+                Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP)
+            )
+        }
+        repository.delete(tripId)
+        onDeleted()
+    }
 
     fun backup() = viewModelScope.launch {
         backupMessage.value = "Backing up…"

@@ -25,7 +25,13 @@ class TripRepository @Inject constructor(
     fun observeTrip(id: String): Flow<TripDetail?> = dao.observeTrip(id)
     fun observeLocations(id: String): Flow<List<TripLocationSampleEntity>> = dao.observeLocations(id)
     suspend fun activeTrip(): TripEntity? = dao.activeTrip()
-    suspend fun import(preview: TripImportPreview) = dao.importTrip(preview.bundle)
+    suspend fun import(bundle: ImportedTripBundle, replaceExisting: Boolean = false) {
+        if (replaceExisting) {
+            dao.replaceTripItinerary(bundle)
+        } else {
+            dao.importTrip(bundle)
+        }
+    }
     suspend fun setStatus(id: String, status: String) = dao.setStatus(id, status)
     suspend fun setActivityStatus(id: String, status: String) = dao.setActivityStatus(id, status)
     suspend fun setReminderEnabled(id: String, enabled: Boolean) = dao.setReminderEnabled(id, enabled)
@@ -40,7 +46,11 @@ class TripRepository @Inject constructor(
     ) = dao.saveScheduledStop(place, activity, previousDayId, position)
     suspend fun removeScheduledStop(activityId: String, placeId: String?) =
         dao.removeScheduledStop(activityId, placeId)
-    suspend fun delete(id: String) = dao.deleteTrip(id)
+    suspend fun delete(id: String) {
+        dao.deleteTrip(id)
+        fileStore.deleteTripFiles(id)
+        runCatching { api.deleteTripBackup(id) }
+    }
     suspend fun addExpense(expense: TripExpenseEntity) = dao.upsertExpense(expense)
     suspend fun addAttachment(attachment: TripAttachmentEntity) = dao.upsertAttachment(attachment)
 

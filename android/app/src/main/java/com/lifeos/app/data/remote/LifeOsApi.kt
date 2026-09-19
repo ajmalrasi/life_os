@@ -77,6 +77,9 @@ interface LifeOsApi {
         @Body body: RequestBody,
     ): Response<Unit>
 
+    @DELETE("trips/{tripId}")
+    suspend fun deleteTripBackup(@Path("tripId") tripId: String): Response<Unit>
+
     @GET("priority")
     suspend fun listPriority(
         @Query("include_done") includeDone: Boolean = false,

@@ -37,4 +37,8 @@ class TripFileStore @Inject constructor(@ApplicationContext private val context:
         val type = context.contentResolver.getType(Uri.fromFile(file))?.toMediaTypeOrNull()
         return file.asRequestBody(type)
     }
+
+    fun deleteTripFiles(tripId: String) {
+        File(context.filesDir, "trips/$tripId").deleteRecursively()
+    }
 }

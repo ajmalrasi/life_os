@@ -18,49 +18,56 @@ This module needs **Android Studio (Ladybug or newer)** and the Android SDK.
 3. On the **Today** tab tap **Sync health & analyze** to grant Health Connect
    permissions, upload data, and recompute insights.
 
+## Build, Test & ADB Run (Mac CLI)
+
+Always point `JAVA_HOME` to Android Studio's bundled JBR:
 ```bash
-# Lint + unit tests (once the wrapper jar exists)
-./gradlew test
-# Assemble a debug APK
-./gradlew assembleDebug
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
 ```
 
-## Architecture (clean architecture)
+### Commands
+```bash
+# 1. Run unit tests
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest
+
+# 2. Build Debug APK
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew assembleDebug
+# Output: app/build/outputs/apk/debug/app-debug.apk
+
+# 3. Install on connected phone (e.g. Samsung S24)
+~/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# 4. Launch app
+~/Library/Android/sdk/platform-tools/adb shell am start -n com.lifeos.app/.MainActivity
+
+# 5. Capture screenshot to verify UI
+~/Library/Android/sdk/platform-tools/adb exec-out screencap -p > /tmp/lifeos_screen.png
+
+# 6. Run connected Room database tests on device
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew connectedDebugAndroidTest
+
+# 7. Inspect SQLite database directly on device
+~/Library/Android/sdk/platform-tools/adb shell "run-as com.lifeos.app cat databases/lifeos-trips.db" > /tmp/lifeos-trips.db
+~/Library/Android/sdk/platform-tools/adb shell "run-as com.lifeos.app cat databases/lifeos-trips.db-wal" > /tmp/lifeos-trips.db-wal
+sqlite3 /tmp/lifeos-trips.db "SELECT id, title FROM trips;"
+```
+
+## Architecture
 
 ```
 app/src/main/java/com/lifeos/app/
-├── domain/            Pure models + repository interfaces (no Android deps)
-│   ├── model/
-│   └── repository/
-├── data/              Implementations: the only layer touching frameworks
-│   ├── remote/        Retrofit API, DTOs, dynamic base-URL interceptor
-│   ├── local/         Room database, DAOs, entities (offline cache)
-│   ├── health/        HealthConnectManager (Health Connect SDK)
-│   ├── repository/    Repository implementations
-│   └── Mappers.kt
-├── di/                Hilt modules (Network, App/DB, Repository bindings)
+├── data/
+│   ├── remote/        Retrofit API, DTOs, dynamic base-URL interceptor (LifeOsApi.kt)
+│   ├── local/         Room database for metrics & mood (lifeos.db)
+│   └── repository/    Repository implementations
+├── trips/             Trips feature module
+│   ├── data/          Separate Room DB (lifeos-trips.db), TripDao, TripRepository, TripFileStore
+│   ├── importer/      JSON import validator (trip-v1.schema.json) & scoped bundle builder
+│   ├── location/      TripLocationService (foreground GPS recording & stop detection)
+│   └── ui/            TripsScreen, TripsViewModel, TripDetailScreen (Map, Plan, Details, Journal)
+├── di/                Hilt modules (AppModule, Network, Database)
 └── presentation/      Compose UI (Material 3) + ViewModels
-    ├── dashboard/  mood/  insights/  chat/  settings/
-    ├── components/  theme/
-    └── LifeOsApp.kt   bottom-nav scaffold + NavHost
+    ├── dashboard/  trends/  money/  chat/  settings/
+    └── LifeOsApp.kt   Scaffold, navigation drawer, bottom bar & NavHost
 ```
-
-- **Repository pattern**: ViewModels depend on interfaces in `domain/repository`.
-- **Offline-first**: scores/states/insights/mood are cached in Room and observed
-  via `Flow`; `refresh()`/`recompute()` reconcile with the backend.
-- **Retrofit** for API, **Room** for cache, **Health Connect SDK** for health,
-  **Hilt** for DI, **DataStore** for the configurable backend URL.
-
-## Health Connect
-
-Phase 1 requests read access to: sleep (+stages), heart rate, resting HR, HRV,
-SpO2, steps, exercise, calories, distance, VO2 max, weight. Permissions are
-declared in `AndroidManifest.xml` and requested at runtime from the dashboard.
-
-> The device needs the **Health Connect** app (built into Android 14+, or
-> installable from Play on Android 13).
-
-## Tests
-
-Unit tests live in `app/src/test/` (JUnit4 + MockK + Turbine + coroutines-test):
-mapper round-trips and `ChatViewModel` behavior. Run with `./gradlew test`.

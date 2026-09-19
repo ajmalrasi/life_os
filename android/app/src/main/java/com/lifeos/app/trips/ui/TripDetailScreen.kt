@@ -67,6 +67,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -168,12 +169,14 @@ private const val ALL_STOPS_CAMERA_KEY = "all-stops"
 @Composable
 fun TripDetailScreen(
     onMapFullscreenChanged: (Boolean) -> Unit = {},
+    onBack: () -> Unit = {},
     viewModel: TripDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val detail = state.detail
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var mapFullscreen by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -261,27 +264,39 @@ fun TripDetailScreen(
                         ScreenHeader(detail.trip.title, formatTripRange(startDate, endDate))
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (detail.trip.status == "active") {
-                                AssistChip(onClick = {
-                                    context.startService(Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP))
-                                    viewModel.setStatus("paused")
-                                }, label = { Text("Pause tracking") }, leadingIcon = { Icon(Icons.Rounded.Pause, null, Modifier.size(18.dp)) })
-                            } else {
-                                AssistChip(onClick = {
-                                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                                }, label = { Text("Track trip") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)) })
-                            }
-                            Surface(
-                                modifier = Modifier.height(32.dp),
-                                color = LifeOsColors.Primary.copy(alpha = 0.10f),
-                                shape = MaterialTheme.shapes.large,
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                                    Text(displayStatus, color = LifeOsColors.Primary, style = MaterialTheme.typography.labelLarge)
+                                if (detail.trip.status == "active") {
+                                    AssistChip(onClick = {
+                                        context.startService(Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP))
+                                        viewModel.setStatus("paused")
+                                    }, label = { Text("Pause tracking") }, leadingIcon = { Icon(Icons.Rounded.Pause, null, Modifier.size(18.dp)) })
+                                } else {
+                                    AssistChip(onClick = {
+                                        permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    }, label = { Text("Track trip") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)) })
                                 }
+                                Surface(
+                                    modifier = Modifier.height(32.dp),
+                                    color = LifeOsColors.Primary.copy(alpha = 0.10f),
+                                    shape = MaterialTheme.shapes.large,
+                                ) {
+                                    Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                                        Text(displayStatus, color = LifeOsColors.Primary, style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
+                            }
+                            IconButton(onClick = { showDeleteDialog = true }) {
+                                Icon(
+                                    Icons.Rounded.DeleteOutline,
+                                    contentDescription = "Delete trip",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                )
                             }
                         }
                         permissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -328,7 +343,13 @@ fun TripDetailScreen(
                                 },
                                 listState = planListState,
                             )
-                            2 -> TripTab(detail, viewModel, state.backupMessage, listState = detailsListState)
+                            2 -> TripTab(
+                                detail = detail,
+                                viewModel = viewModel,
+                                backupMessage = state.backupMessage,
+                                listState = detailsListState,
+                                onDeleteClick = { showDeleteDialog = true },
+                            )
                             3 -> MemoriesTab(detail, viewModel)
                         }
                     }
@@ -363,6 +384,30 @@ fun TripDetailScreen(
                     }
                 }
             }
+        }
+
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("Delete trip?") },
+                text = {
+                    Text("Are you sure you want to delete \"${detail.trip.title}\"? All planned stops, recorded visits, photos, and tracking data for this trip will be permanently removed.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showDeleteDialog = false
+                            viewModel.delete(onDeleted = onBack)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                },
+            )
         }
     }
 }
@@ -1374,6 +1419,7 @@ private fun TripTab(
     viewModel: TripDetailViewModel,
     backupMessage: String?,
     listState: LazyListState = rememberLazyListState(),
+    onDeleteClick: () -> Unit = {},
 ) {
     var expenseDialog by remember { mutableStateOf(false) }
     val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -1395,9 +1441,18 @@ private fun TripTab(
                     Text("${detail.days.size} days · $plannedStops planned stops · ${detail.places.size} saved places")
                     val unresolved = detail.places.count { it.latitude == null || it.longitude == null }
                     if (unresolved > 0) Text("$unresolved places need a map pin", color = LifeOsColors.AccentAmber)
-                    OutlinedButton(onClick = viewModel::backup) {
-                        Icon(Icons.Rounded.CloudUpload, null)
-                        Text(" Back up trip")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = viewModel::backup) {
+                            Icon(Icons.Rounded.CloudUpload, null)
+                            Text(" Back up")
+                        }
+                        OutlinedButton(
+                            onClick = onDeleteClick,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Icon(Icons.Rounded.DeleteOutline, null)
+                            Text(" Delete trip")
+                        }
                     }
                     backupMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted) }
                 }

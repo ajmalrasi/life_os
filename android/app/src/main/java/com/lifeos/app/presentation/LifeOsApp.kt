@@ -245,7 +245,10 @@ fun LifeOsApp(
                     route = TRIP_DETAILS_ROUTE,
                     arguments = listOf(navArgument("tripId") { type = NavType.StringType }),
                 ) {
-                    TripDetailScreen(onMapFullscreenChanged = { tripMapFullscreen = it })
+                    TripDetailScreen(
+                        onMapFullscreenChanged = { tripMapFullscreen = it },
+                        onBack = { navController.popBackStack() },
+                    )
                 }
             }
         }

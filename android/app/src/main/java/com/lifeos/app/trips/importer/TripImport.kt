@@ -96,7 +96,12 @@ data class TripImportPreview(
     val document: TripImportDocument,
     val bundle: ImportedTripBundle,
     val warnings: List<String>,
-)
+) {
+    val originalTripId: String? get() = document.trip.id?.takeIf { it.isNotBlank() }
+
+    fun buildBundle(targetTripId: String, title: String? = null): ImportedTripBundle =
+        TripImporter.buildBundle(document, targetTripId, title)
+}
 
 class TripImporter @Inject constructor() {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -155,66 +160,100 @@ class TripImporter @Inject constructor() {
         }
 
         val tripId = document.trip.id?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
-        val activities = mutableListOf<TripActivityEntity>()
-        document.days.forEach { day ->
-            day.activities.forEachIndexed { index, activity ->
-                activities += activity.toEntity(tripId, day.id, index * 10)
-                activity.alternatives.forEachIndexed { altIndex, alternative ->
-                    activities += TripActivityEntity(
-                        id = alternative.id,
-                        tripId = tripId,
-                        dayId = day.id,
-                        title = alternative.title,
-                        type = "alternative",
-                        durationMinutes = alternative.durationMinutes,
-                        placeId = alternative.placeId,
-                        notes = alternative.notes,
-                        flexibility = "conditional",
-                        condition = alternative.condition,
-                        transportMode = alternative.transportMode,
-                        sortOrder = index * 10 + altIndex + 1,
-                    )
-                }
-            }
-        }
-        val bundle = ImportedTripBundle(
-            trip = TripEntity(
-                id = tripId,
-                title = document.trip.title.trim(),
-                startDate = document.trip.startDate,
-                endDate = document.trip.endDate,
-                timezone = document.trip.timezone,
-                currency = document.trip.currency,
-                originalText = document.trip.originalText,
-            ),
-            days = document.days.mapIndexed { index, day ->
-                TripDayEntity(day.id, tripId, day.date, day.title, index)
-            },
-            places = document.places.map { place ->
-                TripPlaceEntity(
-                    place.id, tripId, place.name, place.address, place.latitude, place.longitude,
-                    place.googlePlaceId, place.kind, place.verification,
-                )
-            },
-            activities = activities,
-            reminders = document.reminders.map { reminder ->
-                TripReminderEntity(
-                    reminder.id, tripId, reminder.activityId, reminder.title,
-                    reminder.note, reminder.localDateTime,
-                )
-            },
-        )
+        val bundle = buildBundle(document, tripId)
         return TripImportPreview(document, bundle, warnings.distinct())
     }
 
-    private fun ImportActivity.toEntity(tripId: String, dayId: String, order: Int) = TripActivityEntity(
-        id, tripId, dayId, title, type, startTime, endTime, durationMinutes, placeId,
-        notes, flexibility, condition, transportMode, sortOrder = order,
-    )
+    companion object {
+        fun buildBundle(
+            document: TripImportDocument,
+            targetTripId: String,
+            targetTitle: String? = null,
+        ): ImportedTripBundle {
+            val title = targetTitle?.trim()?.takeIf { it.isNotBlank() } ?: document.trip.title.trim()
+            val dayIdMap = document.days.associate { it.id to "${targetTripId}_${it.id}" }
+            val placeIdMap = document.places.associate { it.id to "${targetTripId}_${it.id}" }
+            val activityIdMap = mutableMapOf<String, String>()
 
-    private fun parseDate(value: String, field: String): LocalDate =
-        runCatching { LocalDate.parse(value) }.getOrElse { throw IllegalArgumentException("$field must use YYYY-MM-DD.") }
+            val activities = mutableListOf<TripActivityEntity>()
+            document.days.forEach { day ->
+                val mappedDayId = dayIdMap.getValue(day.id)
+                day.activities.forEachIndexed { index, activity ->
+                    val mappedActivityId = "${targetTripId}_${activity.id}"
+                    activityIdMap[activity.id] = mappedActivityId
+                    activities += TripActivityEntity(
+                        id = mappedActivityId,
+                        tripId = targetTripId,
+                        dayId = mappedDayId,
+                        title = activity.title,
+                        type = activity.type,
+                        startTime = activity.startTime,
+                        endTime = activity.endTime,
+                        durationMinutes = activity.durationMinutes,
+                        placeId = activity.placeId?.let { placeIdMap[it] },
+                        notes = activity.notes,
+                        flexibility = activity.flexibility,
+                        condition = activity.condition,
+                        transportMode = activity.transportMode,
+                        status = "planned",
+                        sortOrder = index * 10,
+                    )
+                    activity.alternatives.forEachIndexed { altIndex, alternative ->
+                        val mappedAltId = "${targetTripId}_${alternative.id}"
+                        activityIdMap[alternative.id] = mappedAltId
+                        activities += TripActivityEntity(
+                            id = mappedAltId,
+                            tripId = targetTripId,
+                            dayId = mappedDayId,
+                            title = alternative.title,
+                            type = "alternative",
+                            durationMinutes = alternative.durationMinutes,
+                            placeId = alternative.placeId?.let { placeIdMap[it] },
+                            notes = alternative.notes,
+                            flexibility = "conditional",
+                            condition = alternative.condition,
+                            transportMode = alternative.transportMode,
+                            status = "planned",
+                            sortOrder = index * 10 + altIndex + 1,
+                        )
+                    }
+                }
+            }
 
-    private fun parseTime(value: String, field: String): LocalTime =
-        runCatching { LocalTime.parse(value) }.getOrElse { throw IllegalArgumentException("$field must use 24-hour HH:MM.") }
+            return ImportedTripBundle(
+                trip = TripEntity(
+                    id = targetTripId,
+                    title = title,
+                    startDate = document.trip.startDate,
+                    endDate = document.trip.endDate,
+                    timezone = document.trip.timezone,
+                    currency = document.trip.currency,
+                    originalText = document.trip.originalText,
+                ),
+                days = document.days.mapIndexed { index, day ->
+                    TripDayEntity(dayIdMap.getValue(day.id), targetTripId, day.date, day.title, index)
+                },
+                places = document.places.map { place ->
+                    TripPlaceEntity(
+                        placeIdMap.getValue(place.id), targetTripId, place.name, place.address, place.latitude, place.longitude,
+                        place.googlePlaceId, place.kind, place.verification,
+                    )
+                },
+                activities = activities,
+                reminders = document.reminders.map { reminder ->
+                    TripReminderEntity(
+                        "${targetTripId}_${reminder.id}", targetTripId,
+                        reminder.activityId?.let { activityIdMap[it] }, reminder.title,
+                        reminder.note, reminder.localDateTime,
+                    )
+                },
+            )
+        }
+
+        private fun parseDate(value: String, field: String): LocalDate =
+            runCatching { LocalDate.parse(value) }.getOrElse { throw IllegalArgumentException("$field must use YYYY-MM-DD.") }
+
+        private fun parseTime(value: String, field: String): LocalTime =
+            runCatching { LocalTime.parse(value) }.getOrElse { throw IllegalArgumentException("$field must use 24-hour HH:MM.") }
+    }
 }
