@@ -23,6 +23,7 @@ object AppNotifications {
     const val CHANNEL_PULSE = "pulse_reminder"
     const val CHANNEL_INSIGHTS = "insights"
     const val CHANNEL_TRIPS = "trip_reminders"
+    const val CHANNEL_DATA_HEALTH = "data_health"
 
     const val EXTRA_OPEN_TAB = "open_tab"
     const val EXTRA_OPEN_ITEM_ID = "priority_item_id"
@@ -50,6 +51,13 @@ object AppNotifications {
                 "Priority & alerts",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply { description = "Important mail, schedule changes, and LifeOS alerts." }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_DATA_HEALTH,
+                "Data source health",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "A data source (bank mail, sleep sync, the local model, ...) has gone quiet." }
         )
     }
 

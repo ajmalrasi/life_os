@@ -112,6 +112,18 @@ data class ExecutionSyncResultDto(
 data class NotificationDto(val severity: String, val title: String, val detail: String)
 
 @Serializable
+data class SourceStatusDto(
+    val source: String,
+    @SerialName("last_success_at") val lastSuccessAt: String? = null,
+    @SerialName("last_attempt_at") val lastAttemptAt: String? = null,
+    @SerialName("last_error") val lastError: String? = null,
+    val stale: Boolean,
+)
+
+@Serializable
+data class SyncStatusDto(val sources: List<SourceStatusDto>)
+
+@Serializable
 data class ChatMessageDto(val role: String, val content: String)
 
 @Serializable

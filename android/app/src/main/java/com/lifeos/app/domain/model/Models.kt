@@ -66,6 +66,16 @@ data class AppNotification(
     val detail: String,
 )
 
+/** One data source's sync health (bank mail, statements, Priority mail,
+ * sleep/vitals, the local model), for the Settings "Data sources" panel. */
+data class SourceStatus(
+    val source: String,
+    val lastSuccessAt: Instant?,
+    val lastAttemptAt: Instant?,
+    val lastError: String?,
+    val stale: Boolean,
+)
+
 data class ChatTurn(
     val role: String, // "user" | "assistant"
     val content: String,

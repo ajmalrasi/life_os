@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -269,6 +272,29 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = if (state.mailError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
                     )
+                }
+            }
+        }
+
+        SettingsSectionLabel("Data sources")
+        SettingsGroup {
+            if (state.sourceStatusLoading) {
+                Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = LifeOsColors.Primary)
+                }
+            } else if (state.sourceStatusError) {
+                Text(
+                    "Data source health could not be loaded.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.Warning,
+                )
+            } else {
+                Column {
+                    state.sourceStatuses.forEachIndexed { index, status ->
+                        if (index > 0) HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                        DataSourceRow(status)
+                    }
                 }
             }
         }
@@ -550,4 +576,44 @@ private fun formatLastSync(epochMillis: Long?): String {
         .ofPattern("MMM d, h:mm a")
         .withZone(java.time.ZoneId.systemDefault())
     return formatter.format(instant)
+}
+
+private val SOURCE_LABELS = mapOf(
+    "bank_mail" to "Bank/UPI mail",
+    "statements" to "Card statements",
+    "priority_mail" to "Priority mail",
+    "sleep_vitals" to "Sleep & vitals",
+    "model" to "Local model",
+)
+
+@Composable
+private fun DataSourceRow(status: com.lifeos.app.domain.model.SourceStatus) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(
+                    color = if (status.stale) LifeOsColors.Warning else LifeOsColors.Positive,
+                    shape = CircleShape,
+                ),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                SOURCE_LABELS[status.source] ?: status.source,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                status.lastError
+                    ?: status.lastSuccessAt?.let { "Last seen ${formatLastSync(it.toEpochMilli())}" }
+                    ?: "Never synced",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status.stale) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+            )
+        }
+    }
 }

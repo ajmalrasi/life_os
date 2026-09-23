@@ -21,6 +21,7 @@ import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.MonthTrendDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
+import com.lifeos.app.data.remote.dto.SourceStatusDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentDto
 import com.lifeos.app.data.remote.dto.RefundDto
@@ -29,6 +30,7 @@ import com.lifeos.app.data.remote.dto.SpendTrendsDto
 import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
+import com.lifeos.app.domain.model.SourceStatus
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CardStatementItem
@@ -112,6 +114,14 @@ fun SynthesizedInsightEntity.toDomain() = SynthesizedInsight(
 
 // --- Notifications ---
 fun NotificationDto.toDomain() = AppNotification(severity, title, detail)
+
+fun SourceStatusDto.toDomain() = SourceStatus(
+    source = source,
+    lastSuccessAt = lastSuccessAt?.let(Instant::parse),
+    lastAttemptAt = lastAttemptAt?.let(Instant::parse),
+    lastError = lastError,
+    stale = stale,
+)
 
 // --- Chat ---
 fun ChatTurn.toDto() = ChatMessageDto(role, content)

@@ -29,11 +29,13 @@ from app.schemas.statement import (
 from app.mail.factory import finance_provider
 from app.mail.gmail_provider import GmailProvider
 from app.schemas.expense import TransactionOut
+from app.repositories.sync_status_repo import SyncAttemptRepository
 from app.services.card_cycles import current_card_cycle_details, current_card_cycles
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.statement_collector import StatementCollector
 from app.services.statement_details import statement_breakdown
 from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
+from app.services.sync_sources import SOURCE_STATEMENTS
 
 router = APIRouter(prefix="/statements", tags=["statements"])
 
@@ -174,14 +176,22 @@ def sync_statements(window_days: int = 40, db: Session = Depends(get_db)) -> Sta
             )
 
         settings = get_settings()
-        report = StatementCollector(
-            db,
-            _gmail_client(settings, db),
-            owner_name=settings.cc_owner_name,
-            owner_dob=settings.cc_owner_dob,
-            password_overrides=settings.cc_pdf_password_overrides,
-            window_days=window_days,
-        ).sync()
+        attempts = SyncAttemptRepository(db)
+        attempts.record_attempt(SOURCE_STATEMENTS)
+        try:
+            report = StatementCollector(
+                db,
+                _gmail_client(settings, db),
+                owner_name=settings.cc_owner_name,
+                owner_dob=settings.cc_owner_dob,
+                password_overrides=settings.cc_pdf_password_overrides,
+                window_days=window_days,
+            ).sync()
+        except Exception as exc:
+            db.rollback()
+            attempts.record_error(SOURCE_STATEMENTS, str(exc))
+            raise
+        attempts.record_success(SOURCE_STATEMENTS)
         return StatementSyncResult(
             banks_run=report.banks_run,
             emails_seen=report.emails_seen,

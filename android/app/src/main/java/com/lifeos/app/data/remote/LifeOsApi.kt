@@ -17,6 +17,7 @@ import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
 import com.lifeos.app.data.remote.dto.NotificationDto
+import com.lifeos.app.data.remote.dto.SyncStatusDto
 import com.lifeos.app.data.remote.dto.PriorityDetailsDto
 import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
 import com.lifeos.app.data.remote.dto.PriorityItemDto
@@ -149,6 +150,9 @@ interface LifeOsApi {
 
     @GET("notifications")
     suspend fun notifications(): List<NotificationDto>
+
+    @GET("status/sync")
+    suspend fun syncStatus(): SyncStatusDto
 
     @POST("chat")
     suspend fun chat(@Body request: ChatRequestDto): ChatResponseDto

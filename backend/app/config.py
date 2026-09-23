@@ -97,6 +97,15 @@ class Settings(BaseSettings):
     firebase_credentials_path: str = ""
     firebase_project_id: str = ""  # optional; otherwise read from the credentials file
 
+    # Sync/data-source staleness thresholds for GET /status/sync (Stage 3).
+    # Each source becomes "stale" once its most recent success is older than
+    # its threshold — sized to each source's own normal cadence (HAE pushes
+    # every 1-2h, bank alerts arrive continuously, statements are monthly).
+    status_sleep_stale_hours: int = 36
+    status_bank_mail_stale_hours: int = 72
+    status_priority_mail_stale_hours: int = 24
+    status_statements_stale_days: int = 40
+
     # Analytics
     correlation_min_samples: int = 7  # need at least a week of overlapping data
     correlation_significance: float = 0.35  # |r| threshold to surface an insight

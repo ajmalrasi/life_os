@@ -1,7 +1,9 @@
 package com.lifeos.app.presentation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -28,6 +31,8 @@ import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -108,6 +113,8 @@ fun LifeOsApp(
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val appViewModel: LifeOsAppViewModel = hiltViewModel()
+    val hasStaleSources by appViewModel.hasStaleSources.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
     val previousRoute = currentBackStackEntry?.let {
@@ -163,6 +170,7 @@ fun LifeOsApp(
             LifeOsNavigationDrawer(
                 currentRoute = currentRoute,
                 onDestinationSelected = navigateTo,
+                hasStaleSources = hasStaleSources,
             )
         },
     ) {
@@ -315,6 +323,7 @@ internal fun topLevelDestinationFor(route: String?): Destination? = when {
 internal fun LifeOsNavigationDrawer(
     currentRoute: String?,
     onDestinationSelected: (Destination) -> Unit,
+    hasStaleSources: Boolean = false,
 ) {
     ModalDrawerSheet(
         modifier = Modifier.widthIn(max = 328.dp),
@@ -354,11 +363,21 @@ internal fun LifeOsNavigationDrawer(
                         }
                     },
                     icon = {
-                        Icon(
-                            imageVector = destination.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                        )
+                        Box {
+                            Icon(
+                                imageVector = destination.icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            if (destination == Destination.SETTINGS && hasStaleSources) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .align(Alignment.TopEnd)
+                                        .background(color = LifeOsColors.Warning, shape = CircleShape),
+                                )
+                            }
+                        }
                     },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                     onClick = { onDestinationSelected(destination) },

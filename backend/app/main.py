@@ -24,6 +24,7 @@ from app.api.routes import (
     payee_labels,
     priority,
     statements,
+    status,
     trips,
 )
 from app.config import get_settings
@@ -79,6 +80,7 @@ app.include_router(collectors.router, dependencies=[Depends(require_token)])
 app.include_router(github_data.router, dependencies=[Depends(require_token)])
 app.include_router(expenses.router, dependencies=[Depends(require_token)])
 app.include_router(statements.router, dependencies=[Depends(require_token)])
+app.include_router(status.router, dependencies=[Depends(require_token)])
 app.include_router(payee_labels.router, dependencies=[Depends(require_token)])
 app.include_router(priority.router, dependencies=[Depends(require_token)])
 app.include_router(mail_accounts.router, dependencies=[Depends(require_token)])

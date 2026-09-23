@@ -2,8 +2,10 @@ package com.lifeos.app.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.domain.model.ConnectedMailAccount
+import com.lifeos.app.domain.model.SourceStatus
 import com.lifeos.app.mail.MailConnectionManager
 import com.lifeos.app.sync.LifeOsSyncCoordinator
 import com.lifeos.app.work.WorkScheduler
@@ -31,6 +33,9 @@ data class SettingsUiState(
     val connectingPurpose: String? = null,
     val mailMessage: String? = null,
     val mailError: Boolean = false,
+    val sourceStatuses: List<SourceStatus> = emptyList(),
+    val sourceStatusLoading: Boolean = true,
+    val sourceStatusError: Boolean = false,
 )
 
 @HiltViewModel
@@ -39,6 +44,7 @@ class SettingsViewModel @Inject constructor(
     private val workScheduler: WorkScheduler,
     private val syncCoordinator: LifeOsSyncCoordinator,
     private val mailConnectionManager: MailConnectionManager,
+    private val analyticsRepository: AnalyticsRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -66,6 +72,7 @@ class SettingsViewModel @Inject constructor(
             }
         }
         refreshMailAccounts()
+        refreshSourceStatuses()
     }
 
     fun onUrlChange(url: String) {
@@ -141,6 +148,25 @@ class SettingsViewModel @Inject constructor(
                         mailLoading = false,
                         mailError = true,
                         mailMessage = error.message ?: "Mail connections could not be loaded.",
+                    )
+                }
+        }
+    }
+
+    fun refreshSourceStatuses() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(sourceStatusLoading = true, sourceStatusError = false)
+            runCatching { analyticsRepository.syncStatus() }
+                .onSuccess { statuses ->
+                    _state.value = _state.value.copy(
+                        sourceStatuses = statuses,
+                        sourceStatusLoading = false,
+                    )
+                }
+                .onFailure {
+                    _state.value = _state.value.copy(
+                        sourceStatusLoading = false,
+                        sourceStatusError = true,
                     )
                 }
         }

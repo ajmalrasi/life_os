@@ -27,11 +27,13 @@ from app.services.expense_collector import ExpenseCollector
 from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankParser
 from app.mail.factory import finance_provider
 from app.mail.gmail_provider import GmailProvider
+from app.repositories.sync_status_repo import SyncAttemptRepository
 from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.repayments import RepaymentError, RepaymentService
 from app.services.refunds import RefundError, RefundService
 from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
+from app.services.sync_sources import SOURCE_BANK_MAIL
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -221,12 +223,21 @@ def sync_expenses(
             )
 
         settings = get_settings()
-        report = ExpenseCollector(
-            db,
-            _gmail_client(settings, db),
-            backfill_days=settings.expense_backfill_days,
-            full=full,
-        ).sync()
+        attempts = SyncAttemptRepository(db)
+        attempts.record_attempt(SOURCE_BANK_MAIL)
+        try:
+            report = ExpenseCollector(
+                db,
+                _gmail_client(settings, db),
+                backfill_days=settings.expense_backfill_days,
+                full=full,
+            ).sync()
+        except Exception as exc:
+            db.rollback()
+            attempts.record_error(SOURCE_BANK_MAIL, str(exc))
+            raise
+        attempts.record_success(SOURCE_BANK_MAIL)
+
         from app.services.payee_classifier import suggest_labels_for_new_payees
         from app.services.reconcile import run_reconciliation
 

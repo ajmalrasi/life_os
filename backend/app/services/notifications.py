@@ -19,6 +19,7 @@ from app.models.daily_state import LifeState
 from app.repositories.analytics_repo import ScoreRepository, StateRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.github_repo import GithubRepository
+from app.services.sync_status import SourceStatus, compute_sync_status
 
 
 @dataclass
@@ -46,6 +47,23 @@ SILENCE_FLOOR_DAYS = 14  # absolute floor: never fire before two quiet weeks
 SILENCE_MAX_ALERTS = 3  # cap so this can never become a wall of warnings
 
 
+_SOURCE_LABELS = {
+    "bank_mail": "Bank/UPI mail sync",
+    "statements": "Card statements",
+    "priority_mail": "Priority mail sync",
+    "sleep_vitals": "Sleep & vitals (Apple Health)",
+    "model": "Local model",
+}
+
+
+def _stale_source_detail(status: SourceStatus) -> str:
+    if status.last_error:
+        return f"Last attempt failed: {status.last_error}"
+    if status.last_success_at is None:
+        return "No successful sync recorded yet."
+    return f"Last seen {status.last_success_at:%b %d, %H:%M} UTC."
+
+
 def _source_key(account: str) -> str:
     """Stable identity for a card/account.
 
@@ -59,6 +77,7 @@ def _source_key(account: str) -> str:
 
 class NotificationService:
     def __init__(self, db: Session) -> None:
+        self.db = db
         self.scores = ScoreRepository(db)
         self.states = StateRepository(db)
         self.github = GithubRepository(db)
@@ -80,6 +99,7 @@ class NotificationService:
         out.extend(self._low_wellness(scores))
         out.extend(self._sedentary(scores))
         out.extend(self._silent_payment_sources(end))
+        out.extend(self._stale_sources())
         return out
 
     def _silent_payment_sources(self, today: date) -> list[Notification]:
@@ -233,3 +253,16 @@ class NotificationService:
                 )
             ]
         return []
+
+    def _stale_sources(self) -> list[Notification]:
+        """One source going quiet is easy to miss silently; surface it the same
+        way as any other data-grounded nudge (see GET /status/sync, Stage 3)."""
+        stale = [s for s in compute_sync_status(self.db) if s.stale]
+        return [
+            Notification(
+                "warning",
+                f"{_SOURCE_LABELS.get(s.source, s.source)} hasn't updated recently",
+                _stale_source_detail(s),
+            )
+            for s in stale
+        ]

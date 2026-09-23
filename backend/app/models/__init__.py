@@ -23,6 +23,7 @@ from app.models.payee_label import PayeeLabel
 from app.models.priority import PriorityFeedback, PriorityItem, PriorityItemMessage, PriorityNotification
 from app.models.raw_bank_email import RawBankEmail
 from app.models.sync_state import CollectorState
+from app.models.sync_status import SyncAttempt
 from app.models.synthesized_insight import SynthesizedInsight
 from app.models.transaction import Transaction
 from app.models.transaction_adjustment import TransactionAdjustment
@@ -50,6 +51,7 @@ __all__ = [
     "TransactionAdjustment",
     "TransactionReconciliation",
     "CollectorState",
+    "SyncAttempt",
     "PayeeLabel",
     "PriorityFeedback",
     "PriorityItem",
