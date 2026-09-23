@@ -2,6 +2,7 @@ package com.lifeos.app.presentation.money
 
 import com.lifeos.app.domain.model.Transaction
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -90,3 +91,63 @@ internal fun categoryTotals(transactions: List<Transaction>): List<CategoryTotal
     transactions.groupBy { it.spendCategory!! }
         .map { (category, list) -> CategoryTotal(category, list.totalAmount(), list.size) }
         .sortedByDescending { it.total }
+
+/** One category's monthly budget pace: spent-so-far vs. what that projects to
+ * by month-end at today's straight-line daily rate. Mirrors the backend's
+ * `app/services/budgets.py::budget_pace_summary` formula exactly (same
+ * `spent / days_elapsed * days_in_month` projection) so Ask and the on-device
+ * Overview bars never disagree — this just runs offline, from the cached
+ * transaction feed, instead of a live query. */
+internal data class BudgetPace(
+    val category: String,
+    val monthlyLimit: BigDecimal,
+    val spentSoFar: BigDecimal,
+    val projectedMonthTotal: BigDecimal,
+    val daysElapsed: Int,
+    val daysInMonth: Int,
+    val onPaceToExceed: Boolean,
+    /** Calendar day (1..daysInMonth) the straight-line pace would cross the
+     * limit, if it does this month; null when spending never catches up. */
+    val projectedExceedDay: Int?,
+)
+
+/** [transactions] should be the same debit/spend-category-non-null population
+ * as [categoryTotals] draws from (i.e. `spendableTransactions`, unfiltered by
+ * the UI's period/source/EMI toggles — a budget tracks the whole month
+ * regardless of what the user happens to be viewing). */
+internal fun budgetPace(
+    category: String,
+    monthlyLimit: BigDecimal,
+    transactions: List<Transaction>,
+    today: LocalDate = LocalDate.now(),
+): BudgetPace {
+    val monthSlice = PeriodSlice(today.withDayOfMonth(1), today)
+    val daysInMonth = today.lengthOfMonth()
+    val daysElapsed = today.dayOfMonth
+
+    val spent = transactions
+        .filter { it.spendCategory == category }
+        .inSlice(monthSlice)
+        .totalAmount()
+
+    val dailyRate = spent.divide(BigDecimal(daysElapsed), 6, RoundingMode.HALF_UP)
+    val projected = dailyRate.multiply(BigDecimal(daysInMonth)).setScale(2, RoundingMode.HALF_UP)
+
+    val exceedDay = if (dailyRate > BigDecimal.ZERO && monthlyLimit > BigDecimal.ZERO) {
+        val day = monthlyLimit.divide(dailyRate, 0, RoundingMode.CEILING).toInt()
+        day.takeIf { it in 1..daysInMonth }
+    } else {
+        null
+    }
+
+    return BudgetPace(
+        category = category,
+        monthlyLimit = monthlyLimit,
+        spentSoFar = spent,
+        projectedMonthTotal = projected,
+        daysElapsed = daysElapsed,
+        daysInMonth = daysInMonth,
+        onPaceToExceed = projected > monthlyLimit,
+        projectedExceedDay = exceedDay,
+    )
+}

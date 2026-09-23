@@ -124,6 +124,21 @@ data class SourceStatusDto(
 data class SyncStatusDto(val sources: List<SourceStatusDto>)
 
 @Serializable
+data class BudgetPaceDto(
+    val category: String,
+    @SerialName("monthly_limit") val monthlyLimit: String,
+    @SerialName("spent_so_far") val spentSoFar: String,
+    @SerialName("projected_month_total") val projectedMonthTotal: String,
+    @SerialName("days_elapsed") val daysElapsed: Int,
+    @SerialName("days_in_month") val daysInMonth: Int,
+    @SerialName("on_pace_to_exceed") val onPaceToExceed: Boolean,
+    @SerialName("projected_exceed_day") val projectedExceedDay: Int? = null,
+)
+
+@Serializable
+data class BudgetInDto(@SerialName("monthly_limit") val monthlyLimit: String)
+
+@Serializable
 data class ChatMessageDto(val role: String, val content: String)
 
 @Serializable

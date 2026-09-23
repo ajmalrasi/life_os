@@ -24,6 +24,7 @@ data class SettingsUiState(
     val lastSyncAt: Long? = null,
     val pulseReminderEnabled: Boolean = false,
     val pulseReminderHour: Int = 21,
+    val cardDueRemindersEnabled: Boolean = true,
     val reopenLastTab: Boolean = true,
     val syncing: Boolean = false,
     val syncMessage: String? = null,
@@ -58,6 +59,7 @@ class SettingsViewModel @Inject constructor(
                 lastSyncAt = settingsRepository.lastSyncAt.first(),
                 pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first(),
                 pulseReminderHour = settingsRepository.pulseReminderHour.first(),
+                cardDueRemindersEnabled = settingsRepository.cardDueRemindersEnabled.first(),
                 reopenLastTab = settingsRepository.reopenLastTab.first(),
             )
         }
@@ -106,6 +108,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.setPulseReminderHour(clamped)
             if (_state.value.pulseReminderEnabled) workScheduler.schedulePulseReminder(clamped)
+        }
+    }
+
+    /** Turning on takes effect from the next money refresh (app-open or manual
+     * sync), which already recomputes reminders from the current statements.
+     * Turning off cancels immediately — no need to wait for a refresh. */
+    fun setCardDueRemindersEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(cardDueRemindersEnabled = enabled)
+        viewModelScope.launch {
+            settingsRepository.setCardDueRemindersEnabled(enabled)
+            if (!enabled) workScheduler.cancelAllCardDueReminders()
         }
     }
 

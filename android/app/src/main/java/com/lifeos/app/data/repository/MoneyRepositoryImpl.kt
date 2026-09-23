@@ -1,8 +1,10 @@
 package com.lifeos.app.data.repository
 
+import com.lifeos.app.data.local.BudgetDao
 import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.TransactionDao
+import com.lifeos.app.data.remote.dto.BudgetInDto
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
 import com.lifeos.app.data.remote.dto.RefundCreateDto
@@ -10,6 +12,7 @@ import com.lifeos.app.data.remote.dto.StatementPaidUpdateDto
 import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
+import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CurrentCardCycle
@@ -31,7 +34,22 @@ class MoneyRepositoryImpl @Inject constructor(
     private val transactionDao: TransactionDao,
     private val cardStatementDao: CardStatementDao,
     private val currentCardCycleDao: CurrentCardCycleDao,
+    private val budgetDao: BudgetDao,
 ) : MoneyRepository {
+
+    override fun observeBudgets(): Flow<List<Budget>> =
+        budgetDao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun setBudget(category: String, monthlyLimit: java.math.BigDecimal): Budget {
+        val result = api.setBudget(category, BudgetInDto(monthlyLimit.toPlainString()))
+        budgetDao.upsertAll(listOf(result.toEntity()))
+        return Budget(category = result.category, monthlyLimit = java.math.BigDecimal(result.monthlyLimit))
+    }
+
+    override suspend fun deleteBudget(category: String) {
+        api.deleteBudget(category)
+        budgetDao.deleteByCategory(category)
+    }
 
     override fun observeTransactions(days: Int): Flow<List<Transaction>> {
         val since = LocalDate.now().minusDays(days.toLong()).toString()
@@ -71,6 +89,9 @@ class MoneyRepositoryImpl @Inject constructor(
         freshCycles?.let { response ->
             currentCardCycleDao.replaceAll(response.cycles.map { it.toEntity() })
         }
+        // Best-effort: budgets are a small, optional feature; never fail the
+        // whole money refresh (statements/transactions) over them.
+        runCatching { budgetDao.replaceAll(api.budgets().map { it.toEntity() }) }
     }
 
     override suspend fun analysis(days: Int): SpendAnalysis = api.spendAnalysis(days).toDomain()

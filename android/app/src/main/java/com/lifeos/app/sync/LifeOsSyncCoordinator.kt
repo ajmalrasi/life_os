@@ -6,6 +6,8 @@ import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.PriorityRepository
 import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.widget.SpendWidgetUpdater
+import com.lifeos.app.work.WorkScheduler
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
@@ -40,6 +42,7 @@ class LifeOsSyncCoordinator @Inject constructor(
     private val priorityRepository: PriorityRepository,
     private val settingsRepository: SettingsRepository,
     private val spendWidgetUpdater: SpendWidgetUpdater,
+    private val workScheduler: WorkScheduler,
 ) {
     private val mutex = Mutex()
 
@@ -57,6 +60,7 @@ class LifeOsSyncCoordinator @Inject constructor(
             .track("money")
         runCatching { priorityRepository.refresh() }.track("Priority")
         runCatching { spendWidgetUpdater.updateAll() }
+        refreshCardDueReminders()
 
         finish(failures, unauthorized, "LifeOS refreshed")
     }
@@ -76,8 +80,23 @@ class LifeOsSyncCoordinator @Inject constructor(
         runCatching { spendWidgetUpdater.updateAll() }
         runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }.track("Pulse")
         runCatching { analyticsRepository.recompute(RECOMPUTE_DAYS) }.track("health and insights")
+        refreshCardDueReminders()
 
         finish(failures, unauthorized, "Everything is up to date")
+    }
+
+    /** Reschedule (or cancel) card-due reminders from the freshly-refreshed
+     * statement cache. Best-effort: a scheduling failure is never a sync
+     * failure — the statements themselves already refreshed successfully. */
+    private suspend fun refreshCardDueReminders() {
+        runCatching {
+            if (settingsRepository.cardDueRemindersEnabled.first()) {
+                val statements = moneyRepository.observeStatements(STATEMENT_HISTORY_MONTHS).first()
+                workScheduler.scheduleCardDueReminders(statements)
+            } else {
+                workScheduler.cancelAllCardDueReminders()
+            }
+        }
     }
 
     private suspend fun finish(

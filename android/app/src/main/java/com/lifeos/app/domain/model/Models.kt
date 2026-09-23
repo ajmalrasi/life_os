@@ -76,6 +76,14 @@ data class SourceStatus(
     val stale: Boolean,
 )
 
+/** A stored monthly budget limit (Stage 4b). Only the limit is cached from the
+ * backend; spent-so-far/pace is computed on-device from cached transactions
+ * (see [com.lifeos.app.presentation.money.budgetPace]) so it works offline. */
+data class Budget(
+    val category: String,
+    val monthlyLimit: BigDecimal,
+)
+
 data class ChatTurn(
     val role: String, // "user" | "assistant"
     val content: String,

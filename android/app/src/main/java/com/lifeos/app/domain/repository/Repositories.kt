@@ -1,6 +1,7 @@
 package com.lifeos.app.domain.repository
 
 import com.lifeos.app.domain.model.AppNotification
+import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CurrentCardCycle
@@ -79,6 +80,15 @@ interface MoneyRepository {
     /** Cached server-calculated open billing cycles for every known credit card. */
     fun observeCurrentCardCycles(): Flow<List<CurrentCardCycle>>
 
+    /** Cached monthly budget limits (Stage 4b); pace is computed on-device. */
+    fun observeBudgets(): Flow<List<Budget>>
+
+    /** Create or update the monthly limit for one category. */
+    suspend fun setBudget(category: String, monthlyLimit: java.math.BigDecimal): Budget
+
+    /** Remove a category's budget. */
+    suspend fun deleteBudget(category: String)
+
     /** Exact transactions contributing to one active card cycle. */
     suspend fun currentCardCycleDetails(bank: String, cardLast4: String): CurrentCardCycleDetails
 
@@ -145,6 +155,12 @@ interface SettingsRepository {
     suspend fun setPulseReminderEnabled(enabled: Boolean)
     val pulseReminderHour: Flow<Int>
     suspend fun setPulseReminderHour(hour: Int)
+
+    /** Local notifications at T-3 and T-1 days before an unpaid card statement's
+     * due date. Defaults on: unlike Pulse (a nudge), missing a due date has a
+     * real cost (late fees), and it's low-frequency (two notifications per bill). */
+    val cardDueRemindersEnabled: Flow<Boolean>
+    suspend fun setCardDueRemindersEnabled(enabled: Boolean)
 
     /** Navigation and startup screen preferences. */
     val reopenLastTab: Flow<Boolean>

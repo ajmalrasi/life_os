@@ -9,9 +9,12 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.ExistingWorkPolicy
 import androidx.work.workDataOf
 import androidx.work.WorkManager
+import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.widget.SpendWidgetWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.math.RoundingMode
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.Instant
@@ -102,5 +105,74 @@ class WorkScheduler @Inject constructor(
         var next = now.toLocalDate().atTime(target)
         if (!next.isAfter(now)) next = next.plusDays(1)
         return Duration.between(now, next)
+    }
+
+    /**
+     * Schedule (or cancel) T-3/T-1-day due reminders for every unpaid
+     * statement, keyed uniquely per statement so re-running this after every
+     * money refresh reschedules cleanly instead of stacking duplicates, and a
+     * statement that's since been paid or dropped has its reminders pulled.
+     */
+    fun scheduleCardDueReminders(statements: List<CardStatement>) {
+        statements.forEach { statement ->
+            val uniquePrefix = "card-due-${statement.id}"
+            val due = statement.dueDate
+            if (statement.paidAt != null || due == null) {
+                workManager.cancelUniqueWork("$uniquePrefix-t3")
+                workManager.cancelUniqueWork("$uniquePrefix-t1")
+                return@forEach
+            }
+            scheduleOneCardDueReminder(uniquePrefix, "t3", "in 3 days", statement, due.minusDays(3))
+            scheduleOneCardDueReminder(uniquePrefix, "t1", "tomorrow", statement, due.minusDays(1))
+        }
+    }
+
+    /** Cancel every scheduled card-due reminder (used when the Settings toggle is turned off). */
+    fun cancelAllCardDueReminders() {
+        workManager.cancelAllWorkByTag(CARD_DUE_REMINDER_TAG)
+    }
+
+    private fun scheduleOneCardDueReminder(
+        uniquePrefix: String,
+        tag: String,
+        dueWord: String,
+        statement: CardStatement,
+        fireDate: LocalDate,
+    ) {
+        val uniqueName = "$uniquePrefix-$tag"
+        if (fireDate.isBefore(LocalDate.now())) {
+            // The reminder date has already passed (e.g. a short statement
+            // cycle, or the app was offline) — nothing useful to schedule.
+            workManager.cancelUniqueWork(uniqueName)
+            return
+        }
+        val amount = statement.totalDue
+            ?.setScale(0, RoundingMode.HALF_UP)
+            ?.toPlainString()
+            ?.let { "₹$it due" }
+            ?: "Payment due"
+        val request = OneTimeWorkRequestBuilder<CardDueReminderWorker>()
+            .setInitialDelay(initialDelayTo(fireDate, CARD_DUE_REMINDER_TIME))
+            .addTag(CARD_DUE_REMINDER_TAG)
+            .setInputData(
+                workDataOf(
+                    CardDueReminderWorker.KEY_TITLE to "${statement.cardLabel} due $dueWord",
+                    CardDueReminderWorker.KEY_BODY to "$amount on ${statement.dueDate}.",
+                ),
+            )
+            .build()
+        workManager.enqueueUniqueWork(uniqueName, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    /** Delay from now until [time] on [date] (in the past clamps to zero — WorkManager runs it immediately). */
+    private fun initialDelayTo(date: LocalDate, time: LocalTime): Duration {
+        val now = LocalDateTime.now()
+        val target = date.atTime(time)
+        return Duration.between(now, target).coerceAtLeast(Duration.ZERO)
+    }
+
+    private companion object {
+        const val CARD_DUE_REMINDER_TAG = "card_due_reminder"
+        val CARD_DUE_REMINDER_TIME: LocalTime = LocalTime.of(9, 0)
     }
 }

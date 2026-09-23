@@ -12,6 +12,7 @@ from app import __version__
 from app.api.deps import require_token
 from app.api.routes import (
     analytics,
+    budgets,
     chat,
     collectors,
     device,
@@ -85,6 +86,7 @@ app.include_router(payee_labels.router, dependencies=[Depends(require_token)])
 app.include_router(priority.router, dependencies=[Depends(require_token)])
 app.include_router(mail_accounts.router, dependencies=[Depends(require_token)])
 app.include_router(analytics.router, dependencies=[Depends(require_token)])
+app.include_router(budgets.router, dependencies=[Depends(require_token)])
 app.include_router(chat.router, dependencies=[Depends(require_token)])
 app.include_router(notifications.router, dependencies=[Depends(require_token)])
 app.include_router(device.router, dependencies=[Depends(require_token)])

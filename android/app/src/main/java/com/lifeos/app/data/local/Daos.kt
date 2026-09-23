@@ -85,6 +85,27 @@ interface TransactionDao {
 }
 
 @Dao
+interface BudgetDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<BudgetEntity>)
+
+    @Query("DELETE FROM budgets_cache")
+    suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(entities: List<BudgetEntity>) {
+        clear()
+        upsertAll(entities)
+    }
+
+    @Query("DELETE FROM budgets_cache WHERE category = :category")
+    suspend fun deleteByCategory(category: String)
+
+    @Query("SELECT * FROM budgets_cache ORDER BY category")
+    fun observeAll(): Flow<List<BudgetEntity>>
+}
+
+@Dao
 interface CardStatementDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<CardStatementEntity>)

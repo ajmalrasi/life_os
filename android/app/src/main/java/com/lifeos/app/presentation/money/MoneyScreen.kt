@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.TrackChanges
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,6 +54,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -395,6 +397,7 @@ fun MoneyScreen(
                 viewModel.toggleCategoryFilter(category)
                 viewModel.setSection(MoneySection.TRANSACTIONS)
             },
+            onSetBudget = { category -> viewModel.beginBudgetEdit(category) },
             onDismiss = { showAllCategories = false },
         )
     }
@@ -437,6 +440,18 @@ fun MoneyScreen(
             error = state.categoryError,
             onSave = viewModel::saveCategory,
             onDismiss = viewModel::dismissCategoryEdit,
+        )
+    }
+
+    state.budgetEditCategory?.let { category ->
+        BudgetEditDialog(
+            category = category,
+            existingLimit = state.budgets.firstOrNull { it.category == category }?.monthlyLimit,
+            saving = state.budgetSaving,
+            error = state.budgetError,
+            onSave = viewModel::saveBudget,
+            onRemove = viewModel::removeBudget,
+            onDismiss = viewModel::dismissBudgetEdit,
         )
     }
 
@@ -607,6 +622,20 @@ fun MoneyScreen(
                                     }
                                 }
                                 Spacer(Modifier.height(24.dp))
+                            }
+                            if (state.budgets.isNotEmpty()) {
+                                item {
+                                    BudgetsSection(
+                                        budgets = state.budgets,
+                                        transactions = spendableTransactions,
+                                        onSelect = { category ->
+                                            viewModel.clearCategoryFilter()
+                                            viewModel.toggleCategoryFilter(category)
+                                            viewModel.setSection(MoneySection.TRANSACTIONS)
+                                        },
+                                    )
+                                    Spacer(Modifier.height(24.dp))
+                                }
                             }
                             if (byCategory.isNotEmpty()) {
                                 item {
@@ -1027,6 +1056,62 @@ private fun MoneySectionHeading(
 }
 
 @Composable
+private fun BudgetsSection(
+    budgets: List<com.lifeos.app.domain.model.Budget>,
+    transactions: List<Transaction>,
+    onSelect: (String) -> Unit,
+) {
+    val paces = remember(budgets, transactions) {
+        budgets.map { budget -> budgetPace(budget.category, budget.monthlyLimit, transactions) }
+            .sortedByDescending { it.spentSoFar }
+    }
+    MoneySectionHeading(title = "Budgets", subtitle = "Pace this month, computed offline")
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        paces.forEach { pace -> BudgetPaceRow(pace, onSelect) }
+    }
+}
+
+@Composable
+private fun BudgetPaceRow(pace: BudgetPace, onSelect: (String) -> Unit) {
+    val fraction = if (pace.monthlyLimit > BigDecimal.ZERO) {
+        (pace.spentSoFar.toDouble() / pace.monthlyLimit.toDouble()).toFloat().coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val barColor = if (pace.onPaceToExceed) LifeOsColors.Warning else categoryColor(pace.category)
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable { onSelect(pace.category) },
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                prettyCategory(pace.category),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Text(
+                "${pace.spentSoFar.rupees()} / ${pace.monthlyLimit.rupees()}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(LifeOsColors.SurfaceMuted)) {
+            Box(Modifier.fillMaxWidth(fraction.coerceAtLeast(0.03f)).height(5.dp).clip(RoundedCornerShape(3.dp)).background(barColor))
+        }
+        Text(
+            if (pace.onPaceToExceed) {
+                val day = pace.projectedExceedDay
+                if (day != null) "On pace to exceed by day $day" else "On pace to exceed this month"
+            } else {
+                "On track · projected ${pace.projectedMonthTotal.rupees()}"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (pace.onPaceToExceed) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+        )
+    }
+}
+
+@Composable
 private fun TopCategoriesSection(
     categories: List<CategoryTotal>,
     total: BigDecimal,
@@ -1054,6 +1139,7 @@ private fun AllCategoriesSheet(
     categories: List<CategoryTotal>,
     total: BigDecimal,
     onSelect: (String) -> Unit,
+    onSetBudget: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val max = categories.maxOfOrNull { it.total.toDouble() }?.coerceAtLeast(1.0) ?: 1.0
@@ -1061,7 +1147,7 @@ private fun AllCategoriesSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Text("All categories", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "${categories.size} categories in this period",
+                "${categories.size} categories in this period · tap ${'◎'} to set a budget",
                 style = MaterialTheme.typography.bodySmall,
                 color = LifeOsColors.OnSurfaceMuted,
                 modifier = Modifier.padding(top = 3.dp, bottom = 14.dp),
@@ -1071,7 +1157,7 @@ private fun AllCategoriesSheet(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 items(categories, key = { it.category }) { category ->
-                    CategorySpendRow(category, total, max, onSelect)
+                    CategorySpendRow(category, total, max, onSelect, onSetBudget)
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
@@ -1085,13 +1171,14 @@ private fun CategorySpendRow(
     total: BigDecimal,
     max: Double,
     onSelect: (String) -> Unit,
+    onSetBudget: ((String) -> Unit)? = null,
 ) {
     val share = if (total > BigDecimal.ZERO) category.total.toDouble() / total.toDouble() * 100 else 0.0
     Column(
         modifier = Modifier.fillMaxWidth().clickable { onSelect(category.category) },
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 prettyCategory(category.category),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1102,6 +1189,19 @@ private fun CategorySpendRow(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (onSetBudget != null) {
+                IconButton(
+                    onClick = { onSetBudget(category.category) },
+                    modifier = Modifier.size(32.dp).padding(start = 4.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.TrackChanges,
+                        contentDescription = "Set budget for ${prettyCategory(category.category)}",
+                        tint = LifeOsColors.OnSurfaceMuted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         }
         Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(LifeOsColors.SurfaceMuted)) {
             Box(
@@ -2169,6 +2269,61 @@ private fun CategoryEditDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun BudgetEditDialog(
+    category: String,
+    existingLimit: BigDecimal?,
+    saving: Boolean,
+    error: String?,
+    onSave: (BigDecimal) -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember(category) {
+        mutableStateOf(existingLimit?.setScale(0, RoundingMode.HALF_UP)?.toPlainString() ?: "")
+    }
+    val parsed = text.trim().toBigDecimalOrNull()?.takeIf { it > BigDecimal.ZERO }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Budget for ${prettyCategory(category)}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Monthly limit. LifeOS tracks pace against this from cached transactions, offline.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Monthly limit (₹)") },
+                    singleLine = true,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.Warning)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onSave) }, enabled = !saving && parsed != null) {
+                Text(if (saving) "Saving…" else "Save")
+            }
+        },
+        dismissButton = {
+            Row {
+                if (existingLimit != null) {
+                    TextButton(onClick = onRemove, enabled = !saving) {
+                        Text("Remove", color = LifeOsColors.Warning)
+                    }
+                }
+                TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
+            }
         },
     )
 }

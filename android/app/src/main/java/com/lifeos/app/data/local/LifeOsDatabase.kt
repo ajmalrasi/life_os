@@ -8,9 +8,9 @@ import androidx.room.RoomDatabase
         MoodEntity::class, ScoreEntity::class, StateEntity::class, InsightEntity::class,
         SynthesizedInsightEntity::class, TransactionEntity::class, CardStatementEntity::class,
         CurrentCardCycleEntity::class,
-        PriorityItemEntity::class,
+        PriorityItemEntity::class, BudgetEntity::class,
     ],
-    version = 13, // v13: offline Priority mail feed
+    version = 14, // v14: budgets cache (Stage 4b)
     exportSchema = false,
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -23,4 +23,5 @@ abstract class LifeOsDatabase : RoomDatabase() {
     abstract fun cardStatementDao(): CardStatementDao
     abstract fun currentCardCycleDao(): CurrentCardCycleDao
     abstract fun priorityDao(): PriorityDao
+    abstract fun budgetDao(): BudgetDao
 }

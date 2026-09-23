@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
+import com.lifeos.app.data.local.BudgetDao
 import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.InsightDao
@@ -86,4 +87,7 @@ object AppModule {
 
     @Provides
     fun priorityDao(db: LifeOsDatabase): PriorityDao = db.priorityDao()
+
+    @Provides
+    fun budgetDao(db: LifeOsDatabase): BudgetDao = db.budgetDao()
 }

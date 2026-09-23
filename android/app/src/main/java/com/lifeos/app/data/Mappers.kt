@@ -1,5 +1,6 @@
 package com.lifeos.app.data
 
+import com.lifeos.app.data.local.BudgetEntity
 import com.lifeos.app.data.local.CardStatementEntity
 import com.lifeos.app.data.local.CurrentCardCycleEntity
 import com.lifeos.app.data.local.InsightEntity
@@ -22,6 +23,7 @@ import com.lifeos.app.data.remote.dto.MonthTrendDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SourceStatusDto
+import com.lifeos.app.data.remote.dto.BudgetPaceDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentDto
 import com.lifeos.app.data.remote.dto.RefundDto
@@ -31,6 +33,7 @@ import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.SourceStatus
+import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CardStatementItem
@@ -122,6 +125,11 @@ fun SourceStatusDto.toDomain() = SourceStatus(
     lastError = lastError,
     stale = stale,
 )
+
+// --- Budgets ---
+fun BudgetPaceDto.toEntity() = BudgetEntity(category = category, monthlyLimit = monthlyLimit)
+
+fun BudgetEntity.toDomain() = Budget(category = category, monthlyLimit = BigDecimal(monthlyLimit))
 
 // --- Chat ---
 fun ChatTurn.toDto() = ChatMessageDto(role, content)

@@ -4,6 +4,7 @@ import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.money.SpendPeriod
 import com.lifeos.app.presentation.money.bankUpiAccountKey
 import com.lifeos.app.presentation.money.bankUpiAccountOptions
+import com.lifeos.app.presentation.money.budgetPace
 import com.lifeos.app.presentation.money.categoryTotals
 import com.lifeos.app.presentation.money.filterEmiTransactions
 import com.lifeos.app.presentation.money.inSlice
@@ -183,6 +184,58 @@ class MoneyAggregationTest {
             val current = sliceFor(period, LocalDate.of(2026, 8, 12), LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 10))
             assert(previousPeriodSlice(period, current) != null) { "expected a previous slice for $period" }
         }
+    }
+
+    // --- budgetPace ------------------------------------------------------------
+
+    @Test
+    fun `budgetPace sums only this month's spend in the category`() {
+        val transactions = listOf(
+            transaction(1, "food", "acc", amount = "100.00", date = LocalDate.of(2026, 8, 3)),
+            transaction(2, "food", "acc", amount = "50.00", date = LocalDate.of(2026, 8, 10)),
+            transaction(3, "food", "acc", amount = "999.00", date = LocalDate.of(2026, 7, 31)), // last month
+            transaction(4, "fuel", "acc", amount = "999.00", date = LocalDate.of(2026, 8, 5)),  // other category
+        )
+        val pace = budgetPace("food", BigDecimal("1000.00"), transactions, today = LocalDate.of(2026, 8, 15))
+
+        assertEquals(BigDecimal("150.00"), pace.spentSoFar)
+        assertEquals(15, pace.daysElapsed)
+        assertEquals(31, pace.daysInMonth)
+    }
+
+    @Test
+    fun `budgetPace projects a straight line to month end`() {
+        // 150 spent over the first 15 days of a 31-day month -> 10/day -> 310 projected.
+        val transactions = listOf(
+            transaction(1, "food", "acc", amount = "150.00", date = LocalDate.of(2026, 8, 10)),
+        )
+        val pace = budgetPace("food", BigDecimal("1000.00"), transactions, today = LocalDate.of(2026, 8, 15))
+
+        assertEquals(BigDecimal("310.00"), pace.projectedMonthTotal)
+        assertEquals(false, pace.onPaceToExceed)
+        assertEquals(null, pace.projectedExceedDay)
+    }
+
+    @Test
+    fun `budgetPace flags an overspend and the day it's projected to happen`() {
+        // 100/day for 5 days against a 300 limit -> exceeds on day 3.
+        val transactions = listOf(
+            transaction(1, "food", "acc", amount = "500.00", date = LocalDate.of(2026, 8, 3)),
+        )
+        val pace = budgetPace("food", BigDecimal("300.00"), transactions, today = LocalDate.of(2026, 8, 5))
+
+        assertEquals(true, pace.onPaceToExceed)
+        assertEquals(3, pace.projectedExceedDay)
+    }
+
+    @Test
+    fun `budgetPace with no spend yet projects zero and never exceeds`() {
+        val pace = budgetPace("food", BigDecimal("1000.00"), emptyList(), today = LocalDate.of(2026, 8, 1))
+
+        assertEquals(BigDecimal.ZERO, pace.spentSoFar)
+        assertEquals(BigDecimal("0.00"), pace.projectedMonthTotal)
+        assertEquals(false, pace.onPaceToExceed)
+        assertEquals(null, pace.projectedExceedDay)
     }
 
     private fun transaction(

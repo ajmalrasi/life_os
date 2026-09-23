@@ -18,6 +18,8 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SyncStatusDto
+import com.lifeos.app.data.remote.dto.BudgetPaceDto
+import com.lifeos.app.data.remote.dto.BudgetInDto
 import com.lifeos.app.data.remote.dto.PriorityDetailsDto
 import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
 import com.lifeos.app.data.remote.dto.PriorityItemDto
@@ -153,6 +155,15 @@ interface LifeOsApi {
 
     @GET("status/sync")
     suspend fun syncStatus(): SyncStatusDto
+
+    @GET("budgets")
+    suspend fun budgets(): List<BudgetPaceDto>
+
+    @PUT("budgets/{category}")
+    suspend fun setBudget(@Path("category") category: String, @Body body: BudgetInDto): BudgetPaceDto
+
+    @DELETE("budgets/{category}")
+    suspend fun deleteBudget(@Path("category") category: String)
 
     @POST("chat")
     suspend fun chat(@Body request: ChatRequestDto): ChatResponseDto

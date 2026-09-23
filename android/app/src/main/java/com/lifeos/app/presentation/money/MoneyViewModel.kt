@@ -2,6 +2,7 @@ package com.lifeos.app.presentation.money
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.Transaction
@@ -78,6 +79,12 @@ data class MoneyUiState(
     val categoryEditTransaction: Transaction? = null,
     val categorySaving: Boolean = false,
     val categoryError: String? = null,
+    /** Cached monthly budget limits (Stage 4b); pace is computed on-device. */
+    val budgets: List<Budget> = emptyList(),
+    /** Non-null while the "set budget" dialog is open for this category. */
+    val budgetEditCategory: String? = null,
+    val budgetSaving: Boolean = false,
+    val budgetError: String? = null,
 )
 
 @HiltViewModel
@@ -127,6 +134,11 @@ class MoneyViewModel @Inject constructor(
         viewModelScope.launch {
             repository.observeCurrentCardCycles().collect { cycles ->
                 _state.update { it.copy(currentCardCycles = cycles) }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeBudgets().collect { budgets ->
+                _state.update { it.copy(budgets = budgets) }
             }
         }
         load()
@@ -395,6 +407,53 @@ class MoneyViewModel @Inject constructor(
                     it.copy(
                         categorySaving = false,
                         categoryError = result.exceptionOrNull()?.message ?: "Couldn't update category",
+                    )
+                }
+            }
+        }
+    }
+
+    fun beginBudgetEdit(category: String) {
+        _state.update { it.copy(budgetEditCategory = category, budgetSaving = false, budgetError = null) }
+    }
+
+    fun dismissBudgetEdit() {
+        if (_state.value.budgetSaving) return
+        _state.update { it.copy(budgetEditCategory = null, budgetError = null) }
+    }
+
+    fun saveBudget(monthlyLimit: BigDecimal) {
+        val category = _state.value.budgetEditCategory ?: return
+        if (_state.value.budgetSaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(budgetSaving = true, budgetError = null) }
+            val result = runCatching { repository.setBudget(category, monthlyLimit) }
+            _state.update {
+                if (result.isSuccess) {
+                    it.copy(budgetEditCategory = null, budgetSaving = false)
+                } else {
+                    it.copy(
+                        budgetSaving = false,
+                        budgetError = result.exceptionOrNull()?.message ?: "Couldn't save budget",
+                    )
+                }
+            }
+        }
+    }
+
+    fun removeBudget() {
+        val category = _state.value.budgetEditCategory ?: return
+        if (_state.value.budgetSaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(budgetSaving = true, budgetError = null) }
+            val result = runCatching { repository.deleteBudget(category) }
+            _state.update {
+                if (result.isSuccess) {
+                    it.copy(budgetEditCategory = null, budgetSaving = false)
+                } else {
+                    it.copy(
+                        budgetSaving = false,
+                        budgetError = result.exceptionOrNull()?.message ?: "Couldn't remove budget",
                     )
                 }
             }

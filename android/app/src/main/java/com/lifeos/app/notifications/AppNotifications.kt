@@ -24,6 +24,7 @@ object AppNotifications {
     const val CHANNEL_INSIGHTS = "insights"
     const val CHANNEL_TRIPS = "trip_reminders"
     const val CHANNEL_DATA_HEALTH = "data_health"
+    const val CHANNEL_CARD_DUE = "card_due_reminders"
 
     const val EXTRA_OPEN_TAB = "open_tab"
     const val EXTRA_OPEN_ITEM_ID = "priority_item_id"
@@ -58,6 +59,13 @@ object AppNotifications {
                 "Data source health",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply { description = "A data source (bank mail, sleep sync, the local model, ...) has gone quiet." }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_CARD_DUE,
+                "Card due reminders",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "An unpaid card statement is due soon." }
         )
     }
 

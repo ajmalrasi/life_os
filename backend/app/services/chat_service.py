@@ -27,6 +27,8 @@ from app.repositories.mood_repo import MoodRepository
 from app.schemas.chat import ChatRequest, ChatResponse, Citation
 from app.services import agent_tools
 from app.services.agent_tools import AgentTools
+from app.api.routes.statements import build_categorizer
+from app.services.budgets import budget_pace_summary
 from app.services.money_query import spending_coverage
 from app.services.openclaw import (
     InferenceWorkload,
@@ -181,6 +183,22 @@ class ChatService:
                 else None
             ),
             "money_table_coverage": money_coverage,
+            "budgets": (
+                [
+                    {
+                        "category": p.category,
+                        "monthly_limit": float(p.monthly_limit),
+                        "spent_so_far": float(p.spent_so_far),
+                        "projected_month_total": float(p.projected_month_total),
+                        "days_elapsed": p.days_elapsed,
+                        "days_in_month": p.days_in_month,
+                        "on_pace_to_exceed": p.on_pace_to_exceed,
+                        "projected_exceed_day": p.projected_exceed_day,
+                    }
+                    for p in budget_pace_summary(self.db, build_categorizer(self.db), end)
+                ]
+                or None
+            ),
             "discovered_patterns": [
                 {"summary": i.summary, "r": i.correlation, "n": i.sample_size}
                 for i in insight_rows

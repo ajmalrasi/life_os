@@ -70,6 +70,12 @@ data class TransactionEntity(
     val reference: String?,
 )
 
+@Entity(tableName = "budgets_cache")
+data class BudgetEntity(
+    @PrimaryKey val category: String,
+    val monthlyLimit: String,
+)
+
 @Entity(tableName = "card_statements_cache")
 data class CardStatementEntity(
     @PrimaryKey val id: Int,

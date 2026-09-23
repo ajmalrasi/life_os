@@ -82,11 +82,18 @@ fun SettingsScreen(
     var notificationPermissionGranted by remember {
         mutableStateOf(hasNotificationPermission(context))
     }
+    // Tracks which toggle asked for the permission, so the shared launcher's
+    // callback enables the right one once the user answers the system prompt.
+    var pendingPermissionTarget by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         notificationPermissionGranted = granted
-        viewModel.setPulseReminderEnabled(granted)
+        when (pendingPermissionTarget) {
+            "pulse" -> viewModel.setPulseReminderEnabled(granted)
+            "card_due" -> viewModel.setCardDueRemindersEnabled(granted)
+        }
+        pendingPermissionTarget = null
     }
 
     // Older builds defaulted the reminder to enabled without ever requesting
@@ -325,8 +332,10 @@ fun SettingsScreen(
                             when {
                                 !enabled -> viewModel.setPulseReminderEnabled(false)
                                 notificationPermissionGranted -> viewModel.setPulseReminderEnabled(true)
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                                    pendingPermissionTarget = "pulse"
                                     permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
                                 else -> viewModel.setPulseReminderEnabled(true)
                             }
                         },
@@ -362,6 +371,36 @@ fun SettingsScreen(
                             Icon(Icons.Rounded.Add, contentDescription = "One hour later")
                         }
                     }
+                }
+
+                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Card due reminders", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Notifies 3 days and 1 day before an unpaid statement is due.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
+                    Switch(
+                        checked = state.cardDueRemindersEnabled && notificationPermissionGranted,
+                        onCheckedChange = { enabled ->
+                            when {
+                                !enabled -> viewModel.setCardDueRemindersEnabled(false)
+                                notificationPermissionGranted -> viewModel.setCardDueRemindersEnabled(true)
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                                    pendingPermissionTarget = "card_due"
+                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                                else -> viewModel.setCardDueRemindersEnabled(true)
+                            }
+                        },
+                    )
                 }
 
                 HorizontalDivider(color = LifeOsColors.SurfaceBorder)
