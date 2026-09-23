@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.lifeos.app.trips.data.TripAttachmentEntity
+import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.trips.data.TripActivityEntity
 import com.lifeos.app.trips.data.TripDetail
 import com.lifeos.app.trips.data.TripEntity
@@ -105,6 +106,9 @@ data class TripDetailUiState(
     val locations: List<TripLocationSampleEntity> = emptyList(),
     val backupMessage: String? = null,
     val map: TripMapUiState = TripMapUiState(),
+    /** Cached debits inside the trip's dates not yet linked as an expense;
+     * dismissing one only hides it for this session, it's not persisted. */
+    val suggestedExpenses: List<TransactionEntity> = emptyList(),
 )
 
 data class TripMapUiState(
@@ -126,10 +130,14 @@ class TripDetailViewModel @Inject constructor(
 ) : ViewModel() {
     private val backupMessage = MutableStateFlow<String?>(null)
     private val mapState = MutableStateFlow(TripMapUiState())
+    private val dismissedSuggestions = MutableStateFlow<Set<Int>>(emptySet())
     val tripId: String = checkNotNull(savedStateHandle["tripId"])
+    private val suggestedExpenses = combine(
+        repository.observeSuggestedExpenses(tripId), dismissedSuggestions,
+    ) { suggestions, dismissed -> suggestions.filter { it.id !in dismissed } }
     val state: StateFlow<TripDetailUiState> = combine(
-        repository.observeTrip(tripId), repository.observeLocations(tripId), backupMessage, mapState,
-    ) { detail, locations, message, map -> TripDetailUiState(detail, locations, message, map) }
+        repository.observeTrip(tripId), repository.observeLocations(tripId), backupMessage, mapState, suggestedExpenses,
+    ) { detail, locations, message, map, suggestions -> TripDetailUiState(detail, locations, message, map, suggestions) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
     fun setStatus(status: String) = viewModelScope.launch { repository.setStatus(tripId, status) }
@@ -148,6 +156,27 @@ class TripDetailViewModel @Inject constructor(
         repository.addExpense(
             TripExpenseEntity(UUID.randomUUID().toString(), tripId, title, amount, currency, category, paidAt)
         )
+    }
+
+    fun linkSuggestedExpense(transaction: TransactionEntity) = viewModelScope.launch {
+        val currency = state.value.detail?.trip?.currency ?: transaction.currency
+        repository.addExpense(
+            TripExpenseEntity(
+                id = UUID.randomUUID().toString(),
+                tripId = tripId,
+                title = transaction.counterparty?.takeIf { it.isNotBlank() }
+                    ?: transaction.spendCategory ?: transaction.category ?: "Expense",
+                amount = transaction.amount,
+                currency = currency,
+                category = transaction.spendCategory ?: transaction.category ?: "other",
+                paidAt = transaction.txnDate,
+                transactionId = transaction.id,
+            )
+        )
+    }
+
+    fun dismissSuggestedExpense(transactionId: Int) {
+        dismissedSuggestions.update { it + transactionId }
     }
 
     fun addAttachment(uri: String, kind: String = "photo") = viewModelScope.launch {

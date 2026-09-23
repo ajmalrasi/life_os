@@ -19,6 +19,7 @@ from sqlalchemy.engine import Engine
 
 
 MAIL_SYNC_JOB = "lifeos:mail-sync"
+WEEKLY_RECAP_JOB = "lifeos:weekly-recap"
 
 _LOCKS_GUARD = threading.Lock()
 _LOCAL_LOCKS: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)

@@ -1,8 +1,14 @@
 package com.lifeos.app.trips.data
 
+import com.lifeos.app.data.local.TransactionDao
+import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.trips.importer.TripImportPreview
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,14 +23,28 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class TripRepository @Inject constructor(
     private val dao: TripDao,
     private val api: LifeOsApi,
     private val fileStore: TripFileStore,
+    private val transactionDao: TransactionDao,
 ) {
     fun observeTrips(): Flow<List<TripEntity>> = dao.observeTrips()
     fun observeTrip(id: String): Flow<TripDetail?> = dao.observeTrip(id)
+
+    /** Cached debits inside the trip's date range that aren't already linked to
+     * a trip expense — offered to the user as one-tap "add as trip expense"
+     * suggestions instead of manual re-entry. Money's cache, not a network call,
+     * so this works offline like the rest of Trips. */
+    fun observeSuggestedExpenses(tripId: String): Flow<List<TransactionEntity>> =
+        dao.observeTrip(tripId).flatMapLatest { detail ->
+            if (detail == null) return@flatMapLatest flowOf(emptyList())
+            val linked = detail.expenses.mapNotNull { it.transactionId }.toSet()
+            transactionDao.observeBetween(detail.trip.startDate, detail.trip.endDate)
+                .map { txns -> txns.filter { it.id !in linked } }
+        }
     fun observeLocations(id: String): Flow<List<TripLocationSampleEntity>> = dao.observeLocations(id)
     suspend fun activeTrip(): TripEntity? = dao.activeTrip()
     suspend fun import(bundle: ImportedTripBundle, replaceExisting: Boolean = false) {

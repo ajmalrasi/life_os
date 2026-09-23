@@ -12,6 +12,7 @@ from app.repositories.analytics_repo import (
     ScoreRepository,
     StateRepository,
     SynthesizedInsightRepository,
+    WeeklyRecapRepository,
 )
 from app.schemas.analytics import (
     DailyScoreOut,
@@ -19,13 +20,16 @@ from app.schemas.analytics import (
     InsightOut,
     RecomputeResult,
     SynthesizedInsightOut,
+    WeeklyRecapOut,
 )
 from app.config import get_settings
 from app.repositories.device_repo import DeviceRepository
 from app.services.analytics import AnalyticsService
 from app.services.execution_sync import run_execution_sync
 from app.services.fcm import FcmService
-from app.services.notifications import NotificationService
+from app.services.job_guard import WEEKLY_RECAP_JOB, try_job_lock
+from app.services.notifications import Notification, NotificationService
+from app.services.weekly_recap import week_bounds, build_recap
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 logger = logging.getLogger("lifeos.analytics")
@@ -144,3 +148,44 @@ def get_synthesis(db: Session = Depends(get_db)) -> list[SynthesizedInsightOut]:
         )
         for r in rows
     ]
+
+
+@router.get("/weekly-recap", response_model=WeeklyRecapOut)
+def get_weekly_recap(db: Session = Depends(get_db)) -> WeeklyRecapOut:
+    row = WeeklyRecapRepository(db).latest()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No weekly recap yet")
+    return WeeklyRecapOut(week_start=row.week_start, week_end=row.week_end, prose=row.prose)
+
+
+@router.post("/weekly-recap", response_model=WeeklyRecapOut)
+def post_weekly_recap(db: Session = Depends(get_db)) -> WeeklyRecapOut:
+    """Compute and store this week's recap, then push it via FCM.
+
+    Guarded by a singleton lock: the weekly systemd timer and a manual trigger
+    racing each other must never write two rows or double-push a notification.
+    """
+    settings = get_settings()
+    with try_job_lock(db.get_bind(), WEEKLY_RECAP_JOB) as acquired:
+        if not acquired:
+            existing = WeeklyRecapRepository(db).latest()
+            if existing is None:
+                raise HTTPException(status_code=409, detail="Weekly recap generation already in progress")
+            return WeeklyRecapOut(week_start=existing.week_start, week_end=existing.week_end, prose=existing.prose)
+
+        prose = build_recap(db)
+        if prose is None:
+            raise HTTPException(status_code=404, detail="Not enough data yet for a weekly recap")
+
+        prev_start, prev_end, start, end = week_bounds(date.today())
+        row = WeeklyRecapRepository(db).upsert(week_start=start, week_end=end, prose=prose)
+
+    if settings.fcm_enabled:
+        try:
+            tokens = DeviceRepository(db).all_tokens()
+            notification = Notification(severity="info", title="Your week in review", detail=prose)
+            FcmService(settings).push_notifications([notification], tokens)
+        except Exception:  # push is best-effort; the recap already saved
+            pass
+
+    return WeeklyRecapOut(week_start=row.week_start, week_end=row.week_end, prose=row.prose)

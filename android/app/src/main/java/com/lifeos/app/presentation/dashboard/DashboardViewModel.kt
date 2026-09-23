@@ -8,6 +8,7 @@ import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.data.demo.DemoData
 import com.lifeos.app.data.demo.DemoMode
 import com.lifeos.app.domain.model.DayPulse
+import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.SettingsRepository
@@ -32,6 +33,9 @@ data class DashboardUiState(
     val notifications: List<AppNotification> = emptyList(),
     val message: String? = null,
     val usingDemoData: Boolean = false,
+    /** Strongest spend↔sleep correlation, if the nightly pipeline found one worth surfacing. */
+    val spendSleepInsight: Insight? = null,
+    val lastSyncAt: Long? = null,
 )
 
 @HiltViewModel
@@ -43,14 +47,23 @@ class DashboardViewModel @Inject constructor(
 
     private val transient = MutableStateFlow(TransientState())
 
+    // combine() tops out at 5 typed flows, so insights + lastSyncAt are
+    // pre-combined into one slot rather than nesting the outer combine.
+    private val extra = combine(
+        analyticsRepository.observeInsights(),
+        settingsRepository.lastSyncAt,
+    ) { insights, lastSyncAt -> ExtraState(insights, lastSyncAt) }
+
     val uiState: StateFlow<DashboardUiState> = combine(
         // Keep up to a year of scores cached so the trend chart can slice any
         // range (1D…1Y) client-side without re-querying.
         analyticsRepository.observeScores(HISTORY_DAYS),
         analyticsRepository.observeStates(30),
         moodRepository.observe(7),
+        extra,
         transient,
-    ) { scores, states, moods, t ->
+    ) { scores, states, moods, ex, t ->
+        val insights = ex.insights
         val useDemo = DemoMode.active && scores.isEmpty()
         val displayScores = if (useDemo) DemoData.scores else scores
         val displayState = if (useDemo) DemoData.state else states.firstOrNull()
@@ -67,6 +80,11 @@ class DashboardViewModel @Inject constructor(
             notifications = displayNotifications,
             message = t.message,
             usingDemoData = useDemo,
+            spendSleepInsight = insights
+                .filter { it.driver == "daily_spend" || it.outcome == "daily_spend" }
+                .filter { it.driver == "sleep_score" || it.outcome == "sleep_score" }
+                .maxByOrNull { kotlin.math.abs(it.correlation) },
+            lastSyncAt = ex.lastSyncAt,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
@@ -109,6 +127,11 @@ class DashboardViewModel @Inject constructor(
         /** Widest trend window the chart can show (1 year). */
         const val HISTORY_DAYS = 365
     }
+
+    private data class ExtraState(
+        val insights: List<Insight> = emptyList(),
+        val lastSyncAt: Long? = null,
+    )
 
     private data class TransientState(
         val pulseSelected: DayPulse? = null,

@@ -356,6 +356,7 @@ fun TripDetailScreen(
                                 detail = detail,
                                 viewModel = viewModel,
                                 backupMessage = state.backupMessage,
+                                suggestedExpenses = state.suggestedExpenses,
                                 listState = detailsListState,
                                 onDeleteClick = { showDeleteDialog = true },
                             )
@@ -1441,6 +1442,7 @@ private fun TripTab(
     detail: TripDetail,
     viewModel: TripDetailViewModel,
     backupMessage: String?,
+    suggestedExpenses: List<com.lifeos.app.data.local.TransactionEntity> = emptyList(),
     listState: LazyListState = rememberLazyListState(),
     onDeleteClick: () -> Unit = {},
 ) {
@@ -1508,6 +1510,37 @@ private fun TripTab(
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column { Text(expense.title); Text(expense.category, style = MaterialTheme.typography.bodySmall) }
                 Text("${expense.currency} ${expense.amount}")
+            }
+        }
+        if (suggestedExpenses.isNotEmpty()) {
+            item {
+                Text(
+                    "From your spending during this trip",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            items(suggestedExpenses, key = { "suggest-${it.id}" }) { txn ->
+                LifeOsCard {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                txn.counterparty?.takeIf { it.isNotBlank() } ?: (txn.spendCategory ?: "Spend"),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "${txn.txnDate} · ${txn.currency} ${txn.amount}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { viewModel.dismissSuggestedExpense(txn.id) }) { Text("Dismiss") }
+                            TextButton(onClick = { viewModel.linkSuggestedExpense(txn) }) { Text("Add") }
+                        }
+                    }
+                }
             }
         }
         if (detail.reminders.isNotEmpty()) {

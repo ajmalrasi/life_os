@@ -9,13 +9,17 @@ import android.widget.RemoteViews
 import com.lifeos.app.MainActivity
 import com.lifeos.app.R
 import com.lifeos.app.domain.repository.MoneyRepository
+import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.notifications.AppNotifications
 import com.lifeos.app.presentation.money.filterEmiTransactions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,6 +27,7 @@ import javax.inject.Singleton
 class SpendWidgetUpdater @Inject constructor(
     @ApplicationContext private val context: Context,
     private val moneyRepository: MoneyRepository,
+    private val settingsRepository: SettingsRepository,
 ) {
     suspend fun updateAll() {
         val manager = AppWidgetManager.getInstance(context)
@@ -45,6 +50,10 @@ class SpendWidgetUpdater @Inject constructor(
         val monthTotal = spend
             .filter { it.txnDate.year == today.year && it.txnDate.month == today.month }
             .fold(BigDecimal.ZERO) { total, transaction -> total + transaction.amount }
+        val updatedLabel = settingsRepository.lastSyncAt.first()?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime()
+                .format(DateTimeFormatter.ofPattern("HH:mm"))
+        }?.let { "UPD $it" } ?: "SPEND"
 
         val openMoney = PendingIntent.getActivity(
             context,
@@ -63,6 +72,7 @@ class SpendWidgetUpdater @Inject constructor(
                     today.month.name.take(3),
                 )
                 setTextViewText(R.id.widget_month_amount, monthTotal.rupees())
+                setTextViewText(R.id.widget_updated_at, updatedLabel)
                 setOnClickPendingIntent(R.id.widget_root, openMoney)
             }
             manager.updateAppWidget(id, views)

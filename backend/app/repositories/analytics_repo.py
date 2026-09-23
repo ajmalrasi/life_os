@@ -9,6 +9,7 @@ from app.models.daily_score import DailyScore
 from app.models.daily_state import DailyState, LifeState
 from app.models.insight import Insight
 from app.models.synthesized_insight import SynthesizedInsight
+from app.models.weekly_recap import WeeklyRecap
 
 
 class ScoreRepository:
@@ -147,3 +148,28 @@ class SynthesizedInsightRepository:
     def all(self) -> list[SynthesizedInsight]:
         stmt = select(SynthesizedInsight).order_by(SynthesizedInsight.rank)
         return list(self.db.execute(stmt).scalars())
+
+
+class WeeklyRecapRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def upsert(self, week_start: date, week_end: date, prose: str) -> WeeklyRecap:
+        """One row per ISO week; re-running the same week overwrites its prose
+        instead of accumulating duplicates (safe to retry a failed timer run)."""
+        obj = self.db.execute(
+            select(WeeklyRecap).where(WeeklyRecap.week_start == week_start)
+        ).scalar_one_or_none()
+        if obj is None:
+            obj = WeeklyRecap(week_start=week_start, week_end=week_end, prose=prose)
+            self.db.add(obj)
+        else:
+            obj.week_end = week_end
+            obj.prose = prose
+        self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
+    def latest(self) -> WeeklyRecap | None:
+        stmt = select(WeeklyRecap).order_by(WeeklyRecap.week_start.desc()).limit(1)
+        return self.db.execute(stmt).scalar_one_or_none()

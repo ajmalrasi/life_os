@@ -536,7 +536,7 @@ fun MoneyScreen(
             ) {
                 state.error?.let { error ->
                     item {
-                        CachedDataBanner(error)
+                        CachedDataBanner(error, state.lastSyncAt)
                         Spacer(Modifier.height(14.dp))
                     }
                 }
@@ -1674,14 +1674,21 @@ private fun CreditCardRow(label: String, supporting: String, amount: String, urg
 }
 
 @Composable
-private fun CachedDataBanner(error: String) {
+private fun CachedDataBanner(error: String, lastSyncAt: Long?) {
+    val asOf = lastSyncAt?.let {
+        val time = java.time.Instant.ofEpochMilli(it)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        " · as of $time"
+    } ?: ""
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         color = LifeOsColors.Warning.copy(alpha = 0.10f),
     ) {
         Text(
-            "$error · Showing your last synced data",
+            "$error$asOf",
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
             style = MaterialTheme.typography.labelMedium,
             color = LifeOsColors.Warning,

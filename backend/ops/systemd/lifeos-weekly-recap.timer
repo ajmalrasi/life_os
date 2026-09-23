@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the LifeOS weekly recap every Sunday evening
+
+[Timer]
+OnCalendar=Sun 21:00
+Persistent=true
+Unit=lifeos-weekly-recap.service
+
+[Install]
+WantedBy=timers.target

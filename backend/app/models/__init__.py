@@ -30,6 +30,7 @@ from app.models.transaction import Transaction
 from app.models.transaction_adjustment import TransactionAdjustment
 from app.models.transaction_reconciliation import TransactionReconciliation
 from app.models.trip import TripAttachmentBackup, TripBackup
+from app.models.weekly_recap import WeeklyRecap
 
 __all__ = [
     "Budget",
@@ -62,4 +63,5 @@ __all__ = [
     "RawBankEmail",
     "TripBackup",
     "TripAttachmentBackup",
+    "WeeklyRecap",
 ]

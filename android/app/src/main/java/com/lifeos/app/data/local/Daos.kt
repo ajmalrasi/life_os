@@ -82,6 +82,14 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions_cache WHERE txnDate >= :since ORDER BY txnDate DESC, id DESC")
     fun observeSince(since: String): Flow<List<TransactionEntity>>
+
+    /** Debits within an inclusive date range, for matching trip expenses against
+     * cached spend without a separate round trip per trip. */
+    @Query(
+        "SELECT * FROM transactions_cache WHERE txnDate >= :start AND txnDate <= :end " +
+            "AND direction = 'debit' ORDER BY txnDate, id"
+    )
+    fun observeBetween(start: String, end: String): Flow<List<TransactionEntity>>
 }
 
 @Dao

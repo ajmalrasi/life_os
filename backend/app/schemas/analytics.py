@@ -50,6 +50,12 @@ class SynthesizedInsightOut(BaseModel):
     cites: list[str] = []
 
 
+class WeeklyRecapOut(BaseModel):
+    week_start: date
+    week_end: date
+    prose: str
+
+
 class RecomputeResult(BaseModel):
     days_scored: int
     states_classified: int

@@ -702,3 +702,27 @@ fun SectionHeader(text: String) {
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
     )
 }
+
+/** Shown wherever a screen falls back to cached data after a failed refresh. */
+@Composable
+fun OfflineBanner(lastSyncAt: Long?, modifier: Modifier = Modifier) {
+    val asOf = lastSyncAt?.let {
+        val time = java.time.Instant.ofEpochMilli(it)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        " · as of $time"
+    } ?: ""
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = LifeOsColors.Warning.copy(alpha = 0.10f),
+    ) {
+        Text(
+            "Offline$asOf · showing cached data",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = LifeOsColors.Warning,
+        )
+    }
+}

@@ -30,6 +30,7 @@ import com.lifeos.app.presentation.components.DemoBanner
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.LifeScoreHero
 import com.lifeos.app.presentation.components.NotificationCard
+import com.lifeos.app.presentation.components.OfflineBanner
 import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.TrendChart
@@ -148,9 +149,31 @@ fun DashboardScreen(
         }
 
 
+        // Spend↔sleep is a signal the user can actually act on tonight, so it
+        // gets its own card ahead of the general notification feed.
+        val spendSleepInsight = state.spendSleepInsight
+        if (spendSleepInsight != null) {
+            item {
+                LifeOsCard(accent = LifeOsColors.AccentSky) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "SPENDING & SLEEP",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                        Text(
+                            spendSleepInsight.narrative ?: spendSleepInsight.summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LifeOsColors.OnBackground,
+                        )
+                    }
+                }
+            }
+        }
+
         if (state.message != null) {
             item {
-                Text(state.message!!, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+                OfflineBanner(lastSyncAt = state.lastSyncAt)
             }
         }
 
