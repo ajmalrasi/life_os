@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.domain.model.Repayment
@@ -85,6 +86,8 @@ data class MoneyUiState(
     val budgetEditCategory: String? = null,
     val budgetSaving: Boolean = false,
     val budgetError: String? = null,
+    /** Detected recurring charges (Stage 4c); fetched live, not cached. */
+    val recurringCharges: List<RecurringCharge> = emptyList(),
 )
 
 @HiltViewModel
@@ -159,6 +162,7 @@ class MoneyViewModel @Inject constructor(
             _state.update { it.copy(loading = true, error = null) }
             val refresh = runCatching { repository.refresh(transactionDays = TRANSACTION_WINDOW_DAYS) }
             val dues = runCatching { repository.analysis() }.getOrNull()
+            val recurring = runCatching { repository.recurringCharges() }.getOrNull()
             _state.update {
                 it.copy(
                     loading = false,
@@ -169,6 +173,7 @@ class MoneyViewModel @Inject constructor(
                         ?.filter { c -> (c.totalDue ?: BigDecimal.ZERO) > BigDecimal.ZERO }
                         ?.sortedBy { c -> c.dueDate ?: LocalDate.MAX }
                         ?: it.cardDues,
+                    recurringCharges = recurring ?: it.recurringCharges,
                 )
             }
         }

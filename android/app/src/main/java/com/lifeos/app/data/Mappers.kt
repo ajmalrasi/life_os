@@ -24,6 +24,7 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SourceStatusDto
 import com.lifeos.app.data.remote.dto.BudgetPaceDto
+import com.lifeos.app.data.remote.dto.RecurringChargeDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentDto
 import com.lifeos.app.data.remote.dto.RefundDto
@@ -34,6 +35,7 @@ import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.SourceStatus
 import com.lifeos.app.domain.model.Budget
+import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CardStatementItem
@@ -130,6 +132,17 @@ fun SourceStatusDto.toDomain() = SourceStatus(
 fun BudgetPaceDto.toEntity() = BudgetEntity(category = category, monthlyLimit = monthlyLimit)
 
 fun BudgetEntity.toDomain() = Budget(category = category, monthlyLimit = BigDecimal(monthlyLimit))
+
+fun RecurringChargeDto.toDomain() = RecurringCharge(
+    counterparty = counterparty,
+    cadence = cadence,
+    occurrences = occurrences,
+    medianAmount = BigDecimal(medianAmount),
+    lastAmount = BigDecimal(lastAmount),
+    lastDate = LocalDate.parse(lastDate),
+    nextExpectedDate = LocalDate.parse(nextExpectedDate),
+    priceChangePct = priceChangePct,
+)
 
 // --- Chat ---
 fun ChatTurn.toDto() = ChatMessageDto(role, content)

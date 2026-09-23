@@ -20,6 +20,7 @@ import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SyncStatusDto
 import com.lifeos.app.data.remote.dto.BudgetPaceDto
 import com.lifeos.app.data.remote.dto.BudgetInDto
+import com.lifeos.app.data.remote.dto.RecurringChargeDto
 import com.lifeos.app.data.remote.dto.PriorityDetailsDto
 import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
 import com.lifeos.app.data.remote.dto.PriorityItemDto
@@ -164,6 +165,9 @@ interface LifeOsApi {
 
     @DELETE("budgets/{category}")
     suspend fun deleteBudget(@Path("category") category: String)
+
+    @GET("expenses/recurring")
+    suspend fun recurringCharges(@Query("window_days") windowDays: Int): List<RecurringChargeDto>
 
     @POST("chat")
     suspend fun chat(@Body request: ChatRequestDto): ChatResponseDto

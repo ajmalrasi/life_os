@@ -84,6 +84,21 @@ data class Budget(
     val monthlyLimit: BigDecimal,
 )
 
+/** A debit that repeats on a roughly weekly/monthly cadence at a roughly
+ * stable amount (Stage 4c) — subscriptions, EMIs, memberships. Detection
+ * only; never used to forecast card-cycle or budget totals. */
+data class RecurringCharge(
+    val counterparty: String,
+    val cadence: String, // "weekly" | "monthly"
+    val occurrences: Int,
+    val medianAmount: BigDecimal,
+    val lastAmount: BigDecimal,
+    val lastDate: LocalDate,
+    val nextExpectedDate: LocalDate,
+    /** Positive = the last charge was more expensive than the typical one. */
+    val priceChangePct: Double?,
+)
+
 data class ChatTurn(
     val role: String, // "user" | "assistant"
     val content: String,

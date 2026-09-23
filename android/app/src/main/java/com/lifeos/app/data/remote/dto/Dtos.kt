@@ -139,6 +139,18 @@ data class BudgetPaceDto(
 data class BudgetInDto(@SerialName("monthly_limit") val monthlyLimit: String)
 
 @Serializable
+data class RecurringChargeDto(
+    val counterparty: String,
+    val cadence: String,
+    val occurrences: Int,
+    @SerialName("median_amount") val medianAmount: String,
+    @SerialName("last_amount") val lastAmount: String,
+    @SerialName("last_date") val lastDate: String,
+    @SerialName("next_expected_date") val nextExpectedDate: String,
+    @SerialName("price_change_pct") val priceChangePct: Double? = null,
+)
+
+@Serializable
 data class ChatMessageDto(val role: String, val content: String)
 
 @Serializable

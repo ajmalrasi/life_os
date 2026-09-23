@@ -3,6 +3,7 @@ package com.lifeos.app.domain.repository
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.CurrentCardCycleDetails
@@ -88,6 +89,11 @@ interface MoneyRepository {
 
     /** Remove a category's budget. */
     suspend fun deleteBudget(category: String)
+
+    /** Debits detected as recurring (weekly/monthly cadence, stable amount).
+     * Computed live server-side, not cached — detection only, never used to
+     * forecast totals. */
+    suspend fun recurringCharges(windowDays: Int = 180): List<RecurringCharge>
 
     /** Exact transactions contributing to one active card cycle. */
     suspend fun currentCardCycleDetails(bank: String, cardLast4: String): CurrentCardCycleDetails

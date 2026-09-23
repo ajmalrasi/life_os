@@ -14,6 +14,7 @@ import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.CardStatement
+import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.CardStatementDetails
 import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.CurrentCardCycleDetails
@@ -50,6 +51,9 @@ class MoneyRepositoryImpl @Inject constructor(
         api.deleteBudget(category)
         budgetDao.deleteByCategory(category)
     }
+
+    override suspend fun recurringCharges(windowDays: Int): List<RecurringCharge> =
+        api.recurringCharges(windowDays).map { it.toDomain() }
 
     override fun observeTransactions(days: Int): Flow<List<Transaction>> {
         val since = LocalDate.now().minusDays(days.toLong()).toString()

@@ -1,6 +1,7 @@
 package com.lifeos.app.presentation.money
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -89,6 +90,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CurrentCardCycle
+import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.components.LifeOsCard
@@ -261,6 +263,7 @@ fun MoneyScreen(
     var showFilters by remember { mutableStateOf(false) }
     var showSort by remember { mutableStateOf(false) }
     var showAllCategories by remember { mutableStateOf(false) }
+    var showRecurringSheet by remember { mutableStateOf(false) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val sectionScrollStates = MoneySection.entries.map { rememberLazyListState() }
@@ -399,6 +402,13 @@ fun MoneyScreen(
             },
             onSetBudget = { category -> viewModel.beginBudgetEdit(category) },
             onDismiss = { showAllCategories = false },
+        )
+    }
+
+    if (showRecurringSheet) {
+        RecurringChargesSheet(
+            charges = state.recurringCharges,
+            onDismiss = { showRecurringSheet = false },
         )
     }
 
@@ -649,6 +659,15 @@ fun MoneyScreen(
                                             viewModel.toggleCategoryFilter(category)
                                             viewModel.setSection(MoneySection.TRANSACTIONS)
                                         },
+                                    )
+                                }
+                            }
+                            if (state.recurringCharges.isNotEmpty()) {
+                                item {
+                                    Spacer(Modifier.height(24.dp))
+                                    RecurringSummaryRow(
+                                        charges = state.recurringCharges,
+                                        onOpen = { showRecurringSheet = true },
                                     )
                                 }
                             }
@@ -1108,6 +1127,100 @@ private fun BudgetPaceRow(pace: BudgetPace, onSelect: (String) -> Unit) {
             style = MaterialTheme.typography.labelSmall,
             color = if (pace.onPaceToExceed) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
         )
+    }
+}
+
+/** Compact Overview row: count + soonest upcoming charge, tap to open the full list. */
+@Composable
+private fun RecurringSummaryRow(charges: List<RecurringCharge>, onOpen: () -> Unit) {
+    val next = charges.minByOrNull { it.nextExpectedDate }
+    val priceIncreases = charges.count { (it.priceChangePct ?: 0.0) > 0.0 }
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(14.dp),
+        color = LifeOsColors.Surface,
+        border = BorderStroke(1.dp, LifeOsColors.SurfaceBorder),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Recurring", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    buildString {
+                        append("${charges.size} detected")
+                        next?.let { append(" · next ${prettyCategory(it.counterparty)} ${it.nextExpectedDate}") }
+                        if (priceIncreases > 0) append(" · $priceIncreases price ${if (priceIncreases == 1) "increase" else "increases"}")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+            Icon(Icons.Rounded.ChevronRight, contentDescription = "Open recurring charges", tint = LifeOsColors.OnSurfaceMuted)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecurringChargesSheet(charges: List<RecurringCharge>, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LifeOsColors.SurfaceElevated) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            Text("Recurring charges", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Detected from repeating debits — never used to forecast totals.",
+                style = MaterialTheme.typography.bodySmall,
+                color = LifeOsColors.OnSurfaceMuted,
+                modifier = Modifier.padding(top = 3.dp, bottom = 14.dp),
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                items(charges, key = { it.counterparty + it.lastDate }) { charge -> RecurringChargeRow(charge) }
+                item { Spacer(Modifier.height(24.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecurringChargeRow(charge: RecurringCharge) {
+    val increased = (charge.priceChangePct ?: 0.0) > 0.0
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                prettyCategory(charge.counterparty),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Text(
+                charge.lastAmount.rupees(),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "${charge.cadence.replaceFirstChar { it.uppercase() }} · next ~${charge.nextExpectedDate}",
+                style = MaterialTheme.typography.labelSmall,
+                color = LifeOsColors.OnSurfaceMuted,
+            )
+            if (increased) {
+                Surface(shape = RoundedCornerShape(6.dp), color = LifeOsColors.Warning.copy(alpha = 0.12f)) {
+                    Text(
+                        "+${"%.0f".format(charge.priceChangePct)}%",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LifeOsColors.Warning,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
     }
 }
 

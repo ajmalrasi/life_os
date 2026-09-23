@@ -28,7 +28,9 @@ from app.services.expense_parsers.llm_bank_parser import BANK_DOMAINS, LlmBankPa
 from app.mail.factory import finance_provider
 from app.mail.gmail_provider import GmailProvider
 from app.repositories.sync_status_repo import SyncAttemptRepository
+from app.schemas.recurring import RecurringChargeOut
 from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
+from app.services.recurring import detect_recurring_charges
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.repayments import RepaymentError, RepaymentService
 from app.services.refunds import RefundError, RefundService
@@ -380,3 +382,14 @@ def rebuild_finalize(db: Session = Depends(get_db)) -> RawEmailFinalizeResult:
         labels_created=labels_created,
         message=f"created {labels_created} payee labels",
     )
+
+
+@router.get("/recurring", response_model=list[RecurringChargeOut])
+def recurring_charges(window_days: int = 180, db: Session = Depends(get_db)) -> list[RecurringChargeOut]:
+    """Debits that repeat on a roughly weekly/monthly cadence at a roughly
+    stable amount (subscriptions, EMIs, memberships, ...). Detection only —
+    never used to forecast card-cycle or budget totals (see AGENTS.md §6,
+    2026-07-30)."""
+    return [
+        RecurringChargeOut(**vars(c)) for c in detect_recurring_charges(db, window_days=window_days)
+    ]

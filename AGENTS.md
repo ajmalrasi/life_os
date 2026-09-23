@@ -743,6 +743,61 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Staged improvement plan, Stage 4 — Money features (2026-09-23).** Third
+  stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md` (local plan
+  file, not in the repo); all three sub-parts done, but **on-device visual
+  verification is still pending** (phone was locked/asleep at the end of this
+  session — code is built, tested, and committed, but not yet
+  screenshot-verified in-app; re-verify next session before considering this
+  fully closed). **4a (Android-only):** new `CardDueReminderWorker` posts a
+  one-shot local notification at T-3 and T-1 days before an unpaid card
+  statement's due date, rescheduled (via `WorkScheduler.scheduleCardDueReminders`,
+  unique work per statement+offset) after every money refresh — both
+  `refreshOnAppOpen()` and `syncAll()` in `LifeOsSyncCoordinator`. New Settings
+  toggle `cardDueRemindersEnabled`, **default on** (unlike Pulse's opt-in-off:
+  a missed due date has a real cost, and it's only 2 notifications/statement).
+  New `card_due_reminders` notification channel. A shared permission-request
+  launcher in `SettingsScreen.kt` now tracks which toggle (`pulse` vs
+  `card_due`) asked for `POST_NOTIFICATIONS` via `pendingPermissionTarget`, so
+  granting it enables the right one. **4b:** new `GET/PUT/DELETE /budgets`
+  (`app/models/budget.py`, `app/api/routes/budgets.py`) stores one monthly
+  limit per category — `create_all` handles the new table, no migration file
+  needed. Pace (spent-so-far vs. projected month-end total, and whether/when
+  it's on pace to exceed) is computed identically in two places from the same
+  `spent / days_elapsed * days_in_month` formula: `app/services/budgets.py`
+  for Ask's `get_life_context` (the `budgets` key is only present when at
+  least one budget is set), and a new pure `budgetPace()` in
+  `MoneyAggregation.kt` for the Android UI — the latter runs entirely
+  on-device against the cached transaction feed (`spendableTransactions`,
+  unfiltered by the period/source/EMI toggles a budget shouldn't care about),
+  so it works offline; only the limit itself is synced from the backend
+  (new `budgets_cache` Room table, `LifeOsDatabase` bumped to v14 via
+  `fallbackToDestructiveMigration` — a cache table, safe to wipe/refetch like
+  `card_statements_cache` before it). Money's "View all categories" sheet
+  gained a per-row "set budget" (⊙) action opening a simple limit
+  dialog (editable/removable); Overview shows a Budgets section with progress
+  bars and pace text above Top categories. **4c:** new
+  `app/services/recurring.py` groups debits by normalized counterparty
+  (strips digit runs ≥4 chars — transaction reference numbers — then
+  lowercases/collapses whitespace) and flags ≥3 occurrences whose gaps
+  cluster within ±4 days of a weekly (3–11d median) or monthly (26–34d
+  median) cadence *and* whose amounts stay within ±10% of the median —
+  deliberately conservative so irregular spending never gets mislabeled.
+  Reports `next_expected_date` and `price_change_pct` (last vs. median).
+  Detection only, per the 2026-07-30 no-forecasting decision — never feeds
+  card-cycle or budget totals. New read-only `GET /expenses/recurring`
+  (`window_days`, default 180). Android: a "Recurring" summary row on
+  Overview (count, soonest upcoming charge, price-increase count) opens a
+  sheet listing every detected charge with a price-increase badge; fetched
+  live in `MoneyViewModel.load()` (not cached — matches `analysis()`/`trends()`).
+  **Verified:** backend `pytest` — 346 passed, 4 pre-existing failures
+  (confirmed unrelated against unmodified `main`); Android
+  `testDebugUnitTest` and `assembleDebug` clean. Backend deployed and
+  confirmed live on the Jetson (`GET /budgets` → `[]` on a fresh DB). The
+  debug APK was built and installed on Samsung `RZCX60SNHHE`, but the device
+  was locked for the rest of the session — the UI itself (toggle, budget
+  bars, dialog, recurring sheet) has **not** been visually confirmed on
+  device yet.
 - **Staged improvement plan, Stage 3 — sync visibility & stale-data alerts
   (2026-09-23).** Final stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md`
   (local plan file, not in the repo) — all three sub-parts done. **3a
