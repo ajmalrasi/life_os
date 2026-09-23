@@ -743,6 +743,80 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Staged improvement plan, Stage 5 — Cross-domain & polish (2026-09-24).**
+  Final stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md` (local
+  plan file, not in the repo). All four sub-parts implemented and deployed.
+  **5a (Android):** `TripRepository.observeSuggestedExpenses(tripId)`
+  (`trips/data/TripRepository.kt`) joins Money's cached transactions (a new
+  `TransactionDao.observeBetween(start, end)` query, debit-only) against the
+  trip's `[startDate, endDate]`, filtered to ids not already linked via
+  `TripExpenseEntity.transactionId` (that column already existed, unused,
+  from the original Trips schema). Trip Details' spending card now lists
+  these as "From your spending during this trip" with Add/Dismiss actions
+  (`TripsViewModel.linkSuggestedExpense`/`dismissSuggestedExpense` —
+  dismiss is session-only, not persisted, since it's just hiding a
+  suggestion the user will still see it re-offered next visit if unlinked
+  elsewhere). No cross-database join at the SQL level — `TripDatabase` and
+  the main `LifeOsDatabase` are separate Room instances by design, so this
+  combines two Flows in Kotlin via `flatMapLatest`. Trip total already
+  equals linked + manual expenses for free, since both are the same
+  `TripExpenseEntity` table. **5b (backend, new):**
+  `app/services/weekly_recap.py` computes deterministic week-over-week
+  numbers (sleep score avg, mood avg, spend, and any budget on pace to
+  exceed — reusing `budget_pace_summary` from Stage 4b) for the 7 days
+  ending yesterday vs. the 7 before that, hands them to Qwen as grounded
+  EVIDENCE (same citation-bound shape as `insight_synthesizer`) to phrase
+  into 2-4 sentences, and falls back to a deterministic joined-facts
+  paragraph if the model is disabled/unreachable/returns junk — a recap is
+  never empty when there are real numbers. Stored one row per ISO week in a
+  new `weekly_recaps` table (`create_all`, no migration needed) via
+  `WeeklyRecapRepository.upsert` (re-running the same week overwrites, not
+  duplicates). `POST /analytics/weekly-recap` (guarded by a new
+  `WEEKLY_RECAP_JOB` `try_job_lock`, same pattern as mail-sync) computes,
+  stores, and best-effort pushes via the existing FCM path
+  (`Notification(severity="info", title="Your week in review", ...)`);
+  `GET /analytics/weekly-recap` serves the latest for polling. New
+  `backend/ops/systemd/lifeos-weekly-recap.{service,timer}` (`OnCalendar=Sun
+  21:00`) modeled on the existing `lifeos-priority-sync` unit — **these
+  still need to be copied to the Jetson's systemd unit directory and
+  enabled** (`sudo cp ... /etc/systemd/system/ && sudo systemctl daemon-reload
+  && sudo systemctl enable --now lifeos-weekly-recap.timer`); the route
+  itself is deployed and was verified live against real production data
+  (real recap generated: sleep 42→23, mood 4.0→3.0, spend down ₹25,145 vs
+  last week, "on pace to exceed this month's budget in: fuel" — every
+  number traced back to an actual computed fact, re-running overwrote
+  rather than duplicated). **5c (Android, mostly free):** the nightly
+  correlation pipeline already computes `daily_spend`↔`sleep_score`
+  (both directions, lagged) — this was existing data with zero UI consumer.
+  `DashboardViewModel` now also observes `analyticsRepository.observeInsights()`
+  and picks the strongest spend↔sleep pair; `DashboardScreen` renders it as
+  a "SPENDING & SLEEP" card (same visual pattern as the existing "why this
+  state" rationale card), narrative text preferred over the raw summary.
+  Verified live: "Better sleep is tied to higher spending — daily spend
+  jumps 172% when sleep score exceeds 42.1." **5d (Android):** a shared
+  `OfflineBanner(lastSyncAt)` composable (`presentation/components/Components.kt`)
+  shows "Offline · as of HH:mm · showing cached data" using the
+  already-tracked `SettingsRepository.lastSyncAt`; wired into Today
+  (replacing a plain "Backend unreachable" text) and Money's existing
+  `CachedDataBanner` (which already had similar behavior — extended it with
+  the same as-of-time clause rather than duplicating). The home-screen
+  widget's small subtitle (`widget_spend.xml`, id `widget_updated_at`)
+  shows `"UPD HH:mm"` instead of a static `"SPEND"` label, sourced from the
+  same `lastSyncAt` (`SpendWidgetUpdater` now also injects
+  `SettingsRepository`). **Verified:** backend `pytest` — full suite passes
+  except the same 4 pre-existing failures documented throughout this file as
+  unrelated (`test_card_cycles`, `test_priority`, two in `test_statements`);
+  new `tests/test_weekly_recap.py` (6 tests) passes clean. Android
+  `testDebugUnitTest` and `assembleDebug` both clean; installed on Samsung
+  `RZCX60SNHHE` and visually verified: the Today spend↔sleep card and Money
+  Overview both render real production data correctly. **Not yet visually
+  verified:** the widget's `UPD HH:mm` label (no `SpendWidgetProvider`
+  instance was currently pinned to a home screen page on this device during
+  this session — add the widget to check) and the Trips suggestion
+  list/Add/Dismiss flow (needs a trip whose date range overlaps cached
+  transactions to exercise; none was active this session). All Stage 5
+  backend code is deployed on the Jetson; the weekly-recap systemd timer
+  itself still needs manual installation there (see above).
 - **Staged improvement plan, Stage 4 — Money features (2026-09-23).** Third
   stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md` (local plan
   file, not in the repo); all three sub-parts done, but **on-device visual
