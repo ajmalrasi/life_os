@@ -743,6 +743,59 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Staged improvement plan, Stage 3 — sync visibility & stale-data alerts
+  (2026-09-23).** Final stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md`
+  (local plan file, not in the repo) — all three sub-parts done. **3a
+  (backend):** new `GET /status/sync` (`app/api/routes/status.py` +
+  `app/services/sync_status.py`) reports five sources — `bank_mail`,
+  `statements`, `priority_mail`, `sleep_vitals`, `model` — each with
+  `last_success_at`, `last_attempt_at`, `last_error`, and a `stale` flag.
+  Bank mail/statements freshness reads real *data* signals (`CollectorState.updated_at`
+  filtered to `gmail_expenses:%`; the newest `CardStatement.statement_date`)
+  rather than just "did the sync call return 200", because a sync can
+  succeed every run while finding nothing new — a new `sync_attempts` table
+  (migration `0002_sync_attempts.sql`) separately tracks attempted-not-just-successful
+  syncs, wired into `/expenses/sync` and `/statements/sync`, so e.g. a Gmail
+  `invalid_grant` failure is visible even though it never advances a cursor.
+  Priority mail reuses the existing `MailSyncState`; sleep/vitals is
+  `max(health_records.created_at)` filtered to `source_id LIKE 'hae-%'`;
+  model reuses `OpenClawClient.health()`. Thresholds are configurable
+  (`status_sleep_stale_hours=36`, `status_bank_mail_stale_hours=72`,
+  `status_priority_mail_stale_hours=24`, `status_statements_stale_days=40`).
+  **3c backend half:** `NotificationService._stale_sources()` surfaces any
+  stale source through the existing `/notifications` + FCM path.
+  **3b+3c Android:** Settings gained a "Data sources" panel (colored dot +
+  relative last-seen time or error text per source, reusing the
+  `formatLastSync`/`LifeOsColors.Warning` pattern already used for sync
+  staleness elsewhere) via a new `AnalyticsRepository.syncStatus()`; the nav
+  drawer's Settings entry shows a small warning dot when any source is stale
+  (new app-scoped `LifeOsAppViewModel`, since that's above any one screen's
+  ViewModel); `NightlyRecomputeWorker` also checks `/status/sync` after each
+  recompute and posts a local notification (new `data_health` channel,
+  deduped per source per calendar day via a small SharedPreferences file —
+  deliberately not routed through the full `SettingsRepository`/DataStore
+  abstraction for this narrow, self-contained case).
+  **Found and fixed a real bug via hand-testing against production, not the
+  test suite:** the DB session runs in Asia/Kolkata (§5), so raw column reads
+  (`CollectorState.updated_at`, `HealthRecord.created_at`, `MailSyncState`
+  timestamps) serialized with a `+05:30` offset instead of the UTC `Z` every
+  other endpoint in this API emits; Android's `Instant.parse()` only accepts
+  `Z`, so parsing silently failed for 4 of 5 sources (caught by `runCatching`,
+  which *did* correctly reach the error state — the Settings panel's endless
+  spinner was real but the root cause was upstream of the UI code). Fixed
+  with a `field_validator` on `SourceStatusOut` normalizing both timestamp
+  fields to UTC, so every endpoint keeps the same wire convention; the test
+  suite didn't catch this because SQLite doesn't preserve tzinfo, masking the
+  exact failure mode — added `test_timestamps_are_normalized_to_utc` as an
+  explicit regression test. **Verified end-to-end on Samsung `RZCX60SNHHE`
+  against real production data**: all five source rows render with correct
+  local-time conversion and green (non-stale) dots; the drawer shows no
+  warning dot, matching nothing being stale. Did not force an on-device stale
+  visual (would require writing fake old timestamps into production data);
+  covered instead by `tests/test_status.py::test_old_data_sources_are_stale`
+  and `::test_stale_sources_appear_in_notifications`. Backend: `pytest` — 332
+  passed, 4 pre-existing failures (confirmed unrelated against unmodified
+  `main`). Android: `testDebugUnitTest` and `assembleDebug` clean.
 - **Staged improvement plan, Stage 2c — Tailscale (2026-09-23).** Installed on
   the Jetson (`curl https://tailscale.com/install.sh | sudo sh` + `sudo
   tailscale up`, hostname `ajmalrasi`, tailnet IP `100.111.253.18`,
