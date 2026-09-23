@@ -37,13 +37,13 @@ class WorkScheduler @Inject constructor(
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        val request = PeriodicWorkRequestBuilder<HealthSyncWorker>(Duration.ofHours(24))
+        val request = PeriodicWorkRequestBuilder<NightlyRecomputeWorker>(Duration.ofHours(24))
             .setConstraints(constraints)
             .setInitialDelay(initialDelayTo(LocalTime.of(3, 0))) // ~3 AM
             .build()
 
         workManager.enqueueUniquePeriodicWork(
-            HealthSyncWorker.UNIQUE_NAME,
+            NightlyRecomputeWorker.UNIQUE_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )

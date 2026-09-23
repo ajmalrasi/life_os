@@ -3,21 +3,6 @@ package com.lifeos.app.data.remote.dto
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-@Serializable
-data class HealthRecordDto(
-    @SerialName("source_id") val sourceId: String,
-    val type: String,
-    val value: Double,
-    val unit: String,
-    @SerialName("start_time") val startTime: String,
-    @SerialName("end_time") val endTime: String,
-)
-
-@Serializable
-data class HealthBatchDto(val records: List<HealthRecordDto>)
-
-@Serializable
-data class IngestResultDto(val received: Int, val inserted: Int, val skipped: Int)
 
 @Serializable
 data class MoodDto(

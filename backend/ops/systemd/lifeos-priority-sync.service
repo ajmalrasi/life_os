@@ -4,4 +4,11 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/curl --fail --silent --show-error --request POST http://127.0.0.1:8000/priority/sync/check
+# Optional: picks up API_TOKEN from the same .env the API container reads, so
+# this keeps working once Settings.api_token is set (see AGENTS.md §2). Missing
+# file or unset var is fine — the leading '-' makes the file optional, and the
+# shell parameter expansion below only adds the header when API_TOKEN is set.
+EnvironmentFile=-/home/ajmalrasi/life_os/backend/.env
+ExecStart=/bin/sh -c 'curl --fail --silent --show-error --request POST \
+  ${API_TOKEN:+--header "Authorization: Bearer $API_TOKEN"} \
+  http://127.0.0.1:8000/priority/sync/check'

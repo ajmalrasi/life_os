@@ -25,6 +25,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,6 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -71,6 +75,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val fieldColors = lifeOsFieldColors()
     var disconnectPrompt by remember { mutableStateOf<MailDisconnectPrompt?>(null) }
+    var tokenVisible by remember { mutableStateOf(false) }
     var notificationPermissionGranted by remember {
         mutableStateOf(hasNotificationPermission(context))
     }
@@ -182,6 +187,34 @@ fun SettingsScreen(
                         color = LifeOsColors.Warning,
                     )
                 }
+                OutlinedTextField(
+                    value = state.apiToken,
+                    onValueChange = viewModel::onTokenChange,
+                    label = { Text("API token") },
+                    placeholder = { Text("Optional — leave blank if none") },
+                    singleLine = true,
+                    visualTransformation = if (tokenVisible) VisualTransformation.None
+                        else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { tokenVisible = !tokenVisible }) {
+                            Icon(
+                                imageVector = if (tokenVisible) Icons.Rounded.VisibilityOff
+                                    else Icons.Rounded.Visibility,
+                                contentDescription = if (tokenVisible) "Hide token" else "Show token",
+                                tint = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = fieldColors,
+                )
+                Text(
+                    "Only needed once the backend's API_TOKEN is set (Tailscale/remote " +
+                        "access, see AGENTS.md §2). Must match exactly, or requests get 401.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
                 Button(
                     onClick = viewModel::save,
                     modifier = Modifier.fillMaxWidth().height(46.dp),

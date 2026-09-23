@@ -17,6 +17,7 @@ import javax.inject.Inject
 
 data class SettingsUiState(
     val baseUrl: String = "",
+    val apiToken: String = "",
     val saved: Boolean = false,
     val lastSyncAt: Long? = null,
     val pulseReminderEnabled: Boolean = false,
@@ -47,6 +48,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 baseUrl = settingsRepository.apiBaseUrl.first(),
+                apiToken = settingsRepository.apiToken.first(),
                 lastSyncAt = settingsRepository.lastSyncAt.first(),
                 pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first(),
                 pulseReminderHour = settingsRepository.pulseReminderHour.first(),
@@ -70,9 +72,14 @@ class SettingsViewModel @Inject constructor(
         _state.value = _state.value.copy(baseUrl = url, saved = false)
     }
 
+    fun onTokenChange(token: String) {
+        _state.value = _state.value.copy(apiToken = token, saved = false)
+    }
+
     fun save() {
         viewModelScope.launch {
             settingsRepository.setApiBaseUrl(_state.value.baseUrl.trim())
+            settingsRepository.setApiToken(_state.value.apiToken.trim())
             _state.value = _state.value.copy(saved = true)
         }
     }

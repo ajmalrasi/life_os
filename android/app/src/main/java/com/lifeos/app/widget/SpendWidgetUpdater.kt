@@ -10,6 +10,7 @@ import com.lifeos.app.MainActivity
 import com.lifeos.app.R
 import com.lifeos.app.domain.repository.MoneyRepository
 import com.lifeos.app.notifications.AppNotifications
+import com.lifeos.app.presentation.money.filterEmiTransactions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import java.math.BigDecimal
@@ -30,9 +31,14 @@ class SpendWidgetUpdater @Inject constructor(
 
         val today = LocalDate.now()
         val transactions = moneyRepository.observeTransactions(40).first()
-        val spend = transactions.filter {
-            it.direction == "debit" && it.spendCategory != null && it.currency == "INR"
-        }
+        // Match the Money screen's default (EMI excluded) so the widget and the
+        // app never disagree on "today"/"this month" spend at a glance.
+        val spend = filterEmiTransactions(
+            transactions.filter {
+                it.direction == "debit" && it.spendCategory != null && it.currency == "INR"
+            },
+            includeEmi = false,
+        )
         val todayTotal = spend
             .filter { it.txnDate == today }
             .fold(BigDecimal.ZERO) { total, transaction -> total + transaction.amount }

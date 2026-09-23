@@ -12,25 +12,12 @@ import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toDto
 import com.lifeos.app.data.toEntity
-import com.lifeos.app.domain.model.HealthMetricType
-import com.lifeos.app.domain.model.HealthSample
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import java.time.Instant
 import java.time.LocalDate
 import java.math.BigDecimal
 
 class MappersTest {
-
-    @Test
-    fun `health sample maps to dto with wire type`() {
-        val now = Instant.parse("2026-01-01T00:00:00Z")
-        val sample = HealthSample("id-1", HealthMetricType.SLEEP_DURATION, 7.5, "h", now, now)
-        val dto = sample.toDto()
-        assertEquals("sleep_duration", dto.type)
-        assertEquals(7.5, dto.value, 0.0)
-        assertEquals("id-1", dto.sourceId)
-    }
 
     @Test
     fun `score dto round-trips through entity to domain`() {

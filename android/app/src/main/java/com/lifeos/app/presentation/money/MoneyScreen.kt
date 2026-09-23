@@ -180,40 +180,8 @@ private val EDITABLE_CATEGORIES = listOf(
 )
 
 // --- period math ---------------------------------------------------------------
-
-private data class PeriodSlice(val start: LocalDate, val end: LocalDate)
-
-private fun sliceFor(
-    period: SpendPeriod,
-    anchor: LocalDate,
-    customStart: LocalDate?,
-    customEnd: LocalDate?,
-): PeriodSlice = when (period) {
-    SpendPeriod.DAY -> PeriodSlice(anchor, anchor)
-    SpendPeriod.WEEK -> {
-        val start = anchor.minusDays((anchor.dayOfWeek.value - 1).toLong()) // Monday
-        PeriodSlice(start, start.plusDays(6))
-    }
-    SpendPeriod.MONTH -> {
-        val start = anchor.withDayOfMonth(1)
-        PeriodSlice(start, anchor.withDayOfMonth(anchor.lengthOfMonth()))
-    }
-    SpendPeriod.SIX_MONTHS -> {
-        // Six calendar months ending with the anchor's month.
-        val start = anchor.withDayOfMonth(1).minusMonths(5)
-        PeriodSlice(start, anchor.withDayOfMonth(anchor.lengthOfMonth()))
-    }
-    SpendPeriod.YEAR -> PeriodSlice(
-        LocalDate.of(anchor.year, 1, 1),
-        LocalDate.of(anchor.year, 12, 31),
-    )
-    SpendPeriod.CUSTOM -> {
-        // Fall back to the anchor month until a range is picked.
-        val s = customStart ?: anchor.withDayOfMonth(1)
-        val e = customEnd ?: anchor.withDayOfMonth(anchor.lengthOfMonth())
-        PeriodSlice(s, e)
-    }
-}
+// PeriodSlice, sliceFor, previousPeriodSlice, CategoryTotal, and the category/
+// total rollups live in MoneyAggregation.kt as plain, unit-testable functions.
 
 private fun periodLabel(period: SpendPeriod, anchor: LocalDate, slice: PeriodSlice): String {
     val today = LocalDate.now()
@@ -242,7 +210,6 @@ private fun periodLabel(period: SpendPeriod, anchor: LocalDate, slice: PeriodSli
     }
 }
 
-private data class CategoryTotal(val category: String, val total: BigDecimal, val count: Int)
 private enum class CardCycleView { BILLED, CURRENT }
 
 internal fun filterEmiTransactions(
@@ -336,15 +303,10 @@ fun MoneyScreen(
         filterEmiTransactions(sourceFilteredTransactions, state.includeEmi)
     }
     val sliceBeforeCategory = remember(emiFilteredTransactions, slice) {
-        emiFilteredTransactions.filter {
-            !it.txnDate.isBefore(slice.start) && !it.txnDate.isAfter(slice.end)
-        }
+        emiFilteredTransactions.inSlice(slice)
     }
     val availableCategories = remember(sliceBeforeCategory) {
-        sliceBeforeCategory.groupBy { it.spendCategory!! }
-            .map { (cat, list) -> cat to list.fold(BigDecimal.ZERO) { a, t -> a + t.amount } }
-            .sortedByDescending { it.second }
-            .map { it.first }
+        categoryTotals(sliceBeforeCategory).map { it.category }
     }
     val filter = state.categoryFilter
     val categoryFilteredTransactions = remember(emiFilteredTransactions, filter) {
@@ -355,21 +317,11 @@ fun MoneyScreen(
         }
     }
     val spendTxns = remember(categoryFilteredTransactions, slice) {
-        categoryFilteredTransactions.filter {
-            !it.txnDate.isBefore(slice.start) && !it.txnDate.isAfter(slice.end)
-        }
+        categoryFilteredTransactions.inSlice(slice)
     }
-    val total = remember(spendTxns) {
-        spendTxns.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-    }
-    val overviewTotal = remember(sliceBeforeCategory) {
-        sliceBeforeCategory.fold(BigDecimal.ZERO) { sum, txn -> sum + txn.amount }
-    }
-    val byCategory = remember(sliceBeforeCategory) {
-        sliceBeforeCategory.groupBy { it.spendCategory!! }
-            .map { (cat, list) -> CategoryTotal(cat, list.fold(BigDecimal.ZERO) { a, t -> a + t.amount }, list.size) }
-            .sortedByDescending { it.total }
-    }
+    val total = remember(spendTxns) { spendTxns.totalAmount() }
+    val overviewTotal = remember(sliceBeforeCategory) { sliceBeforeCategory.totalAmount() }
+    val byCategory = remember(sliceBeforeCategory) { categoryTotals(sliceBeforeCategory) }
     val canGoNext = state.period != SpendPeriod.CUSTOM && slice.end.isBefore(LocalDate.now())
     val canGoPrev = state.period != SpendPeriod.CUSTOM
     val recentTransactions = remember(sliceBeforeCategory) {
@@ -387,16 +339,11 @@ fun MoneyScreen(
     }
     val todayTotal = remember(emiFilteredTransactions) {
         val today = LocalDate.now()
-        emiFilteredTransactions.filter { it.txnDate == today }
-            .fold(BigDecimal.ZERO) { sum, transaction -> sum + transaction.amount }
+        emiFilteredTransactions.filter { it.txnDate == today }.totalAmount()
     }
     val previousSlice = remember(state.period, slice) { previousPeriodSlice(state.period, slice) }
     val previousTotal = remember(emiFilteredTransactions, previousSlice) {
-        previousSlice?.let { previous ->
-            emiFilteredTransactions.filter {
-                !it.txnDate.isBefore(previous.start) && !it.txnDate.isAfter(previous.end)
-            }.fold(BigDecimal.ZERO) { sum, transaction -> sum + transaction.amount }
-        }
+        previousSlice?.let { previous -> emiFilteredTransactions.inSlice(previous).totalAmount() }
     }
     val activeFilterCount = filter.size +
         (if (state.bankUpiFilter != null) 1 else 0) +
@@ -781,23 +728,6 @@ fun MoneyScreen(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
         )
-    }
-}
-
-private fun previousPeriodSlice(period: SpendPeriod, current: PeriodSlice): PeriodSlice? = when (period) {
-    SpendPeriod.DAY -> PeriodSlice(current.start.minusDays(1), current.end.minusDays(1))
-    SpendPeriod.WEEK -> PeriodSlice(current.start.minusWeeks(1), current.end.minusWeeks(1))
-    SpendPeriod.MONTH -> current.start.minusMonths(1).let { start ->
-        PeriodSlice(start, start.withDayOfMonth(start.lengthOfMonth()))
-    }
-    SpendPeriod.SIX_MONTHS -> PeriodSlice(current.start.minusMonths(6), current.start.minusDays(1))
-    SpendPeriod.YEAR -> PeriodSlice(
-        LocalDate.of(current.start.year - 1, 1, 1),
-        LocalDate.of(current.start.year - 1, 12, 31),
-    )
-    SpendPeriod.CUSTOM -> {
-        val days = java.time.temporal.ChronoUnit.DAYS.between(current.start, current.end) + 1
-        PeriodSlice(current.start.minusDays(days), current.end.minusDays(days))
     }
 }
 

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.lifeos.app.data.remote.AuthInterceptor
 import com.lifeos.app.data.remote.DynamicBaseUrlInterceptor
 import com.lifeos.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -22,10 +23,12 @@ import javax.inject.Singleton
 class SettingsRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<Preferences>,
     private val interceptor: DynamicBaseUrlInterceptor,
+    private val authInterceptor: AuthInterceptor,
     private val appScope: CoroutineScope,
 ) : SettingsRepository {
 
     private val baseUrlKey = stringPreferencesKey("api_base_url")
+    private val apiTokenKey = stringPreferencesKey("api_token")
     private val lastSyncKey = stringPreferencesKey("last_sync_day")
     private val lastSyncAtKey = longPreferencesKey("last_sync_at")
     private val pulseReminderEnabledKey = booleanPreferencesKey("pulse_reminder_enabled")
@@ -49,9 +52,15 @@ class SettingsRepositoryImpl @Inject constructor(
     override val apiBaseUrl: Flow<String> =
         dataStore.data.map { it[baseUrlKey] ?: defaultBaseUrl }
 
+    override val apiToken: Flow<String> =
+        dataStore.data.map { it[apiTokenKey] ?: "" }
+
     init {
         appScope.launch {
             apiBaseUrl.collect { url -> interceptor.setBaseUrl(url) }
+        }
+        appScope.launch {
+            apiToken.collect { token -> authInterceptor.setToken(token) }
         }
     }
 
@@ -59,6 +68,12 @@ class SettingsRepositoryImpl @Inject constructor(
         val normalized = url.trim().let { if (it.endsWith("/")) it else "$it/" }
         dataStore.edit { it[baseUrlKey] = normalized }
         interceptor.setBaseUrl(normalized)
+    }
+
+    override suspend fun setApiToken(token: String) {
+        val trimmed = token.trim()
+        dataStore.edit { it[apiTokenKey] = trimmed }
+        authInterceptor.setToken(trimmed)
     }
 
     override val lastSyncDay: Flow<LocalDate?> =

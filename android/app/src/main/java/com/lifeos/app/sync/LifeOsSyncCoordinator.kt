@@ -8,9 +8,16 @@ import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.widget.SpendWidgetUpdater
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import retrofit2.HttpException
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** True when the backend rejected the request over the bearer token (wrong,
+ * missing, or the backend has one set that this device doesn't). One bad
+ * token breaks every call, so it deserves one specific, actionable message
+ * instead of getting buried in the generic per-area failure list below. */
+private fun Throwable.isUnauthorized(): Boolean = this is HttpException && code() == 401
 
 data class LifeOsSyncResult(
     val successful: Boolean,
@@ -38,42 +45,59 @@ class LifeOsSyncCoordinator @Inject constructor(
 
     suspend fun refreshOnAppOpen(): LifeOsSyncResult = mutex.withLock {
         val failures = mutableListOf<String>()
-        runCatching { analyticsRepository.refresh(DASHBOARD_HISTORY_DAYS) }
-            .onFailure { failures += "insights" }
-        runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }
-            .onFailure { failures += "Pulse" }
+        var unauthorized = false
+        fun <T> Result<T>.track(label: String) = onFailure {
+            failures += label
+            if (it.isUnauthorized()) unauthorized = true
+        }
+
+        runCatching { analyticsRepository.refresh(DASHBOARD_HISTORY_DAYS) }.track("insights")
+        runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }.track("Pulse")
         runCatching { moneyRepository.refresh(MONEY_HISTORY_DAYS, STATEMENT_HISTORY_MONTHS) }
-            .onFailure { failures += "money" }
-        runCatching { priorityRepository.refresh() }
-            .onFailure { failures += "Priority" }
+            .track("money")
+        runCatching { priorityRepository.refresh() }.track("Priority")
         runCatching { spendWidgetUpdater.updateAll() }
 
-        finish(failures, "LifeOS refreshed")
+        finish(failures, unauthorized, "LifeOS refreshed")
     }
 
     suspend fun syncAll(): LifeOsSyncResult = mutex.withLock {
         val failures = mutableListOf<String>()
+        var unauthorized = false
+        fun <T> Result<T>.track(label: String) = onFailure {
+            failures += label
+            if (it.isUnauthorized()) unauthorized = true
+        }
 
         // This checks incremental transaction alerts and statement summaries;
         // ordinary statement line items remain excluded by the backend.
-        runCatching { moneyRepository.syncNow() }
-            .onFailure { failures += "money and statements" }
-        runCatching { priorityRepository.syncNow() }
-            .onFailure { failures += "Priority mail" }
+        runCatching { moneyRepository.syncNow() }.track("money and statements")
+        runCatching { priorityRepository.syncNow() }.track("Priority mail")
         runCatching { spendWidgetUpdater.updateAll() }
-        runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }
-            .onFailure { failures += "Pulse" }
-        runCatching { analyticsRepository.recompute(RECOMPUTE_DAYS) }
-            .onFailure { failures += "health and insights" }
+        runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }.track("Pulse")
+        runCatching { analyticsRepository.recompute(RECOMPUTE_DAYS) }.track("health and insights")
 
-        finish(failures, "Everything is up to date")
+        finish(failures, unauthorized, "Everything is up to date")
     }
 
-    private suspend fun finish(failures: List<String>, successMessage: String): LifeOsSyncResult {
+    private suspend fun finish(
+        failures: List<String>,
+        unauthorized: Boolean,
+        successMessage: String,
+    ): LifeOsSyncResult {
         if (failures.isEmpty()) {
             settingsRepository.setLastSyncDay(LocalDate.now())
             settingsRepository.setLastSyncAt(System.currentTimeMillis())
             return LifeOsSyncResult(successful = true, message = successMessage)
+        }
+        if (unauthorized) {
+            // Every area failed the same way; naming them individually would
+            // bury the one fix (the token) under a list that looks like N
+            // unrelated problems.
+            return LifeOsSyncResult(
+                successful = false,
+                message = "Unauthorized — check the API token in Settings.",
+            )
         }
         return LifeOsSyncResult(
             successful = false,

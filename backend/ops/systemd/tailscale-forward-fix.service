@@ -1,0 +1,11 @@
+[Unit]
+Description=Fix tailscale0 forwarding (Jetson connmark kernel-module workaround)
+After=tailscaled.service docker.service
+Requires=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ajmalrasi/life_os/backend/scripts/fix_tailscale_forward.sh
+
+[Install]
+WantedBy=multi-user.target

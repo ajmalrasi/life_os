@@ -11,7 +11,6 @@ import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.GithubActivity
-import com.lifeos.app.domain.model.HealthSample
 import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
@@ -27,19 +26,11 @@ import java.time.LocalDate
 
 /**
  * Repository interfaces (domain layer). Implementations live in data/ and are
- * the only place that knows about Retrofit / Room / Health Connect.
+ * the only place that knows about Retrofit / Room.
  *
  * Offline-first contract: reads return cached data via [Flow]; an explicit
  * [refresh] reconciles with the backend and updates the cache.
  */
-interface HealthRepository {
-    /** Read recent samples from Health Connect (does not upload). */
-    suspend fun readRecentSamples(days: Int): List<HealthSample>
-
-    /** Upload samples to the backend; returns number accepted. */
-    suspend fun sync(samples: List<HealthSample>): Int
-}
-
 interface MoodRepository {
     fun observe(days: Int): Flow<List<MoodCheckin>>
     suspend fun submit(checkin: MoodCheckin)
@@ -131,6 +122,13 @@ interface MoneyRepository {
 interface SettingsRepository {
     val apiBaseUrl: Flow<String>
     suspend fun setApiBaseUrl(url: String)
+
+    /** Bearer token sent as `Authorization: Bearer <token>` on every request.
+     * Empty (the default) sends no header at all — matches the backend's
+     * `api_token` unset-disables-auth default (see AGENTS.md §2). */
+    val apiToken: Flow<String>
+    suspend fun setApiToken(token: String)
+
     val lastSyncDay: Flow<LocalDate?>
     suspend fun setLastSyncDay(day: LocalDate)
 

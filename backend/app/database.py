@@ -53,7 +53,11 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create all tables. For the MVP we use create_all; later phases add Alembic."""
+    """Create all tables via create_all.
+
+    This never ALTERs an existing table — column/type changes on an existing
+    deployment go through ``app.migrations`` instead (see AGENTS.md §5).
+    """
     # Import models so they register with the metadata before create_all.
     from app import models  # noqa: F401
 

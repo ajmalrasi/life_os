@@ -89,8 +89,15 @@ cd backend && docker compose up -d --build api      # rebuilds the image (code i
 curl -s localhost:8000/healthz                       # {"status":"healthy"}
 ```
 - **DB schema is `create_all`, no Alembic.** It creates missing tables but **never
-  ALTERs existing columns**. Column/type changes need a manual `ALTER TABLE`
-  (e.g. `health_records.type` was widened to `varchar(64)`).
+  ALTERs existing columns**. Column/type changes ship as a numbered SQL file under
+  `backend/migrations/` (e.g. `0001_statement_details.sql`, moved there from the
+  old one-off `scripts/2026_07_21_statement_details.sql`); `app/migrations.py`
+  applies any unapplied files automatically on API startup (after `init_db()` in
+  `app/main.py`'s `lifespan`), tracked in a `schema_migrations` table so each file
+  runs once. Write new files idempotently (`IF NOT EXISTS`/`IF EXISTS`) and they
+  deploy themselves on the next `docker compose up -d --build api` — no manual
+  `docker exec ... psql` step needed anymore for schema changes (still useful for
+  one-off data queries/fixes). Migrations are skipped on SQLite (the test suite).
 - Run one-off SQL: `docker exec -i backend-db-1 psql -U lifeos -d lifeos < file.sql`
 - Tests: `cd backend && pytest` (uses SQLite).
 
@@ -223,7 +230,9 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   it in Google Health" does not mean it's in Health Connect (which is all the app
   can read). Verify with the Health Connect app's *Data and access* screen.
 - **`create_all` won't migrate columns.** Any schema change to an existing table
-  needs a manual `ALTER TABLE` on the Jetson DB.
+  needs a numbered SQL file in `backend/migrations/`, applied automatically on
+  startup by `app/migrations.py` (see §2) — no more manual `ALTER TABLE` on the
+  Jetson DB.
 - **The Jetson git checkout is reconciled to `origin/main`** — deploy with
   `git pull`. (Historically it lagged and was deployed by rsync; don't go back to
   that.) `backend/.env` is gitignored and survives `git reset --hard` — never clobber it.
@@ -734,6 +743,128 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Staged improvement plan, Stage 2c — Tailscale (2026-09-23).** Installed on
+  the Jetson (`curl https://tailscale.com/install.sh | sudo sh` + `sudo
+  tailscale up`, hostname `ajmalrasi`, tailnet IP `100.111.253.18`,
+  MagicDNS `ajmalrasi.tail5c18e0.ts.net`, tailnet suffix `tail5c18e0.ts.net`).
+  The phone (`ajmals-s24`, `100.97.205.23`) already had the Tailscale app
+  installed but signed out; re-authenticated via the tailnet's GitHub SSO.
+  **Found and fixed a real connectivity bug**, not just installed the app:
+  `tailscaled`'s auto-generated `ts-forward` nftables chain is supposed to
+  accept forwarded traffic from tailnet peers via a connmark-based rule, but
+  that rule silently matches zero packets on this Jetson's custom NVIDIA L4T
+  kernel (missing `xt_connmark`/`CONNMARK` module — the same issue
+  `tailscale status` warns about: "Extension connmark revision 0 not
+  supported, missing kernel module"). Net effect: peers could ping the Jetson
+  but TCP into the Docker-forwarded backend (port 8000) timed out, confirmed
+  via `nft` rule packet counters (the mark-setting rule showed 0 matches) and
+  a phone-side `nc` test that changed from timeout to immediate success once
+  fixed. Fix: `backend/scripts/fix_tailscale_forward.sh` inserts one
+  unconditional `iifname "tailscale0" accept` into the top-level `FORWARD`
+  chain (sits outside tailscaled's self-managed `ts-forward` chain, so
+  tailscaled regenerating its rules doesn't remove it), installed via
+  `backend/ops/systemd/tailscale-forward-fix.service` (oneshot,
+  `WantedBy=multi-user.target`, idempotent) so it reapplies on every boot.
+  **These two new files were deployed directly to the Jetson (scp + manual
+  `systemctl enable --now`) but are not yet committed/pushed** — commit and
+  push them so a future `git pull` on the Jetson doesn't diverge from what's
+  actually installed at `/etc/systemd/system/tailscale-forward-fix.service`.
+  **Verified over Wi-Fi** (still routes through the tailnet, not the LAN,
+  since `100.x` addresses aren't on the home subnet): app backend address set
+  to `http://100.111.253.18:8000/`, Money loaded live data, then `nc -z` to
+  the Tailscale IP flipped from timeout to immediate success after the fix.
+  **Could not verify over real cellular-only conditions**: with Wi-Fi
+  disabled, even an unrelated public IP (`8.8.8.8`) was unreachable — the
+  phone's Airtel SIM registers on the LTE data network (`mDataConnectionState=2`,
+  in-service) but has no actual working data session, i.e. no active data
+  pack, unrelated to anything in this stage. Re-verify once the SIM has data.
+  Phone Wi-Fi and the app's backend address were restored to normal
+  (`http://192.168.3.30:8000/`) afterward. **Not yet done**: renaming the
+  Jetson's Tailscale hostname to something clearer than `ajmalrasi`, and the
+  plan's suggested rollout order (deploy backend with token unset → install
+  updated APK → set `API_TOKEN` in `.env` + restart) — no token is configured
+  yet, so Tailscale access today is unauthenticated on the LAN-equivalent
+  trust level of the tailnet itself.
+- **Staged improvement plan, Stage 2a+2b — bearer-token auth (2026-09-23).**
+  Second stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md` (local
+  plan file, not in the repo); 2c (Tailscale) not started — see below.
+  **2a (backend):** `Settings.api_token: str | None` in `app/config.py`, unset
+  by default (auth fully disabled — safe for the existing home-Wi-Fi rollout
+  and the test suite). New `app/api/deps.py::require_token` compares
+  `Authorization: Bearer <token>` with `hmac.compare_digest`; applied per-router
+  in `app/main.py` via `include_router(..., dependencies=[Depends(require_token)])`
+  on every router except `health_data` (that one applies the dependency to the
+  `POST /health/batch` route only, so `POST /health/auto-export` stays exempt —
+  Health Auto Export sends no headers and can't be configured to). `/` and
+  `/healthz` stay exempt (no dependency attached). CORS tightened from `*` to
+  an empty origin allowlist (no browser client exists — Android talks to this
+  directly, not via fetch/XHR). `scripts/import_apple_health.py` gained
+  `--api-token` (defaults to `$LIFEOS_API_TOKEN`). `ops/systemd/lifeos-priority-sync.service`
+  now optionally loads `API_TOKEN` from `backend/.env` and adds the header only
+  when set (`${API_TOKEN:+--header ...}`) — **this service file needs to be
+  re-copied to the Jetson's systemd unit directory and `systemctl daemon-reload`
+  run** for that to take effect there; it's a no-op today since no token is
+  configured. New `tests/test_auth.py` (7 tests: disabled-by-default, both
+  exempt paths, 401 missing/wrong/malformed header, 200 with the right token,
+  and `/health/batch` protected while `/health/auto-export` stays exempt).
+  **2b (Android):** DataStore key `api_token` in `SettingsRepositoryImpl`
+  (empty by default); new `AuthInterceptor.kt` mirrors `DynamicBaseUrlInterceptor`'s
+  `AtomicReference` pattern — an empty token adds no header at all, so it's a
+  silent no-op until configured. Wired into `NetworkModule`'s `OkHttpClient`
+  alongside the base-URL interceptor. Settings → Connection gained an "API
+  token" field (masked, with a show/hide toggle) below the backend address,
+  saved together by the same Save button. `LifeOsSyncCoordinator` now tracks
+  whether any of `refreshOnAppOpen()`/`syncAll()`'s per-area failures was a 401
+  and, if so, replaces the generic "Couldn't refresh X, Y, Z" message with
+  "Unauthorized — check the API token in Settings." (one wrong token fails
+  every area the same way; naming them individually would bury the one fix).
+  **Verified end-to-end on Samsung `RZCX60SNHHE`** (connected via adb):
+  `testDebugUnitTest` and `assembleDebug` both clean, APK installed, typed a
+  token into the new field, toggled visibility, cleared it back to empty,
+  saved (button showed "Saved"), and confirmed Money still loads live data
+  from the (currently token-less) Jetson afterward — proving the empty-token
+  path is a true no-op. Backend: `pytest` — 325 passed, 4 failed (same
+  pre-existing failures as Stage 1, confirmed unrelated). **2c (Tailscale) is
+  documentation/manual-setup only and has NOT been done** — it needs
+  `tailscale up` on the Jetson (interactive browser auth) and installing/signing
+  into the Tailscale app on the S24, both of which need the user's own
+  accounts; ask before doing the Jetson half over SSH.
+- **Staged improvement plan, Stage 1 — cleanup & safety net (2026-09-23).** First
+  stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md` (a local plan file,
+  not checked into the repo). **1a (Android):** removed all dead Health Connect
+  code — `HealthConnectManager.kt`, `HealthRepositoryImpl.kt`, the `HealthRepository`
+  interface, `HealthSample`/`HealthMetricType`, `HealthSample.toDto()`, the
+  `uploadHealth` Retrofit call, `HealthRecordDto`/`HealthBatchDto`/`IngestResultDto`,
+  the `health-connect` Gradle dependency/version, and the matching Mappers test —
+  none of it did anything since the 2026-06-21 single-source (HAE-only) migration.
+  `HealthSyncWorker` renamed to `NightlyRecomputeWorker` (it only calls
+  `recompute(30)`), **keeping `UNIQUE_NAME = "health_sync_nightly"`** so the
+  existing WorkManager schedule isn't duplicated on upgrade. Backend `/health/batch`
+  is untouched (the XML importer still POSTs to it). **1b (backend):** replaced the
+  "manual `ALTER TABLE` on the Jetson" workflow with numbered SQL files under
+  `backend/migrations/` (`0001_statement_details.sql` moved in from
+  `scripts/2026_07_21_statement_details.sql`), applied automatically on startup by
+  `app/migrations.py` via a `schema_migrations` tracking table; skipped on SQLite
+  (tests) unless a test opts in with `force=True`. Wired into `app/main.py`'s
+  `lifespan` right after `init_db()`; Dockerfile now also `COPY migrations
+  ./migrations`. **1c (Android):** extracted `PeriodSlice`/`sliceFor`/
+  `previousPeriodSlice`/`CategoryTotal` and the category/total rollups out of
+  `MoneyScreen.kt`'s `remember{}` blocks into a pure `MoneyAggregation.kt`
+  (behavior-preserving — `MoneyScreen.kt` now just calls it), with new unit tests
+  covering period boundaries, EMI exclusion + bank-UPI filter composed together,
+  and prior-period comparison. Fixed the widget/Money mismatch:
+  `SpendWidgetUpdater.updateAll` now applies `filterEmiTransactions(...,
+  includeEmi = false)` so the home-screen widget's today/month totals match
+  Money's default (EMI-excluded) view instead of silently disagreeing with it.
+  **Verified:** `cd backend && pytest` — 260/264 pass (the 4 failures are
+  pre-existing on `main`, unrelated: `test_card_cycles`, `test_priority`, two in
+  `test_statements`); the new `tests/test_migrations.py` (4 tests) passes clean.
+  Android changes were reviewed by hand, not built — per [[android-studio-builds]]
+  the user builds/installs via Android Studio; run `testDebugUnitTest` and
+  `assembleDebug` there before installing, and check `adb shell dumpsys
+  jobscheduler | grep lifeos` still shows the nightly work under the old name.
+  Stages 2–5 (auth/Tailscale, sync visibility, Money features, cross-domain
+  polish) remain in the plan file, not started.
 - **Android navigation and spending UI pass (2026-09-11, extended 2026-09-13).** A shared, fixed
   back bar now covers every non-root route, including loading/error states and
   long statement/Priority detail pages. In-app drawer navigation preserves the

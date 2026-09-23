@@ -3,7 +3,6 @@ package com.lifeos.app.di
 import com.lifeos.app.data.repository.AnalyticsRepositoryImpl
 import com.lifeos.app.data.repository.ChatRepositoryImpl
 import com.lifeos.app.data.repository.GithubRepositoryImpl
-import com.lifeos.app.data.repository.HealthRepositoryImpl
 import com.lifeos.app.data.repository.MoneyRepositoryImpl
 import com.lifeos.app.data.repository.MoodRepositoryImpl
 import com.lifeos.app.data.repository.PriorityRepositoryImpl
@@ -11,7 +10,6 @@ import com.lifeos.app.data.repository.SettingsRepositoryImpl
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.ChatRepository
 import com.lifeos.app.domain.repository.GithubRepository
-import com.lifeos.app.domain.repository.HealthRepository
 import com.lifeos.app.domain.repository.MoneyRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.PriorityRepository
@@ -25,10 +23,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
-
-    @Binds
-    @Singleton
-    abstract fun healthRepository(impl: HealthRepositoryImpl): HealthRepository
 
     @Binds
     @Singleton

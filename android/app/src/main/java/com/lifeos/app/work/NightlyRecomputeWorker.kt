@@ -13,18 +13,18 @@ import java.time.LocalDate
 /**
  * Phase 1 #2: nightly background recompute.
  *
- * Health data now arrives solely from the iPhone via Health Auto Export
+ * Health data arrives solely from the iPhone via Health Auto Export
  * (POST /health/auto-export), which already ingests and recomputes the touched
- * days. This worker no longer reads/uploads Health Connect samples because doing so
- * double-counted activity Apple already provides (single source = HAE). It just
- * triggers a backend recompute of the recent window so the dashboard stays
+ * days. This worker does not read/upload Health Connect samples (that code was
+ * removed — double-counted activity Apple already provides; single source = HAE).
+ * It just triggers a backend recompute of the recent window so the dashboard stays
  * fresh (and correlations are rediscovered) even on days with no live push.
  *
  * Returns [Result.retry] on failure so WorkManager backs off and tries again
  * (e.g. when the LAN backend is briefly unreachable).
  */
 @HiltWorker
-class HealthSyncWorker @AssistedInject constructor(
+class NightlyRecomputeWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val analyticsRepository: AnalyticsRepository,
@@ -45,6 +45,8 @@ class HealthSyncWorker @AssistedInject constructor(
     }
 
     companion object {
+        // Kept as the original name so this doesn't duplicate the existing
+        // scheduled work under a new unique-work key.
         const val UNIQUE_NAME = "health_sync_nightly"
         private const val RECOMPUTE_WINDOW_DAYS = 30 // backend recompute (kept small for speed)
         private const val MAX_ATTEMPTS = 3

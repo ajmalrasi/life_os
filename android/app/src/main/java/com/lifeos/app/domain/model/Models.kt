@@ -4,50 +4,6 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 
-/** A single Health Connect sample, normalized for upload. */
-data class HealthSample(
-    val sourceId: String,
-    val type: HealthMetricType,
-    val value: Double,
-    val unit: String,
-    val start: Instant,
-    val end: Instant,
-)
-
-enum class HealthMetricType(val wire: String) {
-    SLEEP_DURATION("sleep_duration"),
-    SLEEP_DEEP("sleep_deep"),
-    SLEEP_REM("sleep_rem"),
-    SLEEP_LIGHT("sleep_light"),
-    SLEEP_AWAKE("sleep_awake"),
-    HEART_RATE("heart_rate"),
-    RESTING_HEART_RATE("resting_heart_rate"),
-    HRV("hrv"),
-    BLOOD_OXYGEN("blood_oxygen"),
-    WEIGHT("weight"),
-    STEPS("steps"),
-    WORKOUT("workout"),
-    CALORIES("calories"),
-    ACTIVE_CALORIES("active_calories"),
-    BASAL_METABOLIC_RATE("basal_metabolic_rate"),
-    WALKING_DISTANCE("walking_distance"),
-    ELEVATION_GAINED("elevation_gained"),
-    FLOORS_CLIMBED("floors_climbed"),
-    VO2_MAX("vo2_max"),
-    RESPIRATORY_RATE("respiratory_rate"),
-    BLOOD_PRESSURE_SYSTOLIC("blood_pressure_systolic"),
-    BLOOD_PRESSURE_DIASTOLIC("blood_pressure_diastolic"),
-    BLOOD_GLUCOSE("blood_glucose"),
-    BODY_TEMPERATURE("body_temperature"),
-    BASAL_BODY_TEMPERATURE("basal_body_temperature"),
-    HEIGHT("height"),
-    BODY_FAT("body_fat"),
-    LEAN_BODY_MASS("lean_body_mass"),
-    BONE_MASS("bone_mass"),
-    BODY_WATER_MASS("body_water_mass"),
-    HYDRATION("hydration"),
-}
-
 data class MoodCheckin(
     val day: LocalDate,
     val mood: Int,

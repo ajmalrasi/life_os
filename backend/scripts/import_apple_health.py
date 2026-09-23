@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import zipfile
@@ -377,28 +378,31 @@ def _category_of(rec_type: str) -> str:
     return "other"
 
 
-def post_batch(api_url: str, records: list[dict]) -> dict:
+def post_batch(api_url: str, records: list[dict], api_token: str | None) -> dict:
     body = json.dumps({"records": records}).encode()
+    headers = {"Content-Type": "application/json"}
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     req = request.Request(
         api_url.rstrip("/") + "/health/batch",
-        data=body, headers={"Content-Type": "application/json"}, method="POST",
+        data=body, headers=headers, method="POST",
     )
     with request.urlopen(req, timeout=120) as resp:
         return json.loads(resp.read())
 
 
-def flush(imp: Importer, api_url: str | None, batch_size: int, totals: dict) -> None:
+def flush(imp: Importer, api_url: str | None, api_token: str | None, batch_size: int, totals: dict) -> None:
     while len(imp.out) >= batch_size:
         chunk, imp.out = imp.out[:batch_size], imp.out[batch_size:]
-        _send(chunk, api_url, totals)
+        _send(chunk, api_url, api_token, totals)
 
 
-def _send(chunk: list[dict], api_url: str | None, totals: dict) -> None:
+def _send(chunk: list[dict], api_url: str | None, api_token: str | None, totals: dict) -> None:
     if api_url is None:  # dry run
         totals["would_send"] += len(chunk)
         return
     try:
-        res = post_batch(api_url, chunk)
+        res = post_batch(api_url, chunk, api_token)
         totals["received"] += res.get("received", 0)
         totals["inserted"] += res.get("inserted", 0)
         totals["skipped"] += res.get("skipped", 0)
@@ -417,6 +421,11 @@ def main() -> None:
     src.add_argument("--xml", help="Path to an already-extracted export.xml")
     p.add_argument("--api-url", help="Backend base URL, e.g. http://localhost:8000. "
                                      "Omit to dry-run (parse only, no network).")
+    p.add_argument("--api-token", default=os.environ.get("LIFEOS_API_TOKEN"),
+                   help="Bearer token for Authorization, if the backend has "
+                        "Settings.api_token set (see AGENTS.md §2). Defaults to "
+                        "$LIFEOS_API_TOKEN. Unnecessary when the backend has no "
+                        "token configured.")
     p.add_argument("--dry-run", action="store_true",
                    help="Parse and summarize without sending (same as omitting --api-url).")
     p.add_argument("--since", help="Only import records starting on/after YYYY-MM-DD.")
@@ -449,7 +458,7 @@ def main() -> None:
             imp.feed(elem)
             if i % 200_000 == 0:
                 print(f"  parsed {i:,} records ...")
-            flush(imp, api_url, args.batch_size, totals)
+            flush(imp, api_url, args.api_token, args.batch_size, totals)
 
     if args.zip:
         with zipfile.ZipFile(args.zip) as zf:
@@ -466,7 +475,7 @@ def main() -> None:
     # send remainder
     while imp.out:
         chunk, imp.out = imp.out[:args.batch_size], imp.out[args.batch_size:]
-        _send(chunk, api_url, totals)
+        _send(chunk, api_url, args.api_token, totals)
 
     print("\n=== Mapped (by record type) ===")
     for k, v in sorted(imp.mapped.items(), key=lambda kv: -kv[1]):

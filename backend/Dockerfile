@@ -42,6 +42,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY scripts ./scripts
+COPY migrations ./migrations
 
 # github-mcp-server binary for stdio-based GitHub tool calls (no OAuth needed)
 COPY --from=mcp-binary /server/github-mcp-server /usr/local/bin/github-mcp-server

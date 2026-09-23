@@ -13,8 +13,6 @@ import com.lifeos.app.data.remote.dto.DeviceTokenResponseDto
 import com.lifeos.app.data.remote.dto.ExecutionSyncResultDto
 import com.lifeos.app.data.remote.dto.ExpenseSyncResultDto
 import com.lifeos.app.data.remote.dto.GithubDto
-import com.lifeos.app.data.remote.dto.HealthBatchDto
-import com.lifeos.app.data.remote.dto.IngestResultDto
 import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
@@ -121,9 +119,6 @@ interface LifeOsApi {
         @Path("itemId") itemId: Int,
         @Body body: PriorityFeedbackDto,
     ): PriorityItemDto
-
-    @POST("health/batch")
-    suspend fun uploadHealth(@Body batch: HealthBatchDto): IngestResultDto
 
     @POST("mood")
     suspend fun submitMood(@Body mood: MoodDto): MoodOutDto

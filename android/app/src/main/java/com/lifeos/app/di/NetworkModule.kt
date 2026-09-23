@@ -1,6 +1,7 @@
 package com.lifeos.app.di
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import com.lifeos.app.data.remote.AuthInterceptor
 import com.lifeos.app.data.remote.DynamicBaseUrlInterceptor
 import com.lifeos.app.data.remote.LifeOsApi
 import dagger.Module
@@ -28,10 +29,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun okHttp(dynamicBaseUrl: DynamicBaseUrlInterceptor): OkHttpClient {
+    fun okHttp(dynamicBaseUrl: DynamicBaseUrlInterceptor, auth: AuthInterceptor): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
         return OkHttpClient.Builder()
             .addInterceptor(dynamicBaseUrl)
+            .addInterceptor(auth)
             .addInterceptor(logging)
             // OpenClaw inference on a Jetson can be slow; be generous.
             .connectTimeout(15, TimeUnit.SECONDS)

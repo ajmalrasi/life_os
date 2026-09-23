@@ -17,7 +17,6 @@ import com.lifeos.app.data.remote.dto.ChatMessageDto
 import com.lifeos.app.data.remote.dto.DailyScoreDto
 import com.lifeos.app.data.remote.dto.DailyStateDto
 import com.lifeos.app.data.remote.dto.GithubDto
-import com.lifeos.app.data.remote.dto.HealthRecordDto
 import com.lifeos.app.data.remote.dto.InsightDto
 import com.lifeos.app.data.remote.dto.MonthTrendDto
 import com.lifeos.app.data.remote.dto.MoodDto
@@ -41,7 +40,6 @@ import com.lifeos.app.domain.model.ChatTurn
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.GithubActivity
-import com.lifeos.app.domain.model.HealthSample
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MonthSpend
 import com.lifeos.app.domain.model.MoodCheckin
@@ -56,16 +54,6 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-
-// --- Health ---
-fun HealthSample.toDto() = HealthRecordDto(
-    sourceId = sourceId,
-    type = type.wire,
-    value = value,
-    unit = unit,
-    startTime = start.toString(),
-    endTime = end.toString(),
-)
 
 // --- Mood ---
 fun MoodCheckin.toDto() = MoodDto(day.toString(), mood, energy, focus, stress, note)

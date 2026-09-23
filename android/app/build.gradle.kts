@@ -17,7 +17,7 @@ android {
 
     defaultConfig {
         applicationId = "com.lifeos.app"
-        minSdk = 28          // Health Connect requires API 28+ (uses the app on 28+)
+        minSdk = 28
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
@@ -97,9 +97,6 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
-
-    // Health Connect
-    implementation(libs.health.connect)
 
     // Preferences + background work
     implementation(libs.datastore.preferences)
