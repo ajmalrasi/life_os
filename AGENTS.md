@@ -798,6 +798,26 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   was locked for the rest of the session — the UI itself (toggle, budget
   bars, dialog, recurring sheet) has **not** been visually confirmed on
   device yet.
+  **Visual verification completed 2026-09-24.** Found and fixed a real
+  deploy gap first: the previously-installed APK's `lastUpdateTime` predated
+  the final `assembleDebug` build (20:20 vs the on-disk APK's 20:33), so the
+  device was silently running pre-Stage-4c code — `adb logcat` showed zero
+  `GET /expenses/recurring` calls despite the backend returning real data.
+  Always compare `adb shell dumpsys package <pkg> | grep lastUpdateTime`
+  against the APK's mtime, not just "I ran install earlier", before trusting
+  on-device behavior. After reinstalling the current APK: the Settings
+  "Card due reminders" toggle renders correctly (OFF, gated on the
+  ungranted `POST_NOTIFICATIONS` permission — expected, mirrors Pulse's
+  same pattern); Money Overview's Recurring summary row showed the real
+  detected Spotify India subscription (`₹299 · monthly · next 2026-10-01`)
+  and opened `RecurringChargesSheet` with the correct detection-only copy;
+  the "View all categories" sheet's per-row budget (⊙) icon opened
+  `BudgetEditDialog`, a ₹15,000 Vehicle maintenance budget was saved
+  end-to-end (`PUT /budgets/vehicle` confirmed server-side), and the
+  Overview Budgets section then rendered the progress bar and
+  "On pace to exceed by day 25" pace text matching the API's
+  `on_pace_to_exceed`/`projected_exceed_day`. The test budget was deleted
+  afterward to leave production clean. Stage 4 is now fully closed.
 - **Staged improvement plan, Stage 3 — sync visibility & stale-data alerts
   (2026-09-23).** Final stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md`
   (local plan file, not in the repo) — all three sub-parts done. **3a
