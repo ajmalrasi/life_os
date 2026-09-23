@@ -120,6 +120,25 @@ def test_failed_attempt_marks_bank_mail_stale_even_with_recent_data(client):
     assert sources["bank_mail"]["last_error"] == "invalid_grant"
 
 
+def test_timestamps_are_normalized_to_utc(client):
+    """Regression test: the DB session runs in Asia/Kolkata (AGENTS.md §5), so
+    a raw column read comes back +05:30, not the UTC 'Z' every other endpoint
+    emits — and Android's Instant.parse() only accepts 'Z'. This caught a real
+    bug where the Settings "Data sources" panel spun forever because parsing
+    silently failed on the first non-UTC timestamp it saw."""
+    with SessionLocal() as db:
+        _seed_fresh(db)
+
+    resp = client.get("/status/sync")
+    for status in resp.json()["sources"]:
+        for field in ("last_success_at", "last_attempt_at"):
+            value = status[field]
+            if value is not None:
+                assert value.endswith("+00:00") or value.endswith("Z"), (
+                    f"{status['source']}.{field}={value!r} is not UTC"
+                )
+
+
 def test_stale_sources_appear_in_notifications(client):
     with SessionLocal() as db:
         _seed_stale(db)
