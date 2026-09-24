@@ -95,12 +95,9 @@ def _split_statements(sql: str) -> list[str]:
     statements) are split on top-level semicolons. Comment-only lines and
     blank statements are dropped.
     """
-    statements = []
-    for chunk in sql.split(";"):
-        lines = [
-            line for line in chunk.splitlines() if line.strip() and not line.strip().startswith("--")
-        ]
-        statement = "\n".join(lines).strip()
-        if statement:
-            statements.append(statement)
-    return statements
+    # Drop comment lines before splitting: a ';' inside a comment must not
+    # start a new statement.
+    code = "\n".join(
+        line for line in sql.splitlines() if not line.strip().startswith("--")
+    )
+    return [statement.strip() for statement in code.split(";") if statement.strip()]

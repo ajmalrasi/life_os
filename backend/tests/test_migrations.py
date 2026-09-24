@@ -79,3 +79,13 @@ def test_applying_a_new_file_alongside_already_applied_ones(tmp_path, monkeypatc
 
     (migrations_dir / "0002_b.sql").write_text("CREATE TABLE IF NOT EXISTS b (id INTEGER);")
     assert migrations.apply_migrations(engine, force=True) == ["0002_b.sql"]
+
+
+def test_semicolon_inside_comment_does_not_split_statement():
+    from app.migrations import _split_statements
+
+    sql = "-- note; with a semicolon\n-- more\nALTER TABLE t ADD COLUMN a INT;\nALTER TABLE t ADD COLUMN b INT;\n"
+    assert _split_statements(sql) == [
+        "ALTER TABLE t ADD COLUMN a INT",
+        "ALTER TABLE t ADD COLUMN b INT",
+    ]
