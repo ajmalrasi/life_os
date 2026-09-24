@@ -437,3 +437,15 @@ def test_priority_update_and_feedback_are_persistent(client, monkeypatch):
     history = client.get(f"/priority/{item_id}")
     assert history.status_code == 200
     assert len(history.json()["history"]) == 1
+
+
+def test_full_resync_keeps_items_the_user_marked_done(client, monkeypatch):
+    provider = FakeProvider("career@example.com", [_message()])
+    with SessionLocal() as db:
+        MailAccountRepository(db).register("career@example.com", "priority", "Career inbox")
+        service = PrioritySyncService(db)
+        monkeypatch.setattr(service, "_provider", lambda _account: provider)
+        item_id = service.sync().new_items[0].id
+        service.priority.apply_update(service.priority.get(item_id), state="done")
+        service.sync(full=True)
+        assert service.priority.get(item_id).user_state == "done"

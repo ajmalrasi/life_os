@@ -92,13 +92,19 @@ class PriorityRepository:
             self.db.flush()
             changed = True
         elif _utc(d.received_at) >= _utc(item.received_at):
+            new_message = item.latest_mail_message_id != message_row.id
             for field, value in values.items():
                 if getattr(item, field) != value:
                     setattr(item, field, value)
                     changed = True
             # A genuinely new request or schedule update reopens a previously
             # completed thread. Labels remain user-owned until explicitly reset.
-            if item.user_state == "done" and classification.state in {"needs_action", "scheduled"}:
+            # Reclassifying the same message (full sync) never undoes the user's choice.
+            if (
+                new_message
+                and item.user_state == "done"
+                and classification.state in {"needs_action", "scheduled"}
+            ):
                 item.user_state = None
                 changed = True
 
