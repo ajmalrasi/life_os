@@ -35,6 +35,9 @@ class PriorityDetailsViewModel @Inject constructor(
 
     init {
         load()
+        // Neither the Gmail app nor Gmail web can be opened at one message by
+        // another app, so the source email is always shown here.
+        loadFullEmail()
     }
 
     fun load() {

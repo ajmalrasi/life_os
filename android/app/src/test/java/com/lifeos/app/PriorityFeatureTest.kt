@@ -51,9 +51,13 @@ class PriorityFeatureTest {
         assertEquals("Acme · Interview · Senior Android Engineer", draft.title)
         assertEquals(start.toEpochMilli(), draft.startMillis)
         assertEquals(end.toEpochMilli(), draft.endMillis)
-        assertEquals("https://meet.google.com/abc", draft.location)
-        assertTrue(draft.description.contains("Meeting: https://meet.google.com/abc"))
-        assertTrue(draft.description.contains("Source: https://mail.google.com/example"))
+        assertEquals("Google Meet", draft.location)
+        assertEquals("Interview with the Android team.", draft.description)
+        assertTrue("https://" !in draft.location + draft.description)
+        assertEquals(
+            "Microsoft Teams",
+            PriorityCalendarLauncher.meetingPlatform("https://teams.microsoft.com/l/meetup-join/19%3ameeting"),
+        )
         assertEquals("Add to calendar", calendarActionLabel(item))
     }
 

@@ -20,12 +20,10 @@ object PriorityCalendarLauncher {
             title = calendarTitle(item),
             startMillis = start.toEpochMilli(),
             endMillis = (item.eventEnd ?: start.plusSeconds(3600)).toEpochMilli(),
-            location = item.location ?: item.meetingUrl.orEmpty(),
-            description = buildString {
-                append(item.summary)
-                item.meetingUrl?.let { append("\n\nMeeting: $it") }
-                append("\n\nSource: ${item.gmailUrl}")
-            },
+            // Long meeting URLs are never pasted into the event; the platform
+            // name is enough, and Priority's Join button opens the link.
+            location = item.location ?: meetingPlatform(item.meetingUrl).orEmpty(),
+            description = item.summary,
         )
     }
 
@@ -45,6 +43,18 @@ object PriorityCalendarLauncher {
         if (intent.resolveActivity(context.packageManager) == null) return false
         context.startActivity(intent)
         return true
+    }
+
+    /** "Microsoft Teams", "Google Meet", "Zoom", or null for no/unknown link. */
+    fun meetingPlatform(url: String?): String? {
+        val host = url?.lowercase() ?: return null
+        return when {
+            "teams.microsoft.com" in host || "teams.live.com" in host -> "Microsoft Teams"
+            "meet.google.com" in host -> "Google Meet"
+            "zoom.us" in host -> "Zoom"
+            "webex.com" in host -> "Webex"
+            else -> "Online meeting"
+        }
     }
 
     private fun calendarTitle(item: PriorityItem): String = when {

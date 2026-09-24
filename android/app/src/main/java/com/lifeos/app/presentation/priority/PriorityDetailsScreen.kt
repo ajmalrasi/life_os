@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.VideoCall
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -117,7 +118,26 @@ fun PriorityDetailsScreen(
                     item.dueAt?.let { DetailRow("Deadline", formatInstant(it)) }
                     item.eventStart?.let { DetailRow("When", formatEventRange(it, item.eventEnd)) }
                     item.location?.let { DetailRow("Location", it) }
-                    item.meetingUrl?.let { DetailRow("Meeting", it) }
+                    PriorityCalendarLauncher.meetingPlatform(item.meetingUrl)?.let {
+                        DetailRow("Meeting", it)
+                    }
+                }
+            }
+
+            item.meetingUrl?.let { url ->
+                OutlinedButton(
+                    onClick = { openUri(context, url) },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Icon(Icons.Rounded.VideoCall, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text(
+                        when (val platform = PriorityCalendarLauncher.meetingPlatform(url)) {
+                            "Microsoft Teams" -> "Join Teams meeting"
+                            "Online meeting", null -> "Join meeting"
+                            else -> "Join $platform"
+                        },
+                    )
                 }
             }
 
@@ -153,7 +173,7 @@ fun PriorityDetailsScreen(
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                Text("Open Gmail")
+                Text("Open Gmail app")
             }
 
             SectionHeader("Email")
@@ -252,9 +272,10 @@ internal fun calendarActionLabel(item: PriorityItem): String? = when {
 }
 
 /**
- * Opens the Gmail app rather than the browser. Gmail exposes no supported deep
- * link to a single message (message URLs land on the inbox), so the full body
- * is also readable in-app via "Show full email".
+ * Opens the Gmail app rather than the browser. Neither the Gmail app nor Gmail
+ * web on Android can be opened at one message by another app (verified on the
+ * S24: https, content:// and search intents all land on the inbox), so the
+ * details screen loads the full source email itself.
  */
 private fun openInGmail(context: android.content.Context, url: String) {
     val gmail = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(GMAIL_PACKAGE)
