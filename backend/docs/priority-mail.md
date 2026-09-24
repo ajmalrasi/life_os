@@ -124,16 +124,20 @@ OPENCLAW_BASE_URL=http://192.168.3.30:11434 \
 
 Gmail's Android app exposes no supported deep link to one message (message
 URLs, `googlegmail://` and `content://gmail-ls` forms all land on the inbox),
-so **Open Gmail** launches the Gmail app itself, never the browser. The full
-body is readable in-app through `GET /priority/{id}/message`, which fetches it
-from Gmail on demand and never stores it.
+and Gmail web in mobile Chrome also redirects such URLs to the inbox. So the
+details screen loads the full body automatically through
+`GET /priority/{id}/message` (fetched from Gmail on demand, never stored), and
+**Open Gmail app** only launches the app.
 
 ## Calendar behavior
 
-- A plain scheduled email shows **Add to calendar** and opens Android's standard
-  pre-filled calendar insert screen. The user chooses the calendar and saves.
-- A structured ICS invitation shows **Open calendar invite** so the calendar
-  provider owns acceptance and duplicate handling.
+- Any item with an event time (a plain scheduled email or a structured ICS
+  invite) shows **Add to calendar**, which opens Android's standard pre-filled
+  calendar insert screen. The user chooses the calendar and saves. Invites no
+  longer open Gmail, because Gmail cannot be opened at the invite.
+- Meeting links are never pasted as text: details show the platform name and a
+  **Join Teams meeting** / **Join Google Meet** button, and calendar drafts use
+  the platform name as location with no URL.
 - An unscheduled interview with a scheduling link shows **Choose a time**.
 
 LifeOS does not request broad Calendar permissions or silently create events.

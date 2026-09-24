@@ -18,9 +18,13 @@ zone names. The engine really decodes **batch 2**: `InferenceCoordinator`
 capacity is `openclaw_max_concurrency=2`, and sync runs two messages in
 parallel, newest first, within `priority_sync_budget_seconds` (100 s); a busy
 model leaves mail in `retry`, never guessed. Android shows chips only for
-non-empty categories, opens the Gmail app (Gmail has no supported per-message
-deep link — verified on device), and reads the full body in-app via
-`GET /priority/{id}/message` (fetched on demand, never stored). Evaluate
+non-empty categories and only covers the last 30 days (`priority_backfill_days`).
+Neither the Gmail app nor Gmail web on Android can be opened at one message by
+another app (verified on the S24: https, content://, search intents), so
+details auto-load the full body via `GET /priority/{id}/message` (fetched on
+demand, never stored) and "Open Gmail app" only launches the app. Meeting URLs
+are never pasted: a Join button plus the platform name; invites use Add to
+calendar. Evaluate
 prompt changes with `backend/scripts/evaluate_priority.py` on a real corpus.
 See `backend/docs/priority-mail.md`.
 
