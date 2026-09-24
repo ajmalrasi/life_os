@@ -235,3 +235,12 @@ def test_refresh_endpoint_keeps_old_rows_and_flags_stale_when_synthesis_empty(cl
     body = resp.json()
     assert body and body[0]["title"] == "Old insight"
     assert resp.headers.get("X-Insights-Stale") == "1"
+
+
+def test_parse_accepts_objects_without_outer_brackets():
+    from app.services.insight_synthesizer import _parse
+
+    raw = '{"title": "A", "cites": ["x"]}, {"title": "B", "cites": ["y", "z"]}'
+    assert [i["title"] for i in _parse(raw)] == ["A", "B"]
+    assert [i["title"] for i in _parse("[" + raw + "]")] == ["A", "B"]
+    assert _parse("not json") == []

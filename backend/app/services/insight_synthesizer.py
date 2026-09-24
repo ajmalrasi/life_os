@@ -166,12 +166,28 @@ def _parse(raw: str) -> list[dict]:
         if nl != -1:
             text = text[nl + 1 :]
     start, end = text.find("["), text.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        text = text[start : end + 1]
-    try:
-        data = json.loads(text)
-    except (ValueError, TypeError):
-        return []
-    if not isinstance(data, list):
-        return []
-    return [item for item in data if isinstance(item, dict)]
+    first_obj = text.find("{")
+    # Only treat it as an array when the "[" opens before the first object;
+    # otherwise the brackets belong to a nested "cites" list.
+    if start != -1 and end > start and (first_obj == -1 or start < first_obj):
+        try:
+            data = json.loads(text[start : end + 1])
+        except (ValueError, TypeError):
+            data = None
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+    # Qwen sometimes drops the outer brackets and emits a bare
+    # comma-separated run of objects: decode each top-level object in turn.
+    decoder = json.JSONDecoder()
+    items: list[dict] = []
+    pos = text.find("{")
+    while pos != -1:
+        try:
+            obj, consumed = decoder.raw_decode(text, pos)
+        except ValueError:
+            pos = text.find("{", pos + 1)
+            continue
+        if isinstance(obj, dict):
+            items.append(obj)
+        pos = text.find("{", consumed)
+    return items
