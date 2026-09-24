@@ -743,6 +743,46 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
 
 ## 7. Open items / next steps
 
+- **Mentor Insights + split Settings (2026-09-24).** Executed
+  `.claude/plans/mentor-insights.md` (local plan file). Insights is now 3-5
+  ranked, LLM-written mentor judgements across all data (money first), not
+  correlation cards. **The backend does all arithmetic**:
+  `app/services/life_evidence.py::build_life_evidence` computes ≤45 cited
+  facts (income vs spend, MTD vs last month, per-category vs 3-month usual,
+  essential-vs-discretionary comparisons that skip Other/EMI and use each
+  larger category once, big one-offs, budget pace, fixed EMIs + recurring,
+  card bills due in 10 days, open card-cycle spend, trips from `trip_backups`,
+  and week-over-week sleep/activity/mood/work) using the Money page's own
+  categorizer + exclusions, so totals reconcile (verified: evidence MTD
+  ₹184,899 − EMI ₹22,091 − EMI fees ₹144 = Money's ₹1,62,664 "EMI excluded").
+  `insight_synthesizer.py` asks Qwen for `{title, verdict, action, domain,
+  severity, cites}`; uncited items are dropped, no canned fallback (last good
+  set is kept). New: `GET/PUT /money/profile` (manual monthly income + savings
+  goal, singleton `money_profile` table), `POST /analytics/synthesis/refresh`
+  (`INSIGHTS_JOB` lock; returns old rows + `X-Insights-Stale: 1` when the model
+  yields nothing), migration `0003_insight_mentor_fields.sql` (`action`,
+  `severity`). **Two real-data bugs fixed during deploy:** (1)
+  `app/migrations.py` split on a `;` inside a SQL comment, which stopped API
+  startup for ~3 minutes; comment lines are now dropped before splitting
+  (regression test added). Never put `;` in migration comments anyway. (2)
+  Qwen returned objects without the outer `[ ]`; `_parse` now decodes a bare
+  run of objects. The prompt also forbids invented debts/diagnoses and
+  misdated trips (first run called the upcoming Delhi trip "recent" and
+  invented "debt"). Final production output (income unset): travel ₹89,411
+  = 148x usual; fuel ₹9,300 = 155% of ₹6,000 budget; vehicle ₹14,800 = 14.5x;
+  shopping ₹30,430 = 3.2x; sleep score 23 vs 42. All numbers trace to cited
+  facts. Known weakness: it can still editorialise ("only 7.6 hours"), so
+  inspect real output after prompt changes. **Android:** Insights shows only
+  mentor cards (domain chip, severity dot, "→ action") with pull-to-refresh
+  ("Thinking it over..."). Settings has Money (income, budgets with the same
+  offline pace line as Overview, card due reminders moved here) and Trips
+  (auto backup via `TripBackupWorker`, default on, plus "Back up all trips
+  now") sub-pages. Verified on `RZCX60SNHHE` in dark + light: pull-to-refresh,
+  budget add/remove round-trip against `GET /budgets` (production left with
+  Food + Fuel only), and trip backup (Delhi Family Trip now in
+  `trip_backups`, appears as a `trip:` fact). The user has not entered income
+  yet; do not invent it.
+
 - **Staged improvement plan, Stage 5 — Cross-domain & polish (2026-09-24).**
   Final stage of `.claude/plans/split-into-stage-and-rosy-fiddle.md` (local
   plan file, not in the repo). All four sub-parts implemented and deployed.
