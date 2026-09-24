@@ -185,6 +185,11 @@ class PriorityRepository:
             if not include_done and effective_state == "scheduled" and item.event_end:
                 if _utc(item.event_end) < current - timedelta(hours=2):
                     continue
+            # A deadline or event that passed over a day ago is no longer
+            # something to act on or attend, whatever its state.
+            moment = item.event_end or item.event_start or item.due_at
+            if not include_done and moment and _utc(moment) < current - timedelta(days=1):
+                continue
             if label and label not in item.labels:
                 continue
             if state and effective_state != state:

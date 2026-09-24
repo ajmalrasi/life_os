@@ -486,3 +486,23 @@ def test_feed_hides_items_older_than_the_window_unless_still_upcoming(client, mo
         item.event_start = item.event_end = None
         db.commit()
         assert service.priority.list(now=later + timedelta(days=43), window_days=30) == []
+
+
+def test_items_whose_time_passed_over_a_day_ago_leave_the_feed(client, monkeypatch):
+    provider = FakeProvider("career@example.com", [_message()])
+    with SessionLocal() as db:
+        MailAccountRepository(db).register("career@example.com", "priority", "Career inbox")
+        service = PrioritySyncService(db)
+        monkeypatch.setattr(service, "_provider", lambda _account: provider)
+        item = service.sync().new_items[0]
+        now = datetime.now(timezone.utc)
+        from datetime import timedelta
+        item.automatic_state = "needs_action"
+        item.event_start = item.event_end = None
+        item.due_at = now - timedelta(hours=6)
+        db.commit()
+        assert [i.id for i in service.priority.list(now=now)] == [item.id]
+        item.due_at = now - timedelta(days=2)
+        db.commit()
+        assert service.priority.list(now=now) == []
+        assert [i.id for i in service.priority.list(now=now, include_done=True)] == [item.id]
