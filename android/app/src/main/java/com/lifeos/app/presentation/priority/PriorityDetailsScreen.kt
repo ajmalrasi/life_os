@@ -145,9 +145,9 @@ fun PriorityDetailsScreen(
                 Button(
                     onClick = {
                         when {
-                            item.eventStart != null && !item.hasCalendarInvite ->
-                                PriorityCalendarLauncher.launch(context, item)
-                            item.hasCalendarInvite -> openInGmail(context, item.gmailUrl)
+                            // Invites too: Gmail cannot be opened at the invite, and
+                            // the invite's own times are already authoritative here.
+                            item.eventStart != null -> PriorityCalendarLauncher.launch(context, item)
                             item.actionUrl != null -> openUri(context, item.actionUrl)
                         }
                     },
@@ -265,7 +265,6 @@ private fun HistoryRow(entry: PriorityHistoryEntry) {
 }
 
 internal fun calendarActionLabel(item: PriorityItem): String? = when {
-    item.eventStart != null && item.hasCalendarInvite -> "Open calendar invite"
     item.eventStart != null -> "Add to calendar"
     item.actionUrl != null -> "Choose a time"
     else -> null

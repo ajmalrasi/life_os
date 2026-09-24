@@ -78,7 +78,7 @@ class PriorityFeatureTest {
         )
         val ordinary = item(id = 3, labels = listOf("personal"), state = "informational")
 
-        assertEquals("Open calendar invite", calendarActionLabel(invite))
+        assertEquals("Add to calendar", calendarActionLabel(invite))
         assertEquals("Choose a time", calendarActionLabel(scheduling))
         assertNull(calendarActionLabel(ordinary))
     }
