@@ -1,4 +1,4 @@
-"""LLM-synthesized cross-domain insights.
+"""The mentor-style LLM-synthesized Insights page.
 
 The synthesizer's whole safety property is grounding: it may only build on the
 evidence facts it was handed, and every insight must cite at least one real fact
@@ -21,7 +21,7 @@ class _FakeClient:
         self.timeout = 120.0
         self.calls = 0
 
-    def chat(self, messages, temperature=0.2) -> str:
+    def chat(self, messages, temperature=0.2, max_tokens=None) -> str:
         self.calls += 1
         if self.fail:
             raise OpenClawUnavailable("down")
@@ -30,55 +30,91 @@ class _FakeClient:
 
 def _evidence() -> list[EvidenceFact]:
     return [
-        EvidenceFact("corr:stress->daily_spend", "Daily spend rises after high-stress days (r=+0.5, n=9)."),
-        EvidenceFact("trend:recovery_score", "Recovery is trending down: 55 vs 68 the week before."),
-        EvidenceFact("avg:daily_spend", "Daily spend averaged 1800 over 30 days."),
+        EvidenceFact("cat:shopping", "Shopping: ₹25,000 this month (30% of this month's spend), usual month ₹8,000."),
+        EvidenceFact("cat:vehicle", "Vehicle maintenance: ₹6,000 this month, usual month ₹1,500."),
+        EvidenceFact("money:income", "Monthly take-home income (entered by the user): ₹80,000."),
     ]
 
 
+def _item(**overrides) -> str:
+    import json
+
+    base = {
+        "title": "Shopping is too high",
+        "verdict": "You spent ₹25,000 on shopping this month, 3x your usual.",
+        "action": "Cap shopping at ₹10,000 for the rest of the month.",
+        "domain": "money",
+        "severity": "high",
+        "cites": ["cat:shopping"],
+    }
+    base.update(overrides)
+    return json.dumps(base)
+
+
 def test_synthesize_keeps_grounded_insights():
-    client = _FakeClient(
-        '[{"title": "Stress fuels spend", "insight": "Heavy-spend days follow stress spikes '
-        'while recovery slides.", "theme": "spending", '
-        '"cites": ["corr:stress->daily_spend", "trend:recovery_score"]}]'
-    )
+    client = _FakeClient(f"[{_item()}]")
     out = synthesize(_evidence(), client=client)
     assert len(out) == 1
-    assert out[0]["title"] == "Stress fuels spend"
-    assert out[0]["cites"] == ["corr:stress->daily_spend", "trend:recovery_score"]
-    assert out[0]["theme"] == "spending"
+    assert out[0]["title"] == "Shopping is too high"
+    assert out[0]["cites"] == ["cat:shopping"]
+    assert out[0]["theme"] == "money"
+    assert out[0]["severity"] == "high"
+    assert out[0]["action"] == "Cap shopping at ₹10,000 for the rest of the month."
 
 
 def test_synthesize_drops_insight_citing_only_unknown_ids():
     """An insight grounded in nothing we handed the model is an invented
-    relationship — it must be dropped, not stored."""
-    client = _FakeClient(
-        '[{"title": "Made up", "insight": "Sleep drives spending.", '
-        '"cites": ["corr:sleep_score->daily_spend"]}]'  # id never supplied
-    )
+    judgement — it must be dropped, not stored."""
+    client = _FakeClient(f"[{_item(cites=['cat:made_up'])}]")
     assert synthesize(_evidence(), client=client) == []
 
 
 def test_synthesize_strips_unknown_cites_but_keeps_valid_one():
-    client = _FakeClient(
-        '[{"title": "Mixed", "insight": "Stress and spend move together.", '
-        '"cites": ["corr:stress->daily_spend", "corr:made_up->thing"]}]'
-    )
+    client = _FakeClient(f"[{_item(cites=['cat:shopping', 'cat:made_up'])}]")
     out = synthesize(_evidence(), client=client)
-    assert out and out[0]["cites"] == ["corr:stress->daily_spend"]
+    assert out and out[0]["cites"] == ["cat:shopping"]
 
 
 def test_synthesize_requires_cites():
-    client = _FakeClient('[{"title": "No cites", "insight": "A vibe.", "cites": []}]')
+    client = _FakeClient(f"[{_item(cites=[])}]")
     assert synthesize(_evidence(), client=client) == []
 
 
-def test_synthesize_caps_to_four():
+def test_missing_action_stored_as_none_not_dropped():
+    import json
+
+    item = json.loads(_item())
+    del item["action"]
+    client = _FakeClient(f"[{json.dumps(item)}]")
+    out = synthesize(_evidence(), client=client)
+    assert len(out) == 1
+    assert out[0]["action"] is None
+
+
+def test_unknown_domain_and_severity_clamp_to_defaults():
+    client = _FakeClient(f"[{_item(domain='crypto', severity='urgent')}]")
+    out = synthesize(_evidence(), client=client)
+    assert out[0]["theme"] == "life"
+    assert out[0]["severity"] == "medium"
+
+
+def test_synthesize_caps_to_five_and_returned_count_can_be_seven():
+    items = ",".join(_item(cites=["cat:shopping"], title=f"t{i}") for i in range(7))
+    client = _FakeClient(f"[{items}]")
+    assert len(synthesize(_evidence(), client=client)) == 5
+
+
+def test_synthesize_sorts_by_severity_high_to_low():
     items = ",".join(
-        '{"title": "t%d", "insight": "i", "cites": ["avg:daily_spend"]}' % i for i in range(8)
+        [
+            _item(title="low one", severity="low", cites=["cat:shopping"]),
+            _item(title="high one", severity="high", cites=["cat:shopping"]),
+            _item(title="medium one", severity="medium", cites=["cat:shopping"]),
+        ]
     )
     client = _FakeClient(f"[{items}]")
-    assert len(synthesize(_evidence(), client=client)) == 4
+    out = synthesize(_evidence(), client=client)
+    assert [d["severity"] for d in out] == ["high", "medium", "low"]
 
 
 def test_synthesize_empty_when_unavailable():
@@ -90,14 +126,14 @@ def test_synthesize_empty_on_junk():
 
 
 def test_synthesize_no_evidence_short_circuits():
-    client = _FakeClient('[{"title": "x", "insight": "y", "cites": ["z"]}]')
+    client = _FakeClient(f"[{_item()}]")
     assert synthesize([], client=client) == []
     assert client.calls == 0
 
 
 def test_synthesize_skips_when_disabled(monkeypatch):
     monkeypatch.setattr(insight_synthesizer.settings, "insight_synthesis_enabled", False)
-    client = _FakeClient('[{"title": "x", "insight": "y", "cites": ["avg:daily_spend"]}]')
+    client = _FakeClient(f"[{_item()}]")
     assert synthesize(_evidence(), client=client) == []
     assert client.calls == 0
 
@@ -119,8 +155,14 @@ def test_synthesis_repo_replace_and_endpoint(client, monkeypatch):
         analytics_mod.insight_synthesizer,
         "synthesize",
         lambda evidence, client=None: [
-            {"title": "Stress spend", "body": "You spend more after stress.",
-             "theme": "spending", "cites": [evidence[0].id]}
+            {
+                "title": "Stress spend",
+                "body": "You spend more after stress.",
+                "action": "Take a walk instead of ordering in.",
+                "theme": "money",
+                "severity": "medium",
+                "cites": [evidence[0].id],
+            }
         ] if evidence else [],
     )
 
@@ -141,4 +183,55 @@ def test_synthesis_repo_replace_and_endpoint(client, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body and body[0]["title"] == "Stress spend"
+    assert body[0]["action"] == "Take a walk instead of ordering in."
     assert body[0]["cites"]  # grounded citation round-tripped
+
+
+def test_refresh_endpoint_returns_new_rows(client, monkeypatch):
+    import app.api.routes.analytics as analytics_routes
+
+    monkeypatch.setattr(
+        analytics_routes,
+        "build_life_evidence",
+        lambda db: [EvidenceFact("money:income", "Monthly income: ₹50,000.")],
+    )
+    monkeypatch.setattr(
+        analytics_routes.insight_synthesizer,
+        "synthesize",
+        lambda evidence, today_label=None: [
+            {
+                "title": "Fresh insight",
+                "body": "Body.",
+                "action": None,
+                "theme": "money",
+                "severity": "low",
+                "cites": ["money:income"],
+            }
+        ],
+    )
+    resp = client.post("/analytics/synthesis/refresh")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body and body[0]["title"] == "Fresh insight"
+    assert "X-Insights-Stale" not in resp.headers
+
+
+def test_refresh_endpoint_keeps_old_rows_and_flags_stale_when_synthesis_empty(client, monkeypatch):
+    import app.api.routes.analytics as analytics_routes
+    from app.database import SessionLocal
+    from app.repositories.analytics_repo import SynthesizedInsightRepository
+
+    with SessionLocal() as db:
+        SynthesizedInsightRepository(db).replace(
+            [{"title": "Old insight", "body": "Old body.", "theme": "money", "cites": ["x"]}]
+        )
+
+    monkeypatch.setattr(analytics_routes, "build_life_evidence", lambda db: [])
+    monkeypatch.setattr(
+        analytics_routes.insight_synthesizer, "synthesize", lambda evidence, today_label=None: []
+    )
+    resp = client.post("/analytics/synthesis/refresh")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body and body[0]["title"] == "Old insight"
+    assert resp.headers.get("X-Insights-Stale") == "1"

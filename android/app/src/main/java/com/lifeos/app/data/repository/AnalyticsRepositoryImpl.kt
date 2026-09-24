@@ -56,6 +56,12 @@ class AnalyticsRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun refreshInsights() {
+        val synth = api.refreshSynthesis().mapIndexed { i, dto -> dto.toEntity(i) }
+        synthesizedInsightDao.clear()
+        synthesizedInsightDao.upsertAll(synth)
+    }
+
     override suspend fun recompute(days: Int): ExecutionSyncReport {
         val result = api.recompute(days)
         refresh(days)

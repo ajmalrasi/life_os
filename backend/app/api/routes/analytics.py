@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from calendar import monthrange
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -24,10 +26,12 @@ from app.schemas.analytics import (
 )
 from app.config import get_settings
 from app.repositories.device_repo import DeviceRepository
+from app.services import insight_synthesizer
 from app.services.analytics import AnalyticsService
 from app.services.execution_sync import run_execution_sync
 from app.services.fcm import FcmService
-from app.services.job_guard import WEEKLY_RECAP_JOB, try_job_lock
+from app.services.job_guard import INSIGHTS_JOB, WEEKLY_RECAP_JOB, try_job_lock
+from app.services.life_evidence import build_life_evidence
 from app.services.notifications import Notification, NotificationService
 from app.services.weekly_recap import week_bounds, build_recap
 
@@ -135,19 +139,48 @@ def get_insights(db: Session = Depends(get_db)) -> list[InsightOut]:
     return [InsightOut.model_validate(r) for r in rows]
 
 
+def _to_synthesis_out(r) -> SynthesizedInsightOut:
+    return SynthesizedInsightOut(
+        title=r.title,
+        body=r.body,
+        theme=r.theme,
+        action=r.action,
+        severity=r.severity,
+        cites=[c for c in r.cites.split(",") if c],
+    )
+
+
 @router.get("/synthesis", response_model=list[SynthesizedInsightOut])
 def get_synthesis(db: Session = Depends(get_db)) -> list[SynthesizedInsightOut]:
-    """LLM-synthesized, cross-domain insights grounded in cited evidence."""
+    """LLM-synthesized, mentor-style insights grounded in cited evidence."""
     rows = SynthesizedInsightRepository(db).all()
-    return [
-        SynthesizedInsightOut(
-            title=r.title,
-            body=r.body,
-            theme=r.theme,
-            cites=[c for c in r.cites.split(",") if c],
-        )
-        for r in rows
-    ]
+    return [_to_synthesis_out(r) for r in rows]
+
+
+@router.post("/synthesis/refresh", response_model=list[SynthesizedInsightOut])
+def refresh_synthesis(response: Response, db: Session = Depends(get_db)) -> list[SynthesizedInsightOut]:
+    """Rebuild evidence and regenerate the mentor insights right now.
+
+    Guarded by a singleton lock like the weekly recap: a racing background
+    recompute and a user-triggered pull-to-refresh must never overlap. On a
+    collision, or when synthesis comes back empty (model down/disabled/
+    unparseable), the current rows are returned with ``X-Insights-Stale: 1``
+    rather than an error — the caller always has something to show.
+    """
+    repo = SynthesizedInsightRepository(db)
+    with try_job_lock(db.get_bind(), INSIGHTS_JOB) as acquired:
+        if not acquired:
+            response.headers["X-Insights-Stale"] = "1"
+            return [_to_synthesis_out(r) for r in repo.all()]
+
+        evidence = build_life_evidence(db)
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        today_label = f"Today is {today.isoformat()} (day {today.day} of {monthrange(today.year, today.month)[1]} in the month)."
+        drafts = insight_synthesizer.synthesize(evidence, today_label=today_label)
+        rows = repo.replace(drafts)
+        if not drafts:
+            response.headers["X-Insights-Stale"] = "1"
+        return [_to_synthesis_out(r) for r in rows]
 
 
 @router.get("/weekly-recap", response_model=WeeklyRecapOut)

@@ -51,6 +51,8 @@ data class SynthesizedInsightEntity(
     val title: String,
     val body: String,
     val theme: String?,
+    val action: String?,
+    val severity: String?,
     val cites: String, // comma-joined evidence fact ids
 )
 

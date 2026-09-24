@@ -649,26 +649,42 @@ fun NotificationCard(
     }
 }
 
+private fun domainColor(domain: String?): Color = when (domain) {
+    "money" -> LifeOsColors.AccentAmber
+    "trip" -> LifeOsColors.AccentSky
+    "health" -> LifeOsColors.MetricSleep
+    "mind" -> LifeOsColors.MetricWellness
+    "work" -> LifeOsColors.MetricExecution
+    else -> LifeOsColors.AccentTeal
+}
+
+private fun severityColor(severity: String?): Color = when (severity) {
+    "high" -> LifeOsColors.ScoreLow
+    "low" -> LifeOsColors.OnSurfaceMuted
+    else -> LifeOsColors.AccentAmber
+}
+
 @Composable
 fun SynthesizedInsightCard(insight: SynthesizedInsight, modifier: Modifier = Modifier) {
-    LifeOsCard(modifier = modifier, accent = LifeOsColors.AccentTeal) {
+    val accent = domainColor(insight.theme)
+    LifeOsCard(modifier = modifier, accent = accent) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                val theme = insight.theme?.takeIf { it.isNotBlank() }
-                if (theme != null) {
-                    Surface(shape = RoundedCornerShape(8.dp), color = LifeOsColors.AccentTeal.copy(alpha = 0.12f)) {
+                val domain = insight.theme?.takeIf { it.isNotBlank() }
+                if (domain != null) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = accent.copy(alpha = 0.12f)) {
                         Text(
-                            theme.replaceFirstChar { it.uppercase() },
+                            domain.replaceFirstChar { it.uppercase() },
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = LifeOsColors.AccentTeal,
+                            color = accent,
                         )
                     }
                 }
-                Text(
-                    "Synthesized",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LifeOsColors.OnSurfaceMuted,
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(severityColor(insight.severity), shape = CircleShape),
                 )
             }
             Text(
@@ -682,11 +698,12 @@ fun SynthesizedInsightCard(insight: SynthesizedInsight, modifier: Modifier = Mod
                 style = MaterialTheme.typography.bodyMedium,
                 color = LifeOsColors.OnBackground,
             )
-            if (insight.cites.isNotEmpty()) {
+            val action = insight.action?.takeIf { it.isNotBlank() }
+            if (action != null) {
                 Text(
-                    "Grounded in ${insight.cites.size} signal${if (insight.cites.size == 1) "" else "s"}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LifeOsColors.OnSurfaceMuted,
+                    "→ $action",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

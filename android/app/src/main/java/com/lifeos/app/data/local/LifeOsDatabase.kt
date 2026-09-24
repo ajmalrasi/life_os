@@ -10,7 +10,7 @@ import androidx.room.RoomDatabase
         CurrentCardCycleEntity::class,
         PriorityItemEntity::class, BudgetEntity::class,
     ],
-    version = 14, // v14: budgets cache (Stage 4b)
+    version = 15, // v15: synthesized_insights gains action + severity (mentor insights)
     exportSchema = false,
 )
 abstract class LifeOsDatabase : RoomDatabase() {

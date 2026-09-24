@@ -20,6 +20,7 @@ from app.api.routes import (
     github_data,
     health_data,
     mail_accounts,
+    money_profile,
     mood,
     notifications,
     payee_labels,
@@ -87,6 +88,7 @@ app.include_router(priority.router, dependencies=[Depends(require_token)])
 app.include_router(mail_accounts.router, dependencies=[Depends(require_token)])
 app.include_router(analytics.router, dependencies=[Depends(require_token)])
 app.include_router(budgets.router, dependencies=[Depends(require_token)])
+app.include_router(money_profile.router, dependencies=[Depends(require_token)])
 app.include_router(chat.router, dependencies=[Depends(require_token)])
 app.include_router(notifications.router, dependencies=[Depends(require_token)])
 app.include_router(device.router, dependencies=[Depends(require_token)])

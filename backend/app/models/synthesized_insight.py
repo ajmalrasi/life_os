@@ -30,9 +30,17 @@ class SynthesizedInsight(Base):
     title: Mapped[str] = mapped_column(String(140))
     body: Mapped[str] = mapped_column(String(800))
 
-    # Loose theme tag for grouping/filtering in the UI (e.g. "spending",
-    # "recovery", "cross-domain"). Advisory only.
+    # Loose theme tag for grouping/filtering in the UI. Since the mentor
+    # rewrite (Stage 3 of mentor-insights.md) this holds the insight's
+    # "domain" (money|trip|health|mind|work|life).
     theme: Mapped[str | None] = mapped_column(String(48), nullable=True)
+
+    # One concrete next step, e.g. "Cap eating out at ₹4,000 this month."
+    # Nullable so older rows (and any model output that omits it) keep working.
+    action: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    # "high" | "medium" | "low" — drives ranking and the UI's severity dot.
+    severity: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     # Comma-joined ids of the evidence facts this insight is grounded in. Every
     # id here was present in the evidence bundle handed to the model, validated

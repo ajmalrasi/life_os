@@ -24,6 +24,7 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SourceStatusDto
 import com.lifeos.app.data.remote.dto.BudgetPaceDto
+import com.lifeos.app.data.remote.dto.MoneyProfileDto
 import com.lifeos.app.data.remote.dto.RecurringChargeDto
 import com.lifeos.app.data.remote.dto.RepaymentCandidateDto
 import com.lifeos.app.data.remote.dto.RepaymentDto
@@ -35,6 +36,7 @@ import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.SourceStatus
 import com.lifeos.app.domain.model.Budget
+import com.lifeos.app.domain.model.MoneyProfile
 import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CardStatementDetails
@@ -108,12 +110,16 @@ fun SynthesizedInsightDto.toEntity(rank: Int) = SynthesizedInsightEntity(
     title = title,
     body = body,
     theme = theme,
+    action = action,
+    severity = severity,
     cites = cites.joinToString(","),
 )
 fun SynthesizedInsightEntity.toDomain() = SynthesizedInsight(
     title = title,
     body = body,
     theme = theme,
+    action = action,
+    severity = severity,
     cites = cites.split(",").filter { it.isNotBlank() },
 )
 
@@ -132,6 +138,11 @@ fun SourceStatusDto.toDomain() = SourceStatus(
 fun BudgetPaceDto.toEntity() = BudgetEntity(category = category, monthlyLimit = monthlyLimit)
 
 fun BudgetEntity.toDomain() = Budget(category = category, monthlyLimit = BigDecimal(monthlyLimit))
+
+fun MoneyProfileDto.toDomain() = MoneyProfile(
+    monthlyIncome = monthlyIncome?.let(::BigDecimal),
+    savingsGoalPct = savingsGoalPct,
+)
 
 fun RecurringChargeDto.toDomain() = RecurringCharge(
     counterparty = counterparty,

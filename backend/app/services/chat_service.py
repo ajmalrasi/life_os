@@ -204,7 +204,7 @@ class ChatService:
                 for i in insight_rows
             ],
             "synthesized_insights": [
-                {"title": s.title, "insight": s.body} for s in synth_rows
+                {"title": s.title, "insight": s.body, "action": s.action} for s in synth_rows
             ],
             "recent_daily": [
                 {

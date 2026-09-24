@@ -5,6 +5,7 @@ import com.lifeos.app.data.local.CardStatementDao
 import com.lifeos.app.data.local.CurrentCardCycleDao
 import com.lifeos.app.data.local.TransactionDao
 import com.lifeos.app.data.remote.dto.BudgetInDto
+import com.lifeos.app.data.remote.dto.MoneyProfileDto
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.data.remote.dto.RepaymentCreateDto
 import com.lifeos.app.data.remote.dto.RefundCreateDto
@@ -13,6 +14,7 @@ import com.lifeos.app.data.remote.dto.TransactionCategoryUpdateDto
 import com.lifeos.app.data.toDomain
 import com.lifeos.app.data.toEntity
 import com.lifeos.app.domain.model.Budget
+import com.lifeos.app.domain.model.MoneyProfile
 import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.CardStatementDetails
@@ -51,6 +53,16 @@ class MoneyRepositoryImpl @Inject constructor(
         api.deleteBudget(category)
         budgetDao.deleteByCategory(category)
     }
+
+    override suspend fun moneyProfile(): MoneyProfile = api.moneyProfile().toDomain()
+
+    override suspend fun setMoneyProfile(monthlyIncome: java.math.BigDecimal?, savingsGoalPct: Int?): MoneyProfile =
+        api.setMoneyProfile(
+            MoneyProfileDto(
+                monthlyIncome = monthlyIncome?.toPlainString(),
+                savingsGoalPct = savingsGoalPct,
+            ),
+        ).toDomain()
 
     override suspend fun recurringCharges(windowDays: Int): List<RecurringCharge> =
         api.recurringCharges(windowDays).map { it.toDomain() }

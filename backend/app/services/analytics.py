@@ -35,7 +35,7 @@ from app.services import state_engine
 from app.services import insight_narrator
 from app.services import insight_synthesizer
 from app.services.insight_narrator import InsightFact
-from app.services.insight_synthesizer import EvidenceFact
+from app.services.life_evidence import build_life_evidence
 
 settings = get_settings()
 logger = logging.getLogger("lifeos.analytics")
@@ -312,97 +312,17 @@ class AnalyticsService:
                 narrative=narratives.get(f.key()),
             )
 
-        # Third pass (best-effort): the LLM synthesizes higher-level, cross-domain
-        # insights from the whole grounded picture. Never blocks discovery.
+        # Third pass (best-effort): the LLM synthesizes mentor-style insights
+        # from the whole cross-domain picture (life_evidence.py), not just this
+        # window's correlations. Never blocks discovery.
         try:
-            evidence = self._build_evidence(start, end, days, named, spend_map, facts)
+            evidence = build_life_evidence(self.db)
             drafts = insight_synthesizer.synthesize(evidence, client=self.client)
             self.synth.replace(drafts)
         except Exception:  # synthesis is a nicety, never a blocker
             logger.debug("insight synthesis failed", exc_info=True)
 
         return len(facts)
-
-    def _build_evidence(
-        self,
-        start: date,
-        end: date,
-        days: list[date],
-        named: dict[str, list[float | None]],
-        spend_map: dict[date, float],
-        facts: list[InsightFact],
-    ) -> list[EvidenceFact]:
-        """Assemble the grounded fact bundle handed to the synthesizer.
-
-        Every fact is a number we actually computed — discovered correlations,
-        window averages, week-over-week trends, the current life state, and spend
-        specifics — each with a stable id the model must cite to use it.
-        """
-        evidence: list[EvidenceFact] = []
-
-        # Discovered correlations (the richest, pre-summarized facts).
-        for f in facts:
-            evidence.append(
-                EvidenceFact(id=f"corr:{f.driver}->{f.outcome}", statement=f.summary)
-            )
-
-        # Window averages and week-over-week trends per signal.
-        for name, seriesvals in named.items():
-            avg = _avg(seriesvals)
-            if avg is None:
-                continue
-            n = sum(1 for v in seriesvals if v is not None)
-            evidence.append(
-                EvidenceFact(
-                    id=f"avg:{name}",
-                    statement=f"{_signal_label(name)} averaged {_fmt(name, avg)} over the "
-                    f"last {n} day(s) with data.",
-                )
-            )
-            trend = _week_trend(seriesvals)
-            if trend is not None:
-                recent, prior = trend
-                direction = "up" if recent > prior else "down"
-                evidence.append(
-                    EvidenceFact(
-                        id=f"trend:{name}",
-                        statement=f"{_signal_label(name)} is trending {direction}: last 7 days "
-                        f"averaged {_fmt(name, recent)} vs {_fmt(name, prior)} the week before.",
-                    )
-                )
-
-        # Current life state.
-        state_rows = self.states.range(start, end)
-        if state_rows:
-            latest = state_rows[-1]
-            evidence.append(
-                EvidenceFact(
-                    id="state",
-                    statement=f"Current life state on {latest.day.isoformat()} is "
-                    f"'{latest.state.value}' ({latest.rationale}).",
-                )
-            )
-
-        # Spend specifics beyond the average.
-        if spend_map:
-            total = round(sum(spend_map.values()))
-            peak_day = max(spend_map, key=spend_map.get)
-            evidence.append(
-                EvidenceFact(
-                    id="spend:total",
-                    statement=f"Total spend over the window was {total} across "
-                    f"{len(spend_map)} day(s).",
-                )
-            )
-            evidence.append(
-                EvidenceFact(
-                    id="spend:peak",
-                    statement=f"The single heaviest spend day was {peak_day.isoformat()} "
-                    f"at {round(spend_map[peak_day])}.",
-                )
-            )
-
-        return evidence
 
 
 def _date_range(start: date, end: date) -> list[date]:
@@ -412,41 +332,3 @@ def _date_range(start: date, end: date) -> list[date]:
         days.append(d)
         d += timedelta(days=1)
     return days
-
-
-# -- evidence formatting -----------------------------------------------------------
-
-_SIGNAL_LABELS = {
-    "sleep_score": "Sleep",
-    "recovery_score": "Recovery",
-    "execution_score": "Coding execution",
-    "wellness_score": "Wellness",
-    "fitness_score": "Fitness",
-    "mood": "Mood",
-    "focus": "Focus",
-    "stress": "Stress",
-    "daily_spend": "Daily spend",
-}
-
-
-def _signal_label(name: str) -> str:
-    return _SIGNAL_LABELS.get(name, name.replace("_", " ").title())
-
-
-def _fmt(name: str, value: float) -> str:
-    """Spend reads as a whole-number amount; scores/ratings as one decimal."""
-    return str(round(value)) if name == "daily_spend" else f"{value:.1f}"
-
-
-def _avg(xs: list[float | None]) -> float | None:
-    vals = [v for v in xs if v is not None]
-    return sum(vals) / len(vals) if vals else None
-
-
-def _week_trend(xs: list[float | None]) -> tuple[float, float] | None:
-    """(last-7-day mean, prior-7-day mean) when both halves have >=3 points."""
-    recent = [v for v in xs[-7:] if v is not None]
-    prior = [v for v in xs[-14:-7] if v is not None]
-    if len(recent) < 3 or len(prior) < 3:
-        return None
-    return sum(recent) / len(recent), sum(prior) / len(prior)

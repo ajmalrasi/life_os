@@ -158,7 +158,7 @@ private fun categoryColor(category: String): Color = when (category.lowercase())
     else -> LifeOsColors.OnSurfaceMuted
 }
 
-private fun prettyCategory(category: String): String = when (category.lowercase()) {
+internal fun prettyCategory(category: String): String = when (category.lowercase()) {
     "emi" -> "EMI"
     "emi_fees" -> "EMI fees"
     "vehicle" -> "Vehicle maintenance"
@@ -169,6 +169,14 @@ private fun prettyCategory(category: String): String = when (category.lowercase(
     "legal_fees" -> "Professional services"
     else -> category.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
+
+/** Household spend categories a budget makes sense for — excludes fixed EMI
+ * commitments, which are tracked separately, not budgeted against. */
+internal val BUDGETABLE_CATEGORIES = listOf(
+    "food", "groceries", "shopping", "fuel", "subscriptions", "entertainment",
+    "vehicle", "insurance", "taxes", "legal_fees", "travel", "bills", "utilities",
+    "health",
+)
 
 private fun compactCardLabel(label: String, last4: String): String {
     val compact = label.replace(Regex("\\s+"), " ")
@@ -2394,7 +2402,7 @@ private fun CategoryEditDialog(
 }
 
 @Composable
-private fun BudgetEditDialog(
+internal fun BudgetEditDialog(
     category: String,
     existingLimit: BigDecimal?,
     saving: Boolean,

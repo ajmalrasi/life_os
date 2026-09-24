@@ -83,6 +83,8 @@ data class SynthesizedInsightDto(
     val title: String,
     val body: String,
     val theme: String? = null,
+    val action: String? = null,
+    val severity: String? = null,
     val cites: List<String> = emptyList(),
 )
 
@@ -137,6 +139,13 @@ data class BudgetPaceDto(
 
 @Serializable
 data class BudgetInDto(@SerialName("monthly_limit") val monthlyLimit: String)
+
+@Serializable
+data class MoneyProfileDto(
+    @SerialName("monthly_income") val monthlyIncome: String? = null,
+    @SerialName("savings_goal_pct") val savingsGoalPct: Int? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
 
 @Serializable
 data class RecurringChargeDto(

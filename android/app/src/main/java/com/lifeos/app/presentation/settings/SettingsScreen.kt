@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,10 +25,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -72,6 +76,8 @@ private data class MailDisconnectPrompt(
 
 @Composable
 fun SettingsScreen(
+    onOpenMoneySettings: () -> Unit = {},
+    onOpenTripSettings: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -82,18 +88,11 @@ fun SettingsScreen(
     var notificationPermissionGranted by remember {
         mutableStateOf(hasNotificationPermission(context))
     }
-    // Tracks which toggle asked for the permission, so the shared launcher's
-    // callback enables the right one once the user answers the system prompt.
-    var pendingPermissionTarget by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         notificationPermissionGranted = granted
-        when (pendingPermissionTarget) {
-            "pulse" -> viewModel.setPulseReminderEnabled(granted)
-            "card_due" -> viewModel.setCardDueRemindersEnabled(granted)
-        }
-        pendingPermissionTarget = null
+        viewModel.setPulseReminderEnabled(granted)
     }
 
     // Older builds defaulted the reminder to enabled without ever requesting
@@ -119,6 +118,24 @@ fun SettingsScreen(
                     "Connection and quiet automation.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+        }
+
+        SettingsGroup {
+            Column {
+                SettingsNavRow(
+                    icon = Icons.Rounded.AccountBalanceWallet,
+                    title = "Money",
+                    subtitle = "Income, budgets, bill reminders",
+                    onClick = onOpenMoneySettings,
+                )
+                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                SettingsNavRow(
+                    icon = Icons.Rounded.TravelExplore,
+                    title = "Trips",
+                    subtitle = "Backup",
+                    onClick = onOpenTripSettings,
                 )
             }
         }
@@ -333,7 +350,6 @@ fun SettingsScreen(
                                 !enabled -> viewModel.setPulseReminderEnabled(false)
                                 notificationPermissionGranted -> viewModel.setPulseReminderEnabled(true)
                                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                                    pendingPermissionTarget = "pulse"
                                     permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
                                 else -> viewModel.setPulseReminderEnabled(true)
@@ -371,36 +387,6 @@ fun SettingsScreen(
                             Icon(Icons.Rounded.Add, contentDescription = "One hour later")
                         }
                     }
-                }
-
-                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Card due reminders", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Notifies 3 days and 1 day before an unpaid statement is due.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = LifeOsColors.OnSurfaceMuted,
-                        )
-                    }
-                    Switch(
-                        checked = state.cardDueRemindersEnabled && notificationPermissionGranted,
-                        onCheckedChange = { enabled ->
-                            when {
-                                !enabled -> viewModel.setCardDueRemindersEnabled(false)
-                                notificationPermissionGranted -> viewModel.setCardDueRemindersEnabled(true)
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                                    pendingPermissionTarget = "card_due"
-                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                                else -> viewModel.setCardDueRemindersEnabled(true)
-                            }
-                        },
-                    )
                 }
 
                 HorizontalDivider(color = LifeOsColors.SurfaceBorder)
@@ -569,7 +555,7 @@ private fun MailConnectionRow(
 private fun String.mailPurposeName(): String = if (this == "finance") "Money" else "Priority"
 
 @Composable
-private fun SettingsSectionLabel(text: String) {
+internal fun SettingsSectionLabel(text: String) {
     Text(
         text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
@@ -579,7 +565,42 @@ private fun SettingsSectionLabel(text: String) {
 }
 
 @Composable
-private fun SettingsGroup(content: @Composable () -> Unit) {
+private fun SettingsNavRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Surface(shape = RoundedCornerShape(12.dp), color = LifeOsColors.PrimarySoft) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = LifeOsColors.Primary,
+                modifier = Modifier.padding(10.dp).size(22.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LifeOsColors.OnSurfaceMuted)
+        }
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = LifeOsColors.OnSurfaceMuted,
+        )
+    }
+}
+
+@Composable
+internal fun SettingsGroup(content: @Composable () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),

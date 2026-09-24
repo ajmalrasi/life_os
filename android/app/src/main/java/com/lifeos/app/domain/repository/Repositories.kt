@@ -13,6 +13,7 @@ import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.GithubActivity
+import com.lifeos.app.domain.model.MoneyProfile
 import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
@@ -52,6 +53,8 @@ interface AnalyticsRepository {
     /** LLM-synthesized, cross-domain insights (grounded in cited evidence). */
     fun observeSynthesizedInsights(): Flow<List<SynthesizedInsight>>
     suspend fun refresh(days: Int)
+    /** Rebuild evidence and regenerate the mentor insights now (can take up to ~45s). */
+    suspend fun refreshInsights()
     /** Trigger a backend recompute (nightly analysis on demand). */
     suspend fun recompute(days: Int): ExecutionSyncReport
     suspend fun notifications(): List<AppNotification>
@@ -89,6 +92,12 @@ interface MoneyRepository {
 
     /** Remove a category's budget. */
     suspend fun deleteBudget(category: String)
+
+    /** User-entered income (never cached — small, online-only). */
+    suspend fun moneyProfile(): MoneyProfile
+
+    /** Create/update/clear the income facts Insights judges spending against. */
+    suspend fun setMoneyProfile(monthlyIncome: java.math.BigDecimal?, savingsGoalPct: Int?): MoneyProfile
 
     /** Debits detected as recurring (weekly/monthly cadence, stable amount).
      * Computed live server-side, not cached — detection only, never used to
@@ -167,6 +176,12 @@ interface SettingsRepository {
      * real cost (late fees), and it's low-frequency (two notifications per bill). */
     val cardDueRemindersEnabled: Flow<Boolean>
     suspend fun setCardDueRemindersEnabled(enabled: Boolean)
+
+    /** Backs up trips after every edit so Insights and Ask can see them.
+     * Defaults on — low-frequency (one job per edit, 30s debounced) and the
+     * whole point of the backend's trip context tool. */
+    val tripAutoBackupEnabled: Flow<Boolean>
+    suspend fun setTripAutoBackupEnabled(enabled: Boolean)
 
     /** Navigation and startup screen preferences. */
     val reopenLastTab: Flow<Boolean>

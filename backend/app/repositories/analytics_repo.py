@@ -136,6 +136,8 @@ class SynthesizedInsightRepository:
                 title=d["title"],
                 body=d["body"],
                 theme=d.get("theme"),
+                action=d.get("action"),
+                severity=d.get("severity"),
                 cites=",".join(d.get("cites", [])),
                 rank=i,
             )

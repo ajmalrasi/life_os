@@ -47,6 +47,8 @@ class SynthesizedInsightOut(BaseModel):
     title: str
     body: str
     theme: str | None = None
+    action: str | None = None
+    severity: str | None = None
     cites: list[str] = []
 
 

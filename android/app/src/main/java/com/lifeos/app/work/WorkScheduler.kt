@@ -87,6 +87,20 @@ class WorkScheduler @Inject constructor(
         workManager.cancelUniqueWork(PulseReminderWorker.UNIQUE_NAME)
     }
 
+    /** Best-effort backup of one trip, 30s after a user edit so rapid successive
+     * edits collapse into one upload (REPLACE), only when network is available. */
+    fun enqueueTripBackup(tripId: String) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = OneTimeWorkRequestBuilder<TripBackupWorker>()
+            .setInitialDelay(Duration.ofSeconds(30))
+            .setConstraints(constraints)
+            .setInputData(workDataOf(TripBackupWorker.KEY_TRIP_ID to tripId))
+            .build()
+        workManager.enqueueUniqueWork("trip_backup_$tripId", ExistingWorkPolicy.REPLACE, request)
+    }
+
     fun scheduleTripReminder(id: String, title: String, body: String, at: Instant) {
         val delay = Duration.between(Instant.now(), at).coerceAtLeast(Duration.ZERO)
         val request = OneTimeWorkRequestBuilder<TripReminderWorker>()

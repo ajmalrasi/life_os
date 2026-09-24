@@ -19,6 +19,7 @@ from app.models.mail import (
     MailSyncState,
 )
 from app.models.card_statement import CardStatement, CardStatementItem
+from app.models.money_profile import MoneyProfile
 from app.models.mood import MoodCheckin
 from app.models.payee_label import PayeeLabel
 from app.models.priority import PriorityFeedback, PriorityItem, PriorityItemMessage, PriorityNotification
@@ -49,6 +50,7 @@ __all__ = [
     "MailAuthSession",
     "MailMessageRecord",
     "MailSyncState",
+    "MoneyProfile",
     "SynthesizedInsight",
     "Transaction",
     "TransactionAdjustment",

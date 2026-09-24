@@ -5,7 +5,6 @@ import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.DailyScore
 import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.domain.model.DayPulse
-import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.SynthesizedInsight
 import java.time.LocalDate
 
@@ -47,43 +46,28 @@ object DemoData {
 
     val synthesizedInsights: List<SynthesizedInsight> = listOf(
         SynthesizedInsight(
-            title = "The hidden cost of your best output",
-            body = "Your highest-execution weeks come right as recovery dips and mood softens a day later. You're borrowing from rest to ship.",
-            theme = "cross-domain",
-            cites = listOf("corr:execution_score->mood", "trend:recovery_score", "avg:execution_score"),
+            title = "Shopping is running 3x usual",
+            body = "You spent ₹25,000 on shopping this month, which is 30% of your spend and 3x your usual ₹8,000. That's too much for a single category.",
+            action = "Cap shopping at ₹10,000 for the rest of the month.",
+            theme = "money",
+            severity = "high",
+            cites = listOf("cat:shopping"),
         ),
         SynthesizedInsight(
-            title = "Stress shows up in your spending",
-            body = "Heavier-spend days cluster after high-stress ones, and mood tends to dip two days later. This may be an early stress-spending loop worth watching.",
-            theme = "spending",
-            cites = listOf("corr:stress->daily_spend", "corr:daily_spend->mood", "spend:peak"),
+            title = "Vehicle maintenance beats food",
+            body = "Vehicle maintenance (₹6,000) is now 1.7x what you spend on food (₹3,500) this month.",
+            action = "Get a written quote before the next repair.",
+            theme = "money",
+            severity = "medium",
+            cites = listOf("cmp:vehicle_vs_food"),
         ),
-    )
-
-    val insights: List<Insight> = listOf(
-        Insight(
-            driver = "sleep_score",
-            outcome = "execution_score",
-            correlation = 0.68,
-            sampleSize = 21,
-            lagDays = 0,
-            summary = "Execution Score increases as sleep score rises (r=+0.68 over 21 days). Execution Score increases 31% when sleep score is above 7.2h.",
-        ),
-        Insight(
-            driver = "recovery_score",
-            outcome = "mood",
-            correlation = 0.54,
-            sampleSize = 18,
-            lagDays = 1,
-            summary = "Mood increases as recovery score rises with a 1-day lag (r=+0.54 over 18 days).",
-        ),
-        Insight(
-            driver = "execution_score",
-            outcome = "mood",
-            correlation = 0.47,
-            sampleSize = 18,
-            lagDays = 0,
-            summary = "Mood increases as execution score rises (r=+0.47 over 18 days).",
+        SynthesizedInsight(
+            title = "Sleep is holding steady",
+            body = "Sleep score averaged 78 this week, level with last week, and recovery is climbing alongside it.",
+            action = "Keep the current bedtime routine.",
+            theme = "health",
+            severity = "low",
+            cites = listOf("health:sleep", "health:recovery"),
         ),
     )
 

@@ -69,7 +69,9 @@ import com.lifeos.app.presentation.money.StatementDetailsScreen
 import com.lifeos.app.presentation.mood.MoodScreen
 import com.lifeos.app.presentation.priority.PriorityDetailsScreen
 import com.lifeos.app.presentation.priority.PriorityScreen
+import com.lifeos.app.presentation.settings.MoneySettingsScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
+import com.lifeos.app.presentation.settings.TripSettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.trips.ui.TripDetailScreen
 import com.lifeos.app.trips.ui.TripsScreen
@@ -100,6 +102,8 @@ private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
 private const val CURRENT_CYCLE_DETAILS_ROUTE = "cycle/{bank}/{cardLast4}"
 private const val PRIORITY_DETAILS_ROUTE = "priority/{itemId}"
 private const val TRIP_DETAILS_ROUTE = "trip/{tripId}"
+internal const val SETTINGS_MONEY_ROUTE = "settings/money"
+internal const val SETTINGS_TRIPS_ROUTE = "settings/trips"
 internal const val DEFAULT_DESTINATION_ROUTE = "money"
 
 @Composable
@@ -226,7 +230,16 @@ fun LifeOsApp(
                     TripsScreen(onOpenTrip = { id -> navController.navigate("trip/$id") })
                 }
                 composable(Destination.SETTINGS.route) {
-                    SettingsScreen()
+                    SettingsScreen(
+                        onOpenMoneySettings = { navController.navigate(SETTINGS_MONEY_ROUTE) },
+                        onOpenTripSettings = { navController.navigate(SETTINGS_TRIPS_ROUTE) },
+                    )
+                }
+                composable(SETTINGS_MONEY_ROUTE) {
+                    MoneySettingsScreen()
+                }
+                composable(SETTINGS_TRIPS_ROUTE) {
+                    TripSettingsScreen()
                 }
                 composable(
                     route = STATEMENT_DETAILS_ROUTE,
@@ -316,6 +329,7 @@ internal fun topLevelDestinationFor(route: String?): Destination? = when {
     route == Destination.MOOD.route -> Destination.MOOD
     route == Destination.INSIGHTS.route -> Destination.INSIGHTS
     route == Destination.CHAT.route -> Destination.CHAT
+    route == Destination.SETTINGS.route || route == SETTINGS_MONEY_ROUTE || route == SETTINGS_TRIPS_ROUTE -> Destination.SETTINGS
     else -> null
 }
 
@@ -350,8 +364,10 @@ internal fun LifeOsNavigationDrawer(
                 modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 2.dp, bottom = 18.dp),
             )
             navigationDestinations.forEach { destination ->
+                val isSettingsSubroute = currentRoute == SETTINGS_MONEY_ROUTE || currentRoute == SETTINGS_TRIPS_ROUTE
                 NavigationDrawerItem(
-                    selected = currentRoute == destination.route,
+                    selected = currentRoute == destination.route ||
+                        (destination == Destination.SETTINGS && isSettingsSubroute),
                     label = {
                         Column {
                             Text(destination.label, fontWeight = FontWeight.SemiBold)

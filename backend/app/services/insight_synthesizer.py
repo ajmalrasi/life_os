@@ -1,20 +1,21 @@
-"""LLM synthesis of higher-level, cross-domain insights.
+"""LLM synthesis of the mentor-style, cross-domain Insights page.
 
-The correlation engine finds pairwise relationships; the narrator rewords each
-one. This module goes further: it hands the LLM the *whole* grounded picture —
-every discovered correlation plus trends, averages and the current state — and
-asks it to connect several facts into insights a person wouldn't spot from any
-single number (e.g. how spending, stress and recovery move together).
+``app.services.life_evidence`` computes every number this module can cite —
+money first (income, budgets, card bills, recurring charges, categories),
+then trips, sleep, mood and work. This module's only job is judgement and
+phrasing: pick the 3-5 things that matter most and write one candid,
+second-person verdict + action for each.
 
-The freedom is in which connections to draw and how to frame them; the grounding
-is enforced structurally:
+The freedom is in which facts to prioritize and how to phrase the verdict;
+the grounding is enforced structurally:
 
-* **Evidence-bound.** The model only ever sees facts we already computed. It is
-  told to build solely on them and to cite, by id, the facts each insight rests
-  on. An insight that cites nothing in the evidence — i.e. an invented
-  relationship — is dropped, never stored.
-* **Best-effort.** Disabled, unreachable, or unparseable → returns ``[]`` and the
-  caller keeps the previous batch. Synthesis must never break the nightly run.
+* **Evidence-bound.** The model only ever sees facts we already computed. It
+  is told to build solely on them and to cite, by id, the facts each insight
+  rests on. An insight that cites nothing in the evidence — i.e. an invented
+  number or relationship — is dropped, never stored.
+* **Best-effort.** Disabled, unreachable, or unparseable → returns ``[]`` and
+  the caller keeps the previous batch. Synthesis must never break the nightly
+  run or leave the user with no insights at all.
 """
 
 from __future__ import annotations
@@ -31,29 +32,41 @@ settings = get_settings()
 
 # Keep synthesis off the critical path — one request, short-ish timeout.
 _SYNTHESIS_TIMEOUT_SECONDS = 45.0
-_MAX_INSIGHTS = 4
+_MAX_INSIGHTS = 5
+
+_DOMAINS = {"money", "trip", "health", "mind", "work", "life"}
+_SEVERITIES = {"high", "medium", "low"}
+_SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 _SYSTEM_PROMPT = (
-    "You are LifeOS, a sharp personal-analytics companion. You are given EVIDENCE: "
-    "a list of factual, already-computed observations about ONE user's own data — "
-    "correlations, trends, averages and current state across sleep, recovery, mood, "
-    "stress, fitness, coding-execution and daily spending. Each fact has an \"id\".\n\n"
-    "Your job: write 2-4 concise observations that combine explicitly compatible facts. "
-    "Do not turn associations into a story of cause and effect.\n\n"
-    "STRICT RULES:\n"
-    "- Build ONLY on the given facts. Every number, direction or trend you state must "
-    "come from a fact you cite. Never invent a metric, correlation, percentage or "
-    "relationship that is not in EVIDENCE.\n"
-    "- Each insight MUST cite the ids of the facts it rests on (at least one, ideally "
-    "two or more). If you cannot ground a claim in the evidence, do not make it.\n"
-    "- Never claim a fact causes, predicts, explains, strengthens, or drives another. "
-    "Use 'is associated with' or 'occurred alongside' only when the cited facts say so.\n"
-    "- Be honest about strength: a small sample (low n) or weak correlation is an early "
-    "sign — hedge ('tends to', 'early sign') rather than overclaim.\n"
-    "- Plain language, one or two sentences per insight, no markdown, no emojis.\n"
-    "- Return ONLY a JSON array of objects, each exactly {\"title\": \"<=8 words\", "
-    "\"insight\": \"the insight\", \"theme\": \"one word\", \"cites\": [\"id\", ...]}. "
-    "No prose, no code fences."
+    "You are the user's personal mentor inside LifeOS: a sharp, honest third person "
+    "who looks at their real numbers and tells them what they need to hear. You are "
+    "given EVIDENCE: facts already computed from ONE user's own data (money, "
+    "budgets, card bills, recurring charges, trips, sleep, activity, mood, work). "
+    "Each fact has an \"id\". Money is Indian rupees.\n\n"
+    "Pick the 3 to 5 things that matter MOST right now and write one insight for "
+    "each. Prioritise: money problems first (overspending against income or "
+    "budget, a category far above its usual level, a big purchase, a costly "
+    "comparison between categories, bills due soon), then trips, then health, mood "
+    "and work. Skip anything that is normal or minor. Fewer, sharper insights beat "
+    "more.\n\n"
+    "For each insight:\n"
+    "- Give a clear judgement. Say plainly when something is too much, a bad "
+    "decision, or a habit to fix, and say so when something is going well.\n"
+    "- Use the exact numbers from the facts you cite. Never invent or recompute a "
+    "number, and never state a number that is not in a cited fact.\n"
+    "- Give one concrete, doable action (cut, cap, pause, move to savings, set a "
+    "budget, sleep earlier, etc.).\n"
+    "- Treat patterns as associations, not causes.\n"
+    "- Do not recommend specific investments, funds, stocks or financial products.\n"
+    "- EMI facts are fixed commitments; do not call them impulsive spending.\n"
+    "- If monthly income is missing you may say, once, that setting it in Money "
+    "settings would allow judging spending against income.\n"
+    "- Plain language, no markdown, no emojis. Talk to the user as \"you\".\n\n"
+    "Return ONLY a JSON array, no prose, no code fences. Each item exactly:\n"
+    "{\"title\": \"<=8 words\", \"verdict\": \"1-2 sentences\", \"action\": \"one sentence\", "
+    "\"domain\": \"money|trip|health|mind|work|life\", \"severity\": \"high|medium|low\", "
+    "\"cites\": [\"id\", ...]}"
 )
 
 
@@ -65,12 +78,20 @@ class EvidenceFact:
     statement: str
 
 
-def synthesize(evidence: list[EvidenceFact], client: OpenClawClient | None = None) -> list[dict]:
-    """Return a list of grounded insight drafts, or ``[]`` best-effort.
+def synthesize(
+    evidence: list[EvidenceFact],
+    client: OpenClawClient | None = None,
+    today_label: str | None = None,
+) -> list[dict]:
+    """Return 0-5 grounded mentor insights, best-effort.
 
-    Each draft is ``{"title", "body", "theme", "cites"}`` where every id in
-    ``cites`` is guaranteed to exist in ``evidence`` (invalid/ungrounded cites
-    are stripped, and an insight left with no valid cite is dropped).
+    Each draft is ``{"title", "body", "action", "theme", "severity", "cites"}``
+    (``theme`` carries the domain; ``body`` carries the verdict — same field
+    names the repository/model already use) where every id in ``cites`` is
+    guaranteed to exist in ``evidence`` (invalid/ungrounded cites are
+    stripped, and an insight left with no valid cite is dropped). Does not
+    pad to a fixed count: returns however many (3-5, occasionally fewer) the
+    model produced.
     """
     if not evidence or not settings.insight_synthesis_enabled:
         return []
@@ -82,13 +103,17 @@ def synthesize(evidence: list[EvidenceFact], client: OpenClawClient | None = Non
         pass
 
     payload = [{"id": f.id, "fact": f.statement} for f in evidence]
+    user_content = ""
+    if today_label:
+        user_content += today_label + "\n"
+    user_content += "EVIDENCE (JSON):\n" + json.dumps(payload, ensure_ascii=False)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": "EVIDENCE (JSON):\n" + json.dumps(payload, indent=2)},
+        {"role": "user", "content": user_content},
     ]
 
     try:
-        raw = client.chat(messages, temperature=0.6)
+        raw = client.chat(messages, temperature=0.5, max_tokens=900)
     except OpenClawUnavailable as exc:
         logger.info("insight synthesis skipped (OpenClaw unavailable): %s", exc)
         return []
@@ -97,24 +122,36 @@ def synthesize(evidence: list[EvidenceFact], client: OpenClawClient | None = Non
     drafts: list[dict] = []
     for item in _parse(raw):
         title = (item.get("title") or "").strip()
-        body = (item.get("insight") or "").strip()
+        body = (item.get("verdict") or "").strip()
         cites_raw = item.get("cites")
         if not title or not body or not isinstance(cites_raw, list):
             continue
         # Ground the citation: keep only ids we actually handed the model. An
-        # insight that cites nothing real is an invented relationship — drop it.
+        # insight that cites nothing real is an invented judgement — drop it.
         cites = [c for c in cites_raw if isinstance(c, str) and c in valid_ids]
         if not cites:
             continue
-        theme = item.get("theme")
+
+        action = item.get("action")
+        domain = str(item.get("domain") or "life").strip().lower()
+        if domain not in _DOMAINS:
+            domain = "life"
+        severity = str(item.get("severity") or "medium").strip().lower()
+        if severity not in _SEVERITIES:
+            severity = "medium"
+
         drafts.append({
             "title": title[:140],
             "body": body[:800],
-            "theme": (str(theme).strip()[:48] if theme else None),
+            "action": (str(action).strip()[:300] if action else None),
+            "theme": domain,
+            "severity": severity,
             "cites": cites,
         })
         if len(drafts) >= _MAX_INSIGHTS:
             break
+
+    drafts.sort(key=lambda d: _SEVERITY_ORDER.get(d["severity"], 1))
     return drafts
 
 

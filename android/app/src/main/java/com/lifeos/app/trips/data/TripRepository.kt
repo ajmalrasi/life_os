@@ -3,9 +3,12 @@ package com.lifeos.app.trips.data
 import com.lifeos.app.data.local.TransactionDao
 import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.LifeOsApi
+import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.trips.importer.TripImportPreview
+import com.lifeos.app.work.WorkScheduler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -30,7 +33,17 @@ class TripRepository @Inject constructor(
     private val api: LifeOsApi,
     private val fileStore: TripFileStore,
     private val transactionDao: TransactionDao,
+    private val workScheduler: WorkScheduler,
+    private val settingsRepository: SettingsRepository,
 ) {
+    /** Best-effort: enqueue a debounced backup after a user edit, only when the
+     * "Back up trips automatically" setting is on. Never blocks the caller. */
+    private suspend fun scheduleAutoBackup(tripId: String) {
+        if (settingsRepository.tripAutoBackupEnabled.first()) {
+            workScheduler.enqueueTripBackup(tripId)
+        }
+    }
+
     fun observeTrips(): Flow<List<TripEntity>> = dao.observeTrips()
     fun observeTrip(id: String): Flow<TripDetail?> = dao.observeTrip(id)
 
@@ -53,9 +66,16 @@ class TripRepository @Inject constructor(
         } else {
             dao.importTrip(bundle)
         }
+        scheduleAutoBackup(bundle.trip.id)
     }
-    suspend fun setStatus(id: String, status: String) = dao.setStatus(id, status)
-    suspend fun setActivityStatus(id: String, status: String) = dao.setActivityStatus(id, status)
+    suspend fun setStatus(id: String, status: String) {
+        dao.setStatus(id, status)
+        scheduleAutoBackup(id)
+    }
+    suspend fun setActivityStatus(id: String, status: String) {
+        dao.setActivityStatus(id, status)
+        dao.activitiesForDayForActivity(id)?.let { scheduleAutoBackup(it.tripId) }
+    }
     suspend fun setReminderEnabled(id: String, enabled: Boolean) = dao.setReminderEnabled(id, enabled)
     suspend fun resolvePlace(id: String, latitude: Double, longitude: Double) = dao.resolvePlace(id, latitude, longitude)
     suspend fun savePlace(place: TripPlaceEntity) = dao.upsertPlace(place)
@@ -73,7 +93,10 @@ class TripRepository @Inject constructor(
         fileStore.deleteTripFiles(id)
         runCatching { api.deleteTripBackup(id) }
     }
-    suspend fun addExpense(expense: TripExpenseEntity) = dao.upsertExpense(expense)
+    suspend fun addExpense(expense: TripExpenseEntity) {
+        dao.upsertExpense(expense)
+        scheduleAutoBackup(expense.tripId)
+    }
     suspend fun addAttachment(attachment: TripAttachmentEntity) = dao.upsertAttachment(attachment)
 
     suspend fun backup(tripId: String): Int {

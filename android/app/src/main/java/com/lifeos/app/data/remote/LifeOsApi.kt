@@ -20,6 +20,7 @@ import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SyncStatusDto
 import com.lifeos.app.data.remote.dto.BudgetPaceDto
 import com.lifeos.app.data.remote.dto.BudgetInDto
+import com.lifeos.app.data.remote.dto.MoneyProfileDto
 import com.lifeos.app.data.remote.dto.RecurringChargeDto
 import com.lifeos.app.data.remote.dto.PriorityDetailsDto
 import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
@@ -151,6 +152,9 @@ interface LifeOsApi {
     @GET("analytics/synthesis")
     suspend fun synthesis(): List<SynthesizedInsightDto>
 
+    @POST("analytics/synthesis/refresh")
+    suspend fun refreshSynthesis(): List<SynthesizedInsightDto>
+
     @GET("notifications")
     suspend fun notifications(): List<NotificationDto>
 
@@ -165,6 +169,12 @@ interface LifeOsApi {
 
     @DELETE("budgets/{category}")
     suspend fun deleteBudget(@Path("category") category: String)
+
+    @GET("money/profile")
+    suspend fun moneyProfile(): MoneyProfileDto
+
+    @PUT("money/profile")
+    suspend fun setMoneyProfile(@Body body: MoneyProfileDto): MoneyProfileDto
 
     @GET("expenses/recurring")
     suspend fun recurringCharges(@Query("window_days") windowDays: Int): List<RecurringChargeDto>

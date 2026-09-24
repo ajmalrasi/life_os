@@ -57,6 +57,8 @@ data class SynthesizedInsight(
     val title: String,
     val body: String,
     val theme: String? = null,
+    val action: String? = null,
+    val severity: String? = null,
     val cites: List<String> = emptyList(),
 )
 
@@ -82,6 +84,13 @@ data class SourceStatus(
 data class Budget(
     val category: String,
     val monthlyLimit: BigDecimal,
+)
+
+/** User-entered income facts (never derivable from parsed transaction emails).
+ * Online-only — not cached in Room. */
+data class MoneyProfile(
+    val monthlyIncome: BigDecimal?,
+    val savingsGoalPct: Int?,
 )
 
 /** A debit that repeats on a roughly weekly/monthly cadence at a roughly
