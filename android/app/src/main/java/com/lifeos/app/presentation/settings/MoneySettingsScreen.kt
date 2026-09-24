@@ -49,7 +49,11 @@ import com.lifeos.app.presentation.money.BUDGETABLE_CATEGORIES
 import com.lifeos.app.presentation.money.BudgetEditDialog
 import com.lifeos.app.presentation.money.prettyCategory
 import com.lifeos.app.presentation.theme.LifeOsColors
+import com.lifeos.app.presentation.money.BudgetPace
 import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.NumberFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +63,7 @@ fun MoneySettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val budgets by viewModel.budgets.collectAsStateWithLifecycle()
+    val budgetPaces by viewModel.budgetPaces.collectAsStateWithLifecycle()
     val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
     val fieldColors = lifeOsFieldColors()
 
@@ -161,13 +166,19 @@ fun MoneySettingsScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            val pace = budgetPaces[budget.category]
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(prettyCategory(budget.category), style = MaterialTheme.typography.bodyMedium)
+                                if (pace != null) {
+                                    Text(
+                                        budgetPaceLine(pace),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (pace.onPaceToExceed) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                                    )
+                                }
+                            }
                             Text(
-                                prettyCategory(budget.category),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                "₹${budget.monthlyLimit.toBigInteger()}/mo",
+                                "${budget.monthlyLimit.rupees()}/mo",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = LifeOsColors.OnSurfaceMuted,
                             )
@@ -262,3 +273,17 @@ private fun hasNotificationPermission(context: android.content.Context): Boolean
             context,
             Manifest.permission.POST_NOTIFICATIONS,
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+private fun budgetPaceLine(pace: BudgetPace): String {
+    val spent = "${pace.spentSoFar.rupees()} spent"
+    return when {
+        pace.spentSoFar > pace.monthlyLimit -> "$spent, over the limit"
+        pace.onPaceToExceed -> pace.projectedExceedDay?.let { "$spent, on pace to exceed by day $it" }
+            ?: "$spent, on pace to exceed"
+        else -> "$spent, on track for ${pace.projectedMonthTotal.rupees()}"
+    }
+}
+
+/** Whole rupees with Indian digit grouping: ₹12,34,567. */
+private fun BigDecimal.rupees(): String =
+    "₹" + NumberFormat.getIntegerInstance(Locale("en", "IN")).format(setScale(0, RoundingMode.HALF_UP))

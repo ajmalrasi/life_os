@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.repository.MoneyRepository
+import com.lifeos.app.presentation.money.BudgetPace
+import com.lifeos.app.presentation.money.budgetPace
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -35,6 +38,15 @@ class MoneySettingsViewModel @Inject constructor(
 
     val budgets: StateFlow<List<Budget>> = moneyRepository.observeBudgets()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Same offline pace the Money Overview shows, from the cached feed. */
+    internal val budgetPaces: StateFlow<Map<String, BudgetPace>> = combine(
+        moneyRepository.observeBudgets(),
+        moneyRepository.observeTransactions(PACE_WINDOW_DAYS),
+    ) { budgets, transactions ->
+        val spendable = transactions.filter { it.direction == "debit" && it.spendCategory != null }
+        budgets.associate { it.category to budgetPace(it.category, it.monthlyLimit, spendable) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     init {
         viewModelScope.launch {
@@ -115,3 +127,6 @@ class MoneySettingsViewModel @Inject constructor(
         }
     }
 }
+
+/** Enough history to cover the current calendar month. */
+private const val PACE_WINDOW_DAYS = 31

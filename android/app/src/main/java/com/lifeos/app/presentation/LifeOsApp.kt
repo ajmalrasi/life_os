@@ -406,7 +406,7 @@ internal fun LifeOsNavigationDrawer(
 private fun destinationSupportingText(destination: Destination): String = when (destination) {
     Destination.DASHBOARD -> "Daily scores"
     Destination.MOOD -> "Mood check-in"
-    Destination.INSIGHTS -> "Patterns and trends"
+    Destination.INSIGHTS -> "Your mentor's take"
     Destination.CHAT -> "Grounded answers"
     Destination.SETTINGS -> "Sync and preferences"
     Destination.MONEY -> "Spending and cards"
