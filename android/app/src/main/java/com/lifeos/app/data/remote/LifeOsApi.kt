@@ -25,6 +25,7 @@ import com.lifeos.app.data.remote.dto.RecurringChargeDto
 import com.lifeos.app.data.remote.dto.PriorityDetailsDto
 import com.lifeos.app.data.remote.dto.PriorityFeedbackDto
 import com.lifeos.app.data.remote.dto.PriorityItemDto
+import com.lifeos.app.data.remote.dto.PriorityMessageDto
 import com.lifeos.app.data.remote.dto.PrioritySyncResultDto
 import com.lifeos.app.data.remote.dto.PriorityUpdateDto
 import com.lifeos.app.data.remote.dto.MailAccountDto
@@ -90,6 +91,9 @@ interface LifeOsApi {
 
     @GET("priority/{itemId}")
     suspend fun priorityDetails(@Path("itemId") itemId: Int): PriorityDetailsDto
+
+    @GET("priority/{itemId}/message")
+    suspend fun priorityMessage(@Path("itemId") itemId: Int): PriorityMessageDto
 
     @POST("priority/sync/check")
     suspend fun syncPriority(): PrioritySyncResultDto

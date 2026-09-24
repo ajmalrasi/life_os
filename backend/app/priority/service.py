@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from time import monotonic
 from email.utils import parsedate_to_datetime
 
 from sqlalchemy.orm import Session
@@ -14,13 +16,20 @@ from app.mail.gmail_provider import GmailProvider, MailProviderError
 from app.mail.models import MailMessage
 from app.models.mail import MailAccount, MailMessageRecord
 from app.models.priority import PriorityItem
-from app.priority.ambiguity import review_ambiguous
 from app.priority.calendar import CalendarInvite, parse_ics
-from app.priority.classifier import classify
+from app.priority.classifier import (
+    PriorityClassification,
+    PriorityModelUnavailable,
+    ThreadContext,
+    classify,
+)
 from app.repositories.mail_repo import MailAccountRepository, MailIntakeRepository
 from app.repositories.priority_repo import PriorityRepository
 
 logger = logging.getLogger("lifeos.priority")
+
+# Model failures (busy, timeout, output limit) retried across hourly syncs.
+_MAX_MODEL_ATTEMPTS = 5
 
 
 @dataclass
@@ -33,14 +42,29 @@ class PrioritySyncReport:
     items_review: int = 0
     pending: int = 0
     message: str = ""
+    deferred: int = 0
     new_items: list[PriorityItem] = field(default_factory=list)
     account_errors: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _Classified:
+    message: MailMessage
+    classification: PriorityClassification
+
+
 class PrioritySyncService:
-    def __init__(self, db: Session, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        db: Session,
+        settings: Settings | None = None,
+        budget_seconds: float | None = None,
+    ) -> None:
         self.db = db
         self.settings = settings or get_settings()
+        self.budget_seconds = (
+            budget_seconds if budget_seconds is not None else self.settings.priority_sync_budget_seconds
+        )
         self.accounts = MailAccountRepository(db)
         self.intake = MailIntakeRepository(db)
         self.priority = PriorityRepository(db)
@@ -102,6 +126,82 @@ class PrioritySyncService:
         if message.internal_date_ms:
             row.received_at = datetime.fromtimestamp(message.internal_date_ms / 1000, tz=timezone.utc)
 
+    def _thread_context(self, account: MailAccount, row: MailMessageRecord) -> ThreadContext | None:
+        existing = self.priority.get_for_thread(account, row)
+        if existing is None or existing.latest_mail_message_id == row.id:
+            return None
+        labels = existing.automatic_labels or []
+        return ThreadContext(
+            category=labels[0] if labels and existing.importance != "suppressed" else None,
+            state=existing.automatic_state,
+            summary=existing.summary,
+        )
+
+    def _classify_remote(
+        self,
+        provider: GmailProvider,
+        provider_message_id: str,
+        account_address: str,
+        thread: ThreadContext | None,
+    ) -> _Classified:
+        """Network-only work (Gmail + model); runs on a worker thread, no DB."""
+        message = provider.get_message(provider_message_id)
+        if message is None:
+            raise MailProviderError("Gmail returned an empty message.")
+        invite = self._calendar_invite(provider, message)
+        classification = classify(message, invite, account_address=account_address, thread=thread)
+        return _Classified(message=message, classification=classification)
+
+    def _apply(
+        self,
+        account: MailAccount,
+        row: MailMessageRecord,
+        future: Future,
+        report: PrioritySyncReport,
+    ) -> None:
+        try:
+            result: _Classified = future.result()
+            message, classification = result.message, result.classification
+            self._hydrate_record(row, message)
+            self.db.commit()
+            if classification.importance == "suppressed":
+                existing = self.priority.get_for_thread(account, row)
+                if existing is not None:
+                    _, _, changed = self.priority.upsert(account, row, classification)
+                    if changed:
+                        report.items_updated += 1
+                self.intake.mark_processed(row, "suppressed", classification.details.preview)
+                report.emails_processed += 1
+                return
+            item, created, changed = self.priority.upsert(account, row, classification)
+            self.intake.mark_processed(row, classification.importance, classification.details.preview)
+            report.emails_processed += 1
+            if created:
+                report.items_new += 1
+                report.new_items.append(item)
+            elif changed:
+                report.items_updated += 1
+        except PriorityModelUnavailable as exc:
+            self.db.rollback()
+            if row.processing_attempts + 1 >= _MAX_MODEL_ATTEMPTS:
+                # Stop spending model time on a message it cannot finish; it
+                # stays out of the feed (never guessed) and a full sync retries it.
+                self.intake.mark_processed(row, "failed", row.preview or "")
+                row.last_error = str(exc)[:500]
+                self.db.commit()
+                logger.warning("Priority message %s gave up: %s", row.provider_message_id, exc)
+            else:
+                self.intake.mark_retry(row, str(exc))
+                logger.warning("Priority message %s deferred: %s", row.provider_message_id, exc)
+        except MailProviderError as exc:
+            self.db.rollback()
+            self.intake.mark_retry(row, str(exc))
+            logger.warning("Priority message %s deferred: %s", row.provider_message_id, exc)
+        except Exception as exc:
+            self.db.rollback()
+            self.intake.mark_retry(row, f"Processing error: {exc}")
+            logger.exception("Priority message %s failed", row.provider_message_id)
+
     def sync(self, full: bool = False) -> PrioritySyncReport:
         accounts = self.accounts.for_purpose("priority")
         if not accounts:
@@ -122,11 +222,14 @@ class PrioritySyncService:
             total.items_updated += report.items_updated
             total.items_review += report.items_review
             total.pending += report.pending
+            total.deferred += report.deferred
             total.new_items.extend(report.new_items)
         total.message = (
             f"{total.items_new} new Priority item(s), {total.items_updated} updated, "
             f"{total.pending} pending across {len(accounts)} account(s)."
         )
+        if total.pending:
+            total.message += " Remaining mail is classified on the next check."
         if total.account_errors:
             total.message += " " + " ".join(total.account_errors)
         return total
@@ -157,6 +260,7 @@ class PrioritySyncService:
                 # change. Bodies are not retained, so fetch them again from the
                 # provider while preserving any user-owned item overrides.
                 row.processing_state = "pending"
+                row.processing_attempts = 0
                 row.last_error = None
             epoch = self._meta_epoch(meta)
             max_cursor = max(max_cursor, epoch)
@@ -168,48 +272,42 @@ class PrioritySyncService:
             # result window.
             for row in self.priority.latest_messages_for_account(account.id):
                 row.processing_state = "pending"
+                row.processing_attempts = 0
                 row.last_error = None
         # Durable message ids are committed before any content fetch/classifier work.
         self.db.commit()
 
         pending_limit = 1000 if full else 250
-        for row in self.intake.pending(account.id, limit=pending_limit):
-            try:
-                message = provider.get_message(row.provider_message_id)
-                if message is None:
-                    raise MailProviderError("Gmail returned an empty message.")
-                self._hydrate_record(row, message)
-                self.db.commit()
-                max_cursor = max(max_cursor, message.internal_date_ms // 1000)
-                invite = self._calendar_invite(provider, message)
-                classification = classify(message, invite)
-                if classification.importance == "review" and self.settings.priority_llm_enabled:
-                    classification = review_ambiguous(message, classification)
-                if classification.importance == "suppressed":
-                    existing = self.priority.get_for_thread(account, row)
-                    if existing is not None:
-                        _, _, changed = self.priority.upsert(account, row, classification)
-                        if changed:
-                            report.items_updated += 1
-                    self.intake.mark_processed(row, "suppressed", classification.details.preview)
-                    report.emails_processed += 1
-                    continue
-                item, created, changed = self.priority.upsert(account, row, classification)
-                self.intake.mark_processed(row, classification.importance, classification.details.preview)
-                report.emails_processed += 1
-                if created:
-                    report.items_new += 1
-                    report.new_items.append(item)
-                elif changed:
-                    report.items_updated += 1
-                if classification.importance == "review":
-                    report.items_review += 1
-            except MailProviderError as exc:
-                self.intake.mark_retry(row, str(exc))
-                logger.warning("Priority message %s deferred: %s", row.provider_message_id, exc)
-            except Exception as exc:
-                self.intake.mark_retry(row, f"Processing error: {exc}")
-                logger.exception("Priority message %s failed", row.provider_message_id)
+        rows = sorted(
+            self.intake.pending(account.id, limit=pending_limit),
+            key=lambda row: row.received_at.timestamp() if row.received_at else 0,
+            reverse=True,  # Fresh mail first when the time budget runs out.
+        )
+        deadline = monotonic() + self.budget_seconds
+        workers = max(1, self.settings.openclaw_max_concurrency)
+        by_id = {row.id: row for row in rows}
+        queue = list(rows)
+        running: dict[Future, int] = {}
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="priority") as pool:
+            while queue or running:
+                while queue and len(running) < workers and monotonic() < deadline:
+                    row = queue.pop(0)
+                    thread = self._thread_context(account, row)
+                    future = pool.submit(
+                        self._classify_remote, provider, row.provider_message_id,
+                        account.provider_account_id, thread,
+                    )
+                    running[future] = row.id
+                if not running:
+                    break
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    row = by_id[running.pop(future)]
+                    self._apply(account, row, future, report)
+                    if row.processing_state == "retry" and isinstance(
+                        future.exception(), PriorityModelUnavailable
+                    ):
+                        report.deferred += 1
 
         report.pending = len(self.intake.pending(account.id, limit=1000))
         self.intake.finish_sync(sync_state, max_cursor)

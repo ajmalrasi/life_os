@@ -43,28 +43,15 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private data class PriorityFilter(val key: String, val label: String)
-private val filters = listOf(
-    PriorityFilter("all", "All"),
-    PriorityFilter("action", "Needs action"),
-    PriorityFilter("scheduled", "Scheduled"),
-    PriorityFilter("personal", "Personal"),
-    PriorityFilter("work", "Work"),
-    PriorityFilter("interview", "Interview"),
-    PriorityFilter("security", "Security"),
-    PriorityFilter("review", "Review"),
-)
-
 @Composable
 fun PriorityScreen(
     onOpenItem: (Int) -> Unit,
     viewModel: PriorityViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val needsAction = state.items.filter { it.state == "needs_action" && it.importance != "review" }
-    val scheduled = state.items.filter { it.state == "scheduled" && it.importance != "review" }
-    val review = state.items.filter { it.importance == "review" }
-    val other = state.items.filter { it !in needsAction && it !in scheduled && it !in review }
+    val needsAction = state.items.filter { it.state == "needs_action" }
+    val scheduled = state.items.filter { it.state == "scheduled" }
+    val other = state.items.filter { it !in needsAction && it !in scheduled }
     val statusMessage = state.message
 
     LazyColumn(
@@ -92,11 +79,11 @@ fun PriorityScreen(
         }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(filters, key = { it.key }) { filter ->
+                items(state.chips, key = { it.key }) { filter ->
                     val selected = filter.key == state.filter
                     AssistChip(
                         onClick = { viewModel.setFilter(filter.key) },
-                        label = { Text(filter.label) },
+                        label = { Text("${filter.label} ${filter.count}") },
                         shape = RoundedCornerShape(50),
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = if (selected) LifeOsColors.Primary else LifeOsColors.Surface,
@@ -143,7 +130,6 @@ fun PriorityScreen(
             prioritySection("Needs attention", needsAction, onOpenItem)
             prioritySection("Upcoming", scheduled, onOpenItem)
             prioritySection("Recently important", other, onOpenItem)
-            prioritySection("Review", review, onOpenItem)
         }
         item { Spacer(Modifier.height(28.dp)) }
     }
@@ -164,7 +150,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.prioritySection(
 @Composable
 private fun PriorityMailCard(item: PriorityItem, onClick: () -> Unit) {
     val accent = when {
-        item.importance == "review" -> LifeOsColors.AccentAmber
         item.state == "needs_action" -> LifeOsColors.Warning
         item.state == "scheduled" -> LifeOsColors.Primary
         else -> LifeOsColors.Secondary
@@ -177,7 +162,7 @@ private fun PriorityMailCard(item: PriorityItem, onClick: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    item.labels.firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Review",
+                    PriorityCategories.name(PriorityCategories.of(item)),
                     style = MaterialTheme.typography.labelSmall,
                     color = accent,
                     fontWeight = FontWeight.Bold,

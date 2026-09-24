@@ -50,6 +50,12 @@ class OpenClawRequestRejected(OpenClawUnavailable):
     pass
 
 
+class OpenClawEngineError(OpenClawUnavailable):
+    """The runtime accepted the request but generation failed (HTTP 500 engine_error)."""
+
+    pass
+
+
 class OpenClawTruncated(OpenClawUnavailable):
     """Generation reached the requested/output-capacity limit."""
 
@@ -77,17 +83,20 @@ class _InferenceWaiter:
 
 
 class InferenceCoordinator:
-    """Serialize model calls and let interactive work jump ahead in the queue.
+    """Bound concurrent model calls to the runtime's batch size and let
+    interactive work jump ahead in the queue.
 
-    MLC is configured for a single sequence, so concurrent HTTP requests only
-    create contention and unpredictable latency. Background/finance callers use
-    fail-fast admission and can safely defer or fall back; interactive Ask calls
-    wait for the active request, then run before any lower-priority waiter.
+    The EdgeLLM engine decodes ``capacity`` sequences together (batch 2 on the
+    Jetson); more concurrent HTTP requests only queue inside the server with
+    unpredictable latency. Background/finance callers use fail-fast (or short)
+    admission and can safely defer; interactive Ask calls wait for a free slot,
+    then run before any lower-priority waiter.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, capacity: int = 1) -> None:
         self._condition = threading.Condition()
-        self._active: _InferenceWaiter | None = None
+        self._capacity = max(1, capacity)
+        self._active: list[_InferenceWaiter] = []
         self._waiters: list[_InferenceWaiter] = []
         self._sequence = 0
 
@@ -99,7 +108,7 @@ class InferenceCoordinator:
             self._sequence += 1
             waiter = _InferenceWaiter(priority=priority, sequence=self._sequence)
             self._waiters.append(waiter)
-            while self._active is not None or waiter != min(
+            while len(self._active) >= self._capacity or waiter != min(
                 self._waiters, key=lambda item: (item.priority, item.sequence)
             ):
                 remaining = deadline - monotonic()
@@ -111,22 +120,28 @@ class InferenceCoordinator:
                     )
                 self._condition.wait(timeout=remaining)
             self._waiters.remove(waiter)
-            self._active = waiter
+            self._active.append(waiter)
+            # Another slot may still be free for the next waiter in line.
+            self._condition.notify_all()
 
         try:
             yield monotonic() - started
         finally:
             with self._condition:
-                if self._active == waiter:
-                    self._active = None
+                if waiter in self._active:
+                    self._active.remove(waiter)
                 self._condition.notify_all()
 
     def status(self) -> dict[str, int | str | None]:
         with self._condition:
             return {
                 "active_workload": (
-                    self._active.priority.name.casefold() if self._active else None
+                    min(self._active, key=lambda item: item.priority).priority.name.casefold()
+                    if self._active
+                    else None
                 ),
+                "active_total": len(self._active),
+                "capacity": self._capacity,
                 "waiting_interactive": sum(
                     waiter.priority == InferenceWorkload.INTERACTIVE for waiter in self._waiters
                 ),
@@ -134,7 +149,7 @@ class InferenceCoordinator:
             }
 
 
-_INFERENCE_COORDINATOR = InferenceCoordinator()
+_INFERENCE_COORDINATOR = InferenceCoordinator(settings.openclaw_max_concurrency)
 
 
 def _completion_message(data: dict) -> dict:
@@ -196,9 +211,13 @@ def _describe_schema(schema: dict) -> str:
     lines = ["Respond with ONLY a single JSON object (no other text), with exactly these fields:"]
     required = set(schema.get("required", []))
     for name, spec in schema.get("properties", {}).items():
-        bits = [spec.get("type", "any")]
+        options = spec.get("anyOf") or [spec]
+        bits = [" or ".join(option.get("type", "any") for option in options)]
         if "enum" in spec:
             bits.append("one of: " + ", ".join(str(v) for v in spec["enum"]))
+        for option in options:
+            if option.get("pattern") == r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$":
+                bits.append("formatted YYYY-MM-DDTHH:MM")
         marker = "required" if name in required else "optional"
         lines.append(f'- "{name}" ({", ".join(bits)}, {marker})')
     return "\n".join(lines)
@@ -242,17 +261,69 @@ def _matches_schema(raw: str, schema: dict) -> bool:
     return True
 
 
+def _json_object(content: str) -> dict:
+    text = _strip_think(content).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
+    try:
+        parsed = json.loads(text)
+    except ValueError as exc:
+        raise OpenClawUnavailable("Local model returned invalid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise OpenClawUnavailable("Local model returned a non-object JSON value")
+    return parsed
+
+
+def _matches_json_schema(value, schema: dict) -> bool:
+    """Validate the JSON-schema subset used with ``chat_json`` (type, enum,
+    anyOf, pattern, properties/required/additionalProperties)."""
+    if "anyOf" in schema:
+        return any(_matches_json_schema(value, option) for option in schema["anyOf"])
+    kind = schema.get("type")
+    if kind == "null":
+        if value is not None:
+            return False
+    elif kind == "boolean":
+        if not isinstance(value, bool):
+            return False
+    elif kind in {"integer", "number"}:
+        if isinstance(value, bool) or not isinstance(value, _PY_TYPES[kind]):
+            return False
+    elif kind == "string":
+        if not isinstance(value, str):
+            return False
+        if "pattern" in schema and not re.search(schema["pattern"], value):
+            return False
+    elif kind == "object":
+        if not isinstance(value, dict):
+            return False
+        properties = schema.get("properties", {})
+        if any(name not in value for name in schema.get("required", [])):
+            return False
+        if schema.get("additionalProperties") is False and not set(value).issubset(properties):
+            return False
+        if not all(_matches_json_schema(value[name], spec) for name, spec in properties.items() if name in value):
+            return False
+    if "enum" in schema and value not in schema["enum"]:
+        return False
+    return True
+
+
 class OpenClawClient:
     def __init__(
         self,
         base_url: str | None = None,
         model: str | None = None,
         workload: InferenceWorkload = InferenceWorkload.BACKGROUND,
+        admission_wait: float = 0.0,
     ) -> None:
         self.base_url = (base_url or settings.openclaw_base_url).rstrip("/")
         self.model = model or settings.openclaw_model
         self.timeout = settings.openclaw_timeout_seconds
         self.workload = workload
+        # Seconds a non-interactive caller may queue for a free batch slot
+        # before deferring. Queue time does not count against generation.
+        self.admission_wait = max(0.0, admission_wait)
 
     @contextmanager
     def _admitted(self, timeout: float | None) -> Iterator[float]:
@@ -265,7 +336,9 @@ class OpenClawClient:
         # a backlog. Ask may wait, but its queue time counts against the same
         # end-to-end timeout budget as generation.
         wait_timeout = (
-            request_timeout if self.workload == InferenceWorkload.INTERACTIVE else 0.0
+            request_timeout
+            if self.workload == InferenceWorkload.INTERACTIVE
+            else self.admission_wait
         )
         with _INFERENCE_COORDINATOR.lease(self.workload, wait_timeout) as waited:
             remaining = (
@@ -544,6 +617,67 @@ class OpenClawClient:
             },
         ]
         return self.chat(retry_messages, temperature)
+
+    def chat_json(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict,
+        schema_name: str,
+        max_tokens: int = 512,
+        temperature: float = 0.0,
+        timeout: float | None = None,
+    ) -> dict:
+        """Return a JSON object produced under server-side guided decoding.
+
+        The Jetson's EdgeLLM build enforces ``response_format: json_schema``
+        (strict) during decoding, so the reply always parses and matches the
+        schema's types/enums. Callers still validate semantics (dates, ranges).
+        """
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+            "max_tokens": max_tokens,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": schema_name, "strict": True, "schema": schema},
+            },
+        }
+        try:
+            data = self._post_completion(payload, timeout, "structured request")
+        except OpenClawEngineError:
+            # The guided decoder occasionally loops on some inputs (observed:
+            # emoji-heavy marketing mail, "JSON output was incomplete at the
+            # token limit") although the same prompt answers in <100 tokens
+            # unconstrained. Retry once unconstrained and validate locally.
+            payload.pop("response_format")
+            payload["messages"] = _inject_schema_instructions(messages, schema)
+            data = self._post_completion(payload, timeout, "structured fallback request")
+            parsed = _json_object(_completion_message(data).get("content") or "")
+            if not _matches_json_schema(parsed, schema):
+                raise OpenClawUnavailable("Local model reply did not match the schema")
+            return parsed
+        return _json_object(_completion_message(data).get("content") or "")
+
+    def _post_completion(self, payload: dict, timeout: float | None, operation: str) -> dict:
+        url = f"{self.base_url}/v1/chat/completions"
+        try:
+            with self._admitted(timeout) as request_timeout:
+                with httpx.Client(timeout=request_timeout) as client:
+                    resp = client.post(url, json=payload, headers=self._headers())
+                    resp.raise_for_status()
+                    return resp.json()
+        except httpx.TimeoutException as exc:
+            raise OpenClawTimeout(f"Local model timed out: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 500 and "engine_error" in exc.response.text:
+                raise OpenClawEngineError(
+                    f"OpenClaw {operation} failed in the engine: {exc.response.text[:300]}"
+                ) from exc
+            raise _translate_http_error(exc, operation) from exc
+        except (httpx.HTTPError, ValueError) as exc:
+            raise OpenClawUnavailable(f"OpenClaw request failed: {exc}") from exc
 
     def chat_with_tools(
         self,

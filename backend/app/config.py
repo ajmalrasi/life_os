@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     openclaw_timeout_seconds: float = 90.0
     openclaw_chat_deadline_seconds: float = 135.0
     openclaw_max_tokens: int = 1024
+    # Sequences the EdgeLLM engine decodes together (engine built for batch 2).
+    openclaw_max_concurrency: int = 2
     ask_max_tokens: int = 1024
     ask_input_tokens: int = 6000
     ask_enable_thinking: bool = False
@@ -62,10 +64,12 @@ class Settings(BaseSettings):
 
     # Priority mail classification. Connected accounts live in mail_accounts;
     # unlike the legacy Money bootstrap above, no mailbox address is hard-coded
-    # into environment settings. Ambiguous local-model review is opt-in so a
-    # background mail poll cannot contend with Ask by default.
+    # into environment settings. Every message is classified by the local
+    # model (two batched calls); a sync stops starting new messages after this
+    # budget so an on-demand check stays inside Android's request timeout, and
+    # the remainder is picked up by the next hourly run.
     priority_backfill_days: int = 120
-    priority_llm_enabled: bool = False
+    priority_sync_budget_seconds: float = 100.0
 
     # CC statement PDFs — unlock secrets. Passwords derive from name+DOB per
     # bank scheme (see services/pdf_unlock.py); overrides cover banks with

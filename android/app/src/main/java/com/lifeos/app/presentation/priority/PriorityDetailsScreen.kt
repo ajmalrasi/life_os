@@ -28,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -82,7 +84,7 @@ fun PriorityDetailsScreen(
             val item = details.item
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
-                    item.labels.joinToString(" · ") { it.replaceFirstChar(Char::uppercase) },
+                    PriorityCategories.name(PriorityCategories.of(item)),
                     style = MaterialTheme.typography.labelMedium,
                     color = LifeOsColors.Primary,
                 )
@@ -125,7 +127,7 @@ fun PriorityDetailsScreen(
                         when {
                             item.eventStart != null && !item.hasCalendarInvite ->
                                 PriorityCalendarLauncher.launch(context, item)
-                            item.hasCalendarInvite -> openUri(context, item.gmailUrl)
+                            item.hasCalendarInvite -> openInGmail(context, item.gmailUrl)
                             item.actionUrl != null -> openUri(context, item.actionUrl)
                         }
                     },
@@ -146,17 +148,34 @@ fun PriorityDetailsScreen(
             }
 
             OutlinedButton(
-                onClick = { openUri(context, item.gmailUrl) },
+                onClick = { openInGmail(context, item.gmailUrl) },
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                Text("Open original email")
+                Text("Open Gmail")
             }
 
-            SectionHeader("Message preview")
+            SectionHeader("Email")
             LifeOsCard {
-                Text(item.preview, style = MaterialTheme.typography.bodyMedium)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SelectionContainer {
+                        Text(state.fullEmail ?: item.preview, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    when {
+                        state.fullEmail != null -> Unit
+                        state.fullEmailLoading -> CircularProgressIndicator(
+                            modifier = Modifier.height(24.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        else -> {
+                            state.fullEmailError?.let {
+                                Text(it, style = MaterialTheme.typography.labelMedium, color = LifeOsColors.Warning)
+                            }
+                            TextButton(onClick = viewModel::loadFullEmail) { Text("Show full email") }
+                        }
+                    }
+                }
             }
 
             if (details.history.size > 1) {
@@ -231,6 +250,30 @@ internal fun calendarActionLabel(item: PriorityItem): String? = when {
     item.actionUrl != null -> "Choose a time"
     else -> null
 }
+
+/**
+ * Opens the Gmail app rather than the browser. Gmail exposes no supported deep
+ * link to a single message (message URLs land on the inbox), so the full body
+ * is also readable in-app via "Show full email".
+ */
+private fun openInGmail(context: android.content.Context, url: String) {
+    val gmail = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(GMAIL_PACKAGE)
+    try {
+        context.startActivity(gmail)
+    } catch (_: ActivityNotFoundException) {
+        context.packageManager.getLaunchIntentForPackage(GMAIL_PACKAGE)?.let {
+            try {
+                context.startActivity(it)
+                return
+            } catch (_: ActivityNotFoundException) {
+                // Fall through to the web link.
+            }
+        }
+        openUri(context, url)
+    }
+}
+
+private const val GMAIL_PACKAGE = "com.google.android.gm"
 
 private fun openUri(context: android.content.Context, url: String) {
     try {

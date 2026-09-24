@@ -2,6 +2,7 @@ package com.lifeos.app
 
 import com.lifeos.app.domain.model.PriorityItem
 import com.lifeos.app.presentation.priority.PriorityCalendarLauncher
+import com.lifeos.app.presentation.priority.PriorityCategories
 import com.lifeos.app.presentation.priority.PriorityViewModel
 import com.lifeos.app.presentation.priority.calendarActionLabel
 import org.junit.Assert.assertEquals
@@ -12,14 +13,26 @@ import java.time.Instant
 
 class PriorityFeatureTest {
     @Test
-    fun filtersAreLabelAndStateBasedWithoutMutatingTheFeed() {
-        val interview = item(id = 1, labels = listOf("work", "interview"), state = "scheduled")
-        val personal = item(id = 2, labels = listOf("personal", "document"), state = "needs_action")
+    fun filtersAreCategoryAndStateBasedWithoutMutatingTheFeed() {
+        val interview = item(id = 1, labels = listOf("interview"), state = "scheduled")
+        val personal = item(id = 2, labels = listOf("personal"), state = "needs_action")
         val all = listOf(interview, personal)
 
         assertEquals(listOf(interview), PriorityViewModel.filterItems(all, "interview"))
         assertEquals(listOf(personal), PriorityViewModel.filterItems(all, "action"))
         assertEquals(all, PriorityViewModel.filterItems(all, "all"))
+    }
+
+    @Test
+    fun onlyNonEmptyFiltersAreOfferedAndLegacyLabelsFoldIntoCategories() {
+        val legacyInterview = item(id = 1, labels = listOf("work", "interview"), state = "scheduled")
+        val legacySecurity = item(id = 2, labels = listOf("security"), state = "informational")
+        val chips = PriorityViewModel.filterChips(listOf(legacyInterview, legacySecurity))
+
+        assertEquals(listOf("all", "scheduled", "interview", "account"), chips.map { it.key })
+        assertEquals(listOf(2, 1, 1, 1), chips.map { it.count })
+        assertEquals("Interview", PriorityCategories.name(PriorityCategories.of(legacyInterview)))
+        assertEquals(listOf(legacySecurity), PriorityViewModel.filterItems(listOf(legacyInterview, legacySecurity), "account"))
     }
 
     @Test

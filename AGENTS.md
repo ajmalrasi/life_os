@@ -1,5 +1,29 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Priority update (2026-09-24; supersedes older Priority notes below)
+
+Priority mail is now **model-led**. The regex classifier and the unreachable
+`ambiguity.py` review path are gone. `app/priority/classifier.py` makes two
+calls per message under the Jetson EdgeLLM build's **strict JSON-schema guided
+decoding** (`OpenClawClient.chat_json`, `response_format: json_schema`):
+triage (explicit yes/no questions, then one of five categories:
+`interview`, `job`, `event`, `account`, `personal`, or `none`) and, for kept
+mail, details (state, summary, action, quoted deadline/event times in IST).
+Code applies the stated policy to the model's own answers (selling, or mass
+mail / routine notice without a hiring process or required action → suppressed)
+and trusts a time only if the model's quote appears verbatim in the email. A
+structured ICS invite is authoritative; its parser now reads only VEVENT (the
+VTIMEZONE `DTSTART:16010101` caused 1601/1970 event times) and maps Windows
+zone names. The engine really decodes **batch 2**: `InferenceCoordinator`
+capacity is `openclaw_max_concurrency=2`, and sync runs two messages in
+parallel, newest first, within `priority_sync_budget_seconds` (100 s); a busy
+model leaves mail in `retry`, never guessed. Android shows chips only for
+non-empty categories, opens the Gmail app (Gmail has no supported per-message
+deep link — verified on device), and reads the full body in-app via
+`GET /priority/{id}/message` (fetched on demand, never stored). Evaluate
+prompt changes with `backend/scripts/evaluate_priority.py` on a real corpus.
+See `backend/docs/priority-mail.md`.
+
 ## Trips update (2026-09-17)
 
 Trips is now a phone-first Android feature under the navigation drawer. It uses a
@@ -31,7 +55,8 @@ answers to compensate for model errors; optional retrieval is the user's choice.
 The live runtime is **Qwen3.5-4B through TensorRT EdgeLLM**, on port 11434,
 launched from `/home/ajmalrasi/TensorRT-Edge-LLM`, using
 `/home/ajmalrasi/Qwen3.5-4B/engines/llm-b2-input6144-kv8192-vanilla`.
-Verified limits: 6,144 input / 8,192 total, one active sequence.
+Verified limits: 6,144 input / 8,192 total; the engine decodes two sequences
+together (batch 2, verified 2026-09-24).
 Ask counts the matching template/tokenizer via `/v1/messages/count_tokens`,
 budgets 6,000 input (with a 128-token margin), defaults to 1,024 output with a
 2,048 ceiling, and retains the 90-second call / 135-second request limits.
@@ -736,7 +761,7 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   lock plus a PostgreSQL advisory lock held on a dedicated connection, so
   automatic/manual Gmail jobs cannot overlap even if API workers are added. A
   collision returns HTTP 200 with a deferred message; the next incremental run
-  catches up. Priority production review remains `PRIORITY_LLM_ENABLED=false`.
+  catches up. (Priority is now model-led; see the 2026-09-24 Priority update.)
   NOTE: this runtime admission layer does not solve the Jetson's boot-time CUDA
   allocation race; the 4K model must still load from clean memory before
   ancillary containers are restored (§5 watchdog recovery).

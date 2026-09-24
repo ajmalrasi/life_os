@@ -68,17 +68,63 @@ successful inbox. Other mail consumers continue running.
 
 ## Classification behavior
 
-- Structured calendar invitations and deterministic action/date extraction run
-  before semantic classification.
-- Job digests, generic application receipts, newsletters, and educational
-  interview content are suppressed unless they contain a direct action.
-- Direct human messages, interviews, appointments, deadlines, documents,
-  security actions, and travel confirmations become Priority items.
-- Ambiguous candidates enter Review. Local-model review is off by default to
-  avoid competing with Ask; enable it with `PRIORITY_LLM_ENABLED=true` only if
-  desired.
-- Confirmations, reschedules, cancellations, and follow-ups update one Priority
-  thread while preserving source-message history.
+Every message is classified by the local Qwen model; there is no keyword
+classifier and no guessed fallback. `app/priority/classifier.py` makes two
+calls, both under the EdgeLLM build's server-side JSON-schema guided decoding
+(`response_format: json_schema`, strict), so enums and field types always hold:
+
+1. **Triage** (every message): a system prompt describing Ajmal and the five
+   categories returns `{reason, category, confidence}`. `reason` comes first so
+   the model states its evidence before deciding. `none` suppresses the mail.
+2. **Details** (only mail that passed triage): `{state, summary, action,
+   deadline, event_start, event_end, company, role, location}` with times as
+   `YYYY-MM-DDTHH:MM` IST.
+
+Categories: `interview`, `job`, `event`, `account`, `personal`. Android shows
+a filter chip only for categories (and states) that currently have mail, and
+folds pre-model labels (`work`, `security`, `travel`, ...) into these five.
+
+Deterministic code only gathers facts for the prompt (sender, whether Ajmal is
+in To/Cc, Gmail's own category and Important marker, reply-thread flag,
+attachments, a parsed calendar invite, what LifeOS already recorded for the
+thread; long URLs are reduced to `[link: domain]`) and validates the output:
+times must parse and fall between 60 days before and two years after receipt;
+a `scheduled` item without a usable time becomes an action or informational; a
+structured ICS invite is authoritative for event time and cancellation. Times
+are kept only when the model's `deadline_quote`/`event_quote` appears verbatim
+in the email. Code also applies the stated policy to the model's own triage
+answers (selling, or mass mail / routine notice without a hiring process or a
+required action, is suppressed) and suppresses `job` mail relayed by a known
+job board; board mail with a real interview slot or test stays `interview`.
+
+The guided decoder occasionally fails on some inputs (HTTP 500 "JSON output
+was incomplete at the token limit" on emoji-heavy marketing mail). `chat_json`
+then retries once unconstrained and validates the reply against the same
+schema locally. A message that still fails five times is marked `failed` and
+left out of the feed; a full sync retries it.
+
+The Jetson engine decodes two sequences together, so the sync runs two
+messages in parallel (`openclaw_max_concurrency=2`) and newest mail first. A
+sync stops starting new messages after `priority_sync_budget_seconds` (100 s)
+so an on-demand check fits Android's request timeout; the hourly timer picks
+up the rest. If the model is busy or unreachable the message stays `retry`
+and is classified on a later run. Confirmations, reschedules, cancellations,
+and follow-ups update one Priority thread while preserving source history.
+
+Evaluate prompt changes against real mail, not HTTP success:
+
+```bash
+OPENCLAW_BASE_URL=http://192.168.3.30:11434 \
+  python scripts/evaluate_priority.py corpus.json --out results.json
+```
+
+## Reading the source email
+
+Gmail's Android app exposes no supported deep link to one message (message
+URLs, `googlegmail://` and `content://gmail-ls` forms all land on the inbox),
+so **Open Gmail** launches the Gmail app itself, never the browser. The full
+body is readable in-app through `GET /priority/{id}/message`, which fetches it
+from Gmail on demand and never stores it.
 
 ## Calendar behavior
 

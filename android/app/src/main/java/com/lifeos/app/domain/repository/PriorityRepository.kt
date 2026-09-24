@@ -11,6 +11,8 @@ interface PriorityRepository {
     suspend fun refresh()
     suspend fun syncNow(): PrioritySyncResult
     suspend fun details(itemId: Int): PriorityDetails
+    /** The full source email, fetched from Gmail on demand (never cached). */
+    suspend fun fullMessage(itemId: Int): String
     suspend fun update(
         itemId: Int,
         state: String? = null,

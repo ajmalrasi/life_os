@@ -10,6 +10,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!-- Priority opens source mail in the Gmail app rather than the browser. -->
+    <queries>
+        <package android:name="com.google.android.gm" />
+    </queries>
+
     <!-- Cleartext is allowed so the app can reach the local Jetson over HTTP on LAN. -->
     <application
         android:name=".LifeOsApplication"

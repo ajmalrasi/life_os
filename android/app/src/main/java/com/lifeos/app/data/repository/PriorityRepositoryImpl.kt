@@ -36,6 +36,8 @@ class PriorityRepositoryImpl @Inject constructor(
 
     override suspend fun details(itemId: Int): PriorityDetails = api.priorityDetails(itemId).toDomain()
 
+    override suspend fun fullMessage(itemId: Int): String = api.priorityMessage(itemId).body
+
     override suspend fun update(
         itemId: Int,
         state: String?,

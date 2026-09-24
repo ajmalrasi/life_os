@@ -19,6 +19,9 @@ data class PriorityDetailsUiState(
     val loading: Boolean = true,
     val saving: Boolean = false,
     val message: String? = null,
+    val fullEmail: String? = null,
+    val fullEmailLoading: Boolean = false,
+    val fullEmailError: String? = null,
 )
 
 @HiltViewModel
@@ -43,6 +46,23 @@ class PriorityDetailsViewModel @Inject constructor(
                     _state.value = PriorityDetailsUiState(
                         loading = false,
                         message = it.message ?: "This Priority item could not be opened.",
+                    )
+                }
+        }
+    }
+
+    fun loadFullEmail() {
+        if (_state.value.fullEmailLoading || _state.value.fullEmail != null) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(fullEmailLoading = true, fullEmailError = null)
+            runCatching { repository.fullMessage(itemId) }
+                .onSuccess { body ->
+                    _state.value = _state.value.copy(fullEmail = body, fullEmailLoading = false)
+                }
+                .onFailure {
+                    _state.value = _state.value.copy(
+                        fullEmailLoading = false,
+                        fullEmailError = it.message ?: "The email could not be loaded from Gmail.",
                     )
                 }
         }

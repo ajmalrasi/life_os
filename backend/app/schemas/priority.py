@@ -52,6 +52,14 @@ class PriorityDetailsOut(BaseModel):
     history: list[PriorityHistoryOut]
 
 
+class PriorityMessageOut(BaseModel):
+    subject: str
+    sender: str
+    recipients: str
+    received_at: datetime | None
+    body: str
+
+
 class PriorityUpdate(BaseModel):
     state: str | None = None
     labels: list[str] | None = None

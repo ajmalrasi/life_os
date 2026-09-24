@@ -53,6 +53,15 @@ data class PriorityDetailsDto(
 )
 
 @Serializable
+data class PriorityMessageDto(
+    val subject: String,
+    val sender: String,
+    val recipients: String = "",
+    @SerialName("received_at") val receivedAt: String? = null,
+    val body: String,
+)
+
+@Serializable
 data class PriorityUpdateDto(
     val state: String? = null,
     val labels: List<String>? = null,

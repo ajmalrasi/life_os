@@ -14,8 +14,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class PriorityFilterChip(val key: String, val label: String, val count: Int)
+
 data class PriorityUiState(
     val items: List<PriorityItem> = emptyList(),
+    /** State filters plus only the categories that currently have mail. */
+    val chips: List<PriorityFilterChip> = emptyList(),
     val filter: String = "all",
     val loading: Boolean = true,
     val syncing: Boolean = false,
@@ -41,9 +45,13 @@ class PriorityViewModel @Inject constructor(
         repository.observeItems(),
         controls,
     ) { items, control ->
+        val chips = filterChips(items)
+        // A category filter whose last item was done/dismissed falls back to All.
+        val filter = control.filter.takeIf { key -> chips.any { it.key == key } } ?: "all"
         PriorityUiState(
-            items = filterItems(items, control.filter),
-            filter = control.filter,
+            items = filterItems(items, filter),
+            chips = chips,
+            filter = filter,
             loading = control.loading,
             syncing = control.syncing,
             message = control.message,
@@ -106,9 +114,24 @@ class PriorityViewModel @Inject constructor(
         fun filterItems(items: List<PriorityItem>, filter: String): List<PriorityItem> = when (filter) {
             "action" -> items.filter { it.state == "needs_action" }
             "scheduled" -> items.filter { it.state == "scheduled" }
-            "personal", "work", "interview", "security" -> items.filter { filter in it.labels }
-            "review" -> items.filter { it.importance == "review" }
+            in PriorityCategories.ordered -> items.filter { PriorityCategories.of(it) == filter }
             else -> items
+        }
+
+        fun filterChips(items: List<PriorityItem>): List<PriorityFilterChip> {
+            val states = listOf(
+                PriorityFilterChip("action", "Needs action", items.count { it.state == "needs_action" }),
+                PriorityFilterChip("scheduled", "Upcoming", items.count { it.state == "scheduled" }),
+            )
+            val categories = PriorityCategories.ordered.map { category ->
+                PriorityFilterChip(
+                    category,
+                    PriorityCategories.name(category),
+                    items.count { PriorityCategories.of(it) == category },
+                )
+            }
+            return listOf(PriorityFilterChip("all", "All", items.size)) +
+                (states + categories).filter { it.count > 0 }
         }
     }
 }

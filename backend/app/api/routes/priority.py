@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.mail.gmail_provider import MailProviderError
 from app.models.priority import PriorityItem
 from app.priority.service import PrioritySyncService
 from app.priority.notifications import PriorityNotificationService
@@ -14,6 +15,7 @@ from app.schemas.priority import (
     PriorityFeedbackIn,
     PriorityHistoryOut,
     PriorityItemOut,
+    PriorityMessageOut,
     PrioritySyncOut,
     PriorityUpdate,
 )
@@ -85,6 +87,30 @@ def priority_details(item_id: int, db: Session = Depends(get_db)) -> PriorityDet
         for message, snapshot in repo.history(item_id)
     ]
     return PriorityDetailsOut(item=_out(repo, item), history=history)
+
+
+@router.get("/{item_id}/message", response_model=PriorityMessageOut)
+def priority_message(item_id: int, db: Session = Depends(get_db)) -> PriorityMessageOut:
+    """Fetch the latest source email from Gmail on demand; bodies are never stored."""
+    repo = PriorityRepository(db)
+    item = repo.get(item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Priority item not found")
+    row = repo.latest_message(item)
+    service = PrioritySyncService(db)
+    try:
+        message = service._provider(repo.account(item)).get_message(row.provider_message_id)
+    except MailProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if message is None:
+        raise HTTPException(status_code=404, detail="The email is no longer in Gmail")
+    return PriorityMessageOut(
+        subject=message.subject,
+        sender=message.from_addr,
+        recipients=", ".join(value for value in (message.to_addrs, message.cc_addrs) if value),
+        received_at=row.received_at,
+        body=message.text.strip()[:60000],
+    )
 
 
 @router.patch("/{item_id}", response_model=PriorityItemOut)

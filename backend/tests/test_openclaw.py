@@ -211,3 +211,50 @@ def test_finance_inference_has_a_short_runtime_cap(monkeypatch):
     client.chat([{"role": "user", "content": "hello"}], timeout=90.0)
 
     assert captured["timeout"] == 30.0
+
+
+def test_inference_coordinator_admits_up_to_its_batch_capacity():
+    coordinator = InferenceCoordinator(capacity=2)
+    with coordinator.lease(InferenceWorkload.BACKGROUND, wait_timeout=0):
+        with coordinator.lease(InferenceWorkload.BACKGROUND, wait_timeout=0):
+            assert coordinator.status()["active_total"] == 2
+            with pytest.raises(OpenClawBusy):
+                with coordinator.lease(InferenceWorkload.BACKGROUND, wait_timeout=0):
+                    pass
+        with coordinator.lease(InferenceWorkload.FINANCE, wait_timeout=0):
+            assert coordinator.status()["active_total"] == 2
+    assert coordinator.status()["active_total"] == 0
+
+
+def test_chat_json_falls_back_when_guided_decoding_fails(monkeypatch):
+    schema = {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": ["a", "none"]},
+            "when": {"anyOf": [{"type": "string", "pattern": "^[0-9]{4}$"}, {"type": "null"}]},
+        },
+        "required": ["category", "when"],
+        "additionalProperties": False,
+    }
+    sent: list[dict] = []
+
+    def fake_post(self, url, json=None, headers=None):
+        sent.append(json)
+        request = httpx.Request("POST", url)
+        if "response_format" in json:
+            return httpx.Response(
+                500,
+                request=request,
+                json={"error": {"message": "JSON output was incomplete at the token limit", "type": "engine_error"}},
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            json={"choices": [{"finish_reason": "stop", "message": {"content": '{"category": "a", "when": null}'}}]},
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = OpenClawClient().chat_json([{"role": "user", "content": "x"}], schema, "t")
+    assert result == {"category": "a", "when": None}
+    assert "response_format" not in sent[1]
+    assert "string or null" in sent[1]["messages"][0]["content"]
