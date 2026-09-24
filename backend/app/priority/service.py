@@ -5,7 +5,7 @@ import os
 import tempfile
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from time import monotonic
 from email.utils import parsedate_to_datetime
 
@@ -278,8 +278,19 @@ class PrioritySyncService:
         self.db.commit()
 
         pending_limit = 1000 if full else 250
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.settings.priority_backfill_days)
+        rows = []
+        for row in self.intake.pending(account.id, limit=pending_limit):
+            received = row.received_at
+            if received is not None and received.tzinfo is None:
+                received = received.replace(tzinfo=timezone.utc)
+            if received is not None and received < cutoff:
+                # Outside the Priority window: no model time, never shown.
+                self.intake.mark_processed(row, "skipped", row.preview or "")
+                continue
+            rows.append(row)
         rows = sorted(
-            self.intake.pending(account.id, limit=pending_limit),
+            rows,
             key=lambda row: row.received_at.timestamp() if row.received_at else 0,
             reverse=True,  # Fresh mail first when the time budget runs out.
         )

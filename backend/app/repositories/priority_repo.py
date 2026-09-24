@@ -150,8 +150,10 @@ class PriorityRepository:
         include_done: bool = False,
         limit: int = 200,
         now: datetime | None = None,
+        window_days: int | None = None,
     ) -> list[PriorityItem]:
         current = now or datetime.now(timezone.utc)
+        oldest = current - timedelta(days=window_days) if window_days else None
         # Priority ordering depends on user overrides, due dates, event dates,
         # and snooze expiry. Select the complete (already-classified) feed before
         # applying that effective ordering so an arbitrary SQL limit cannot hide
@@ -162,6 +164,11 @@ class PriorityRepository:
         for item in rows:
             if item.effective_importance == "suppressed":
                 continue
+            if oldest and _utc(item.received_at) < oldest:
+                # Older mail stays only while its event or deadline is ahead.
+                upcoming = item.event_start or item.due_at
+                if upcoming is None or _utc(upcoming) < current:
+                    continue
             if item.user_state == "snoozed" and (
                 item.snoozed_until is None or _utc(item.snoozed_until) <= current
             ):

@@ -46,7 +46,9 @@ curl -fsS -X POST http://127.0.0.1:8000/priority/sync/check
 curl -fsS http://127.0.0.1:8000/mail/accounts
 ```
 
-The first sync scans the trailing 120 days. Full bodies are used transiently;
+Priority covers only the last 30 days (`priority_backfill_days`): the first
+sync scans that window, older queued mail is skipped without a model call, and
+the feed hides older items unless their event or deadline is still ahead. Full bodies are used transiently;
 LifeOS stores minimal metadata, a short verification preview, extracted fields,
 classification evidence, and the source Gmail identifiers.
 

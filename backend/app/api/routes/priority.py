@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.mail.gmail_provider import MailProviderError
 from app.models.priority import PriorityItem
@@ -66,7 +67,11 @@ def list_priority(
     db: Session = Depends(get_db),
 ) -> list[PriorityItemOut]:
     repo = PriorityRepository(db)
-    return [_out(repo, item) for item in repo.list(label, state, include_done, limit)]
+    window = get_settings().priority_backfill_days
+    return [
+        _out(repo, item)
+        for item in repo.list(label, state, include_done, limit, window_days=window)
+    ]
 
 
 @router.get("/{item_id}", response_model=PriorityDetailsOut)

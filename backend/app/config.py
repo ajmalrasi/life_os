@@ -68,7 +68,9 @@ class Settings(BaseSettings):
     # model (two batched calls); a sync stops starting new messages after this
     # budget so an on-demand check stays inside Android's request timeout, and
     # the remainder is picked up by the next hourly run.
-    priority_backfill_days: int = 120
+    # Priority only concerns the last month of mail: the Gmail scan window,
+    # the model queue, and the feed all use this.
+    priority_backfill_days: int = 30
     priority_sync_budget_seconds: float = 100.0
 
     # CC statement PDFs — unlock secrets. Passwords derive from name+DOB per

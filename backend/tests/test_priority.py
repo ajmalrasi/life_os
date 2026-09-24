@@ -27,8 +27,11 @@ def _message(
         "is confirmed for August 28, 2026 at 3:00 PM IST. It will take 60 minutes. "
         "Join https://meet.google.com/abc-defg-hij"
     ),
-    internal_ms: int = 1_777_365_600_000,
+    internal_ms: int | None = None,
 ) -> MailMessage:
+    if internal_ms is None:
+        # Two days ago: inside the Priority window (priority_backfill_days).
+        internal_ms = int((datetime.now(timezone.utc).timestamp() - 2 * 86_400) * 1000)
     return MailMessage(
         message_id=message_id,
         thread_id=thread_id,
@@ -449,3 +452,37 @@ def test_full_resync_keeps_items_the_user_marked_done(client, monkeypatch):
         service.priority.apply_update(service.priority.get(item_id), state="done")
         service.sync(full=True)
         assert service.priority.get(item_id).user_state == "done"
+
+
+def test_mail_older_than_the_window_is_skipped_without_the_model(client, monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "app.priority.service.classify",
+        lambda *a, **k: calls.append("model") or (_ for _ in ()).throw(AssertionError("no model")),
+    )
+    old = _message(internal_ms=int((datetime.now(timezone.utc).timestamp() - 45 * 86_400) * 1000))
+    provider = FakeProvider("career@example.com", [old])
+    with SessionLocal() as db:
+        MailAccountRepository(db).register("career@example.com", "priority", "Career inbox")
+        service = PrioritySyncService(db)
+        monkeypatch.setattr(service, "_provider", lambda _account: provider)
+        report = service.sync()
+        assert calls == []
+        assert report.items_new == 0 and report.pending == 0
+        assert db.query(MailMessageRecord).one().processing_state == "skipped"
+
+
+def test_feed_hides_items_older_than_the_window_unless_still_upcoming(client, monkeypatch):
+    provider = FakeProvider("career@example.com", [_message()])
+    with SessionLocal() as db:
+        MailAccountRepository(db).register("career@example.com", "priority", "Career inbox")
+        service = PrioritySyncService(db)
+        monkeypatch.setattr(service, "_provider", lambda _account: provider)
+        item = service.sync().new_items[0]
+        later = datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
+        from datetime import timedelta
+        # Received 45 days ago with an event still ahead: visible.
+        assert [i.id for i in service.priority.list(now=later + timedelta(days=43), window_days=30)] == [item.id]
+        item.event_start = item.event_end = None
+        db.commit()
+        assert service.priority.list(now=later + timedelta(days=43), window_days=30) == []
