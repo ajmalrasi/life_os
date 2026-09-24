@@ -238,8 +238,13 @@ def _category_facts(
     return facts, mtd_by_cat
 
 
+# "Other" and EMI make meaningless comparisons ("Travel is 17x Other").
+_NOT_COMPARABLE = {"other", "emi", "emi_fees"}
+
+
 def _comparison_facts(mtd_by_cat: dict[str, Decimal]) -> list[EvidenceFact]:
-    top6 = sorted(mtd_by_cat.items(), key=lambda kv: kv[1], reverse=True)[:6]
+    comparable = {c: a for c, a in mtd_by_cat.items() if c not in _NOT_COMPARABLE}
+    top6 = sorted(comparable.items(), key=lambda kv: kv[1], reverse=True)[:6]
     pairs: list[tuple[str, Decimal, str, Decimal, bool]] = []
     for i, (cat_a, amt_a) in enumerate(top6):
         for cat_b, amt_b in top6[i + 1 :]:
@@ -255,7 +260,13 @@ def _comparison_facts(mtd_by_cat: dict[str, Decimal]) -> list[EvidenceFact]:
 
     pairs.sort(key=lambda p: (not p[4], -(float(p[1]) / float(p[3]))))
     facts = []
-    for bigger, big_amt, smaller, small_amt, _ in pairs[:3]:
+    used_bigger: set[str] = set()
+    for bigger, big_amt, smaller, small_amt, _ in pairs:
+        # One comparison per larger category, so a single outlier (e.g. a
+        # trip month's travel) cannot fill every slot.
+        if bigger in used_bigger or len(facts) >= 3:
+            continue
+        used_bigger.add(bigger)
         multiple = float(big_amt) / float(small_amt)
         facts.append(
             EvidenceFact(
@@ -286,7 +297,7 @@ def _big_purchase_facts(
     return [
         EvidenceFact(
             id=f"big:{t.id}",
-            statement=f"{_money(t.amount)} to {t.counterparty or 'unknown'} on {t.txn_date.isoformat()} ({_label(cat)}).",
+            statement=f"{_money(t.amount)} to {t.counterparty or f'an unnamed payee ({t.account or t.source})'} on {t.txn_date.isoformat()} ({_label(cat)}).",
         )
         for t, cat in big
     ]
@@ -303,8 +314,10 @@ def _budget_facts(db: Session, categorize: Callable[[str], str], today: date) ->
             f"Spent {_money(pace.spent_so_far)} ({round(float(pace.spent_so_far) / float(pace.monthly_limit) * 100) if pace.monthly_limit else 0}%) "
             f"by day {pace.days_elapsed}; on pace for {_money(pace.projected_month_total)}"
         )
-        if pace.on_pace_to_exceed and pace.projected_exceed_day:
-            statement += f" — crosses the limit around day {pace.projected_exceed_day}"
+        if pace.spent_so_far > pace.monthly_limit:
+            statement += f", already over the limit by {_money(pace.spent_so_far - pace.monthly_limit)}"
+        elif pace.on_pace_to_exceed and pace.projected_exceed_day:
+            statement += f", crosses the limit around day {pace.projected_exceed_day}"
         statement += "."
         facts.append(EvidenceFact(id=f"budget:{pace.category}", statement=statement))
     return facts

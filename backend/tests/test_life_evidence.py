@@ -127,6 +127,30 @@ def test_budget_fact_present(client):
     assert any(f.id == "budget:food" for f in facts)
 
 
+def test_budget_already_over_says_so(client):
+    today = date.today()
+    with SessionLocal() as db:
+        db.add(Budget(category="fuel", monthly_limit=Decimal("1000")))
+        db.commit()
+    _seed_txn("1500.00", today, "PETROL PUMP", override="fuel")
+    facts = build_life_evidence(SessionLocal(), today=today)
+    fact = next(f for f in facts if f.id == "budget:fuel")
+    assert "already over the limit by ₹500" in fact.statement
+    assert "crosses the limit" not in fact.statement
+
+
+def test_comparisons_skip_other_and_repeat_categories(client):
+    today = date.today()
+    _seed_txn("20000.00", today, "AIRLINE", override="travel")
+    _seed_txn("1000.00", today, "MISC", override="other")
+    _seed_txn("1000.00", today, "ZOMATO ONLINE", override="food")
+    _seed_txn("1000.00", today, "AMAZON", override="shopping")
+    facts = build_life_evidence(SessionLocal(), today=today)
+    cmp_ids = [f.id for f in facts if f.id.startswith("cmp:")]
+    assert not any("other" in i for i in cmp_ids)
+    assert sum(i.startswith("cmp:travel_vs_") for i in cmp_ids) == 1
+
+
 def test_trip_fact_for_upcoming_trip_but_not_old_one(client):
     today = date.today()
     with SessionLocal() as db:
