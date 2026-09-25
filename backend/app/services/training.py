@@ -47,6 +47,10 @@ class WorkoutSummary:
     sessions_prev_28: int
     last: WorkoutSession | None           # most recent ever, even if older than 28 days
     days_since_last: int | None
+    # The latest session before the 28-day window, so a lone recent walk never
+    # hides how long ago the last real session was.
+    before_window: WorkoutSession | None
+    days_since_before_window: int | None
     sessions_last_7: int
     sessions_prev_7: int
     # False until the phone has sent a workouts export: absence is then unknown.
@@ -54,15 +58,18 @@ class WorkoutSummary:
 
 
 def workout_summary(health: HealthRepository, today: date) -> WorkoutSummary:
-    recent = health.workout_sessions(today - timedelta(days=27), today)
+    window_start = today - timedelta(days=27)
+    recent = health.workout_sessions(window_start, today)
     prev = health.workout_sessions(today - timedelta(days=55), today - timedelta(days=28))
-    last = recent[-1] if recent else None
-    if last is None:
-        latest = health.latest_workout(today)
-        if latest is not None:
-            day = workout_day(latest)
-            last = next((s for s in reversed(health.workout_sessions(day, day))), None)
+    before = None
+    older = health.latest_workout(window_start - timedelta(days=1))
+    if older is not None:
+        day = workout_day(older)
+        before = next((s for s in reversed(health.workout_sessions(day, day))), None)
+    last = recent[-1] if recent else before
     return WorkoutSummary(
+        before_window=before,
+        days_since_before_window=(today - workout_day(before)).days if before else None,
         recent=recent,
         sessions_prev_28=len(prev),
         last=last,
@@ -86,6 +93,11 @@ def workout_statement(s: WorkoutSummary) -> str:
         )
         if len(s.recent) > len(listed):
             parts.append(f"{len(s.recent) - len(listed)} earlier sessions in that window are not listed.")
+        if s.before_window is not None:
+            parts.append(
+                f"Latest workout before that window: {describe_session(s.before_window)}, "
+                f"{s.days_since_before_window} days ago."
+            )
     else:
         parts.append("No workouts in the last 28 days.")
         if s.last is not None:

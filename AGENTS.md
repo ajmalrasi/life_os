@@ -67,8 +67,16 @@ last training workout, and data freshness. Two automations push to
 `/health/auto-export`: Health Metrics (existing) and **Workouts** (added
 2026-09-25). Workouts keep their activity in `health_records.label`
 (migration `0004`); the watch's `duration` is used, not end minus start
-(pauses). Walks/hikes logged as workouts are "walking", never training
-(`day_brief.is_walk_workout`). A workouts export (even empty) touches
+(pauses). Each workout also stores `workout_energy` (kcal) and
+`workout_avg_hr` rows with the same times and label (all 542 XML workouts
+backfilled; the 28 Jun–Sep phone-pulled ones lack them). **Every workout
+counts, walks included, and no code threshold decides what "real" exercise
+is** (the user's rule: a daily 30-second session must not pass as training,
+but don't hard-code it). `services/training.py` lists each session with
+duration/energy/HR and `WORKOUT_JUDGEMENT_RULE` tells the model (Today brief,
+Insights mentor, weekly recap) to judge substance over count. The brief
+returns `workout_note` + `workout_attention` (migration `0005`); Android shows
+the note in Today's Needs you when flagged (opens Insights). A workouts export (even empty) touches
 collector key `hae:workouts`; until then the brief says workouts are
 "unknown, not zero". Workouts from 2026-06-14 to 2026-09-25 were backfilled
 once via the phone's MCP `get_workouts` tool (28 sessions; last training
