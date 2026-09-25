@@ -410,7 +410,7 @@ fun SettingsScreen(
                                 if (state.reopenLastTab) {
                                     "Opens the area you were last using (e.g. Trips or Today) when launching the app."
                                 } else {
-                                    "Always starts on Money when opening the app."
+                                    "Always starts on Today when opening the app."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = LifeOsColors.OnSurfaceMuted,

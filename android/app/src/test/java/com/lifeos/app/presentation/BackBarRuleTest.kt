@@ -6,13 +6,13 @@ import org.junit.Test
 
 class BackBarRuleTest {
     @Test
-    fun money_is_home_so_back_there_leaves_the_app() {
-        assertFalse(isOtherAreaRoot(Destination.MONEY.route))
+    fun today_is_home_so_back_there_leaves_the_app() {
+        assertFalse(isOtherAreaRoot(Destination.DASHBOARD.route))
     }
 
     @Test
-    fun back_on_any_other_area_returns_to_money() {
-        Destination.entries.filter { it != Destination.MONEY }.forEach {
+    fun back_on_any_other_area_returns_to_today() {
+        Destination.entries.filter { it != Destination.DASHBOARD }.forEach {
             assertTrue(it.route, isOtherAreaRoot(it.route))
         }
     }

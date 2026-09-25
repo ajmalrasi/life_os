@@ -39,7 +39,7 @@ class SettingsRepositoryImpl @Inject constructor(
     private val lastUsedTabKey = stringPreferencesKey("last_used_tab")
     private val defaultBaseUrl = com.lifeos.app.BuildConfig.DEFAULT_API_BASE_URL
     private val defaultReminderHour = 21 // 9 PM
-    private val defaultDestination = "money"
+    private val defaultDestination = "dashboard"
     private val validStartupDestinations = setOf(
         "money",
         "dashboard",

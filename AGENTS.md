@@ -55,6 +55,27 @@ calendar. Evaluate
 prompt changes with `backend/scripts/evaluate_priority.py` on a real corpus.
 See `backend/docs/priority-mail.md`.
 
+## Today overview update (2026-09-25)
+
+Today is now the home screen and the app's overview: default start
+destination (`DEFAULT_DESTINATION_ROUTE = "dashboard"`, used when "Reopen last
+used screen" is off or nothing was saved), first drawer entry, and where Back
+goes from other area roots. Below the model-written brief it adds, all from the
+local Room caches (works offline): **Needs you** (over-budget or on-pace
+budgets, and a card's *newest* statement if unpaid past due; older ones are
+superseded), the **trip card** (a tracked trip, else one under way, else the
+soonest starting within 14 days; countdown or day N with the next planned
+activity, plus card bills due during it), the **Money card** (month-to-date
+spend EMI excluded, matching Money and the widget; income share incl. EMI with
+a straight-line month-end estimate and savings-goal line; today / open cycles /
+billed; top two budgets), and **Next 14 days** (bills grouped per bank per day,
+trip start/end, expected recurring charges). Logic is pure and unit-tested in
+`presentation/dashboard/TodayOverview.kt`, reusing Money's `budgetPace`,
+`filterEmiTransactions` and dues rule; cards live in `TodayOverviewCards.kt`.
+Income and recurring charges are fetched online; a failed fetch just omits
+them. Device tests pick drawer entries by `Role.Tab`, because Today's cards
+also mention area names.
+
 ## Trips update (2026-09-17)
 
 Trips is now a phone-first Android feature under the navigation drawer. It uses a
@@ -1168,8 +1189,8 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   long statement/Priority detail pages. **Revised 2026-09-25:** drawer areas
   are siblings, not history. Choosing one from the drawer (or a notification/
   widget open) clears the stack so that area is the root and shows no Back bar.
-  System Back on a non-Money area root returns to Money, and Back on Money exits
-  the app. Only pages opened from inside an area show "Back to X": details,
+  System Back on a non-Today area root returns to Today, and Back on Today exits
+  the app (Money was home until the Today overview, below). Only pages opened from inside an area show "Back to X": details,
   Settings sub-pages, and in-page links such as Today's settings gear (which
   still returns to Today). The app can start on the last-used area, so "home" is
   never inferred from the stack. Every area root draws the shared fixed

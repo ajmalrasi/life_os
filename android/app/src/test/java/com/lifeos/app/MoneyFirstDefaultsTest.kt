@@ -14,8 +14,8 @@ import java.time.LocalDate
 class MoneyFirstDefaultsTest {
 
     @Test
-    fun money_overview_is_the_app_and_section_default() {
-        assertEquals("money", DEFAULT_DESTINATION_ROUTE)
+    fun today_is_the_app_default_and_money_opens_on_overview() {
+        assertEquals("dashboard", DEFAULT_DESTINATION_ROUTE)
         assertEquals(MoneySection.OVERVIEW, MoneyUiState().section)
         assertEquals(TransactionSort.RECENT, MoneyUiState().transactionSort)
     }

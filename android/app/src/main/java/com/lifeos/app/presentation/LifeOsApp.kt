@@ -91,9 +91,9 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
 }
 
 internal val navigationDestinations = listOf(
+    Destination.DASHBOARD,
     Destination.MONEY,
     Destination.PRIORITY,
-    Destination.DASHBOARD,
     Destination.MOOD,
     Destination.INSIGHTS,
     Destination.CHAT,
@@ -106,7 +106,7 @@ private const val PRIORITY_DETAILS_ROUTE = "priority/{itemId}"
 private const val TRIP_DETAILS_ROUTE = "trip/{tripId}"
 internal const val SETTINGS_MONEY_ROUTE = "settings/money"
 internal const val SETTINGS_TRIPS_ROUTE = "settings/trips"
-internal const val DEFAULT_DESTINATION_ROUTE = "money"
+internal const val DEFAULT_DESTINATION_ROUTE = "dashboard"
 
 @Composable
 fun LifeOsApp(
@@ -165,11 +165,11 @@ fun LifeOsApp(
         }
     }
 
-    // Money is home: system Back on any other area's root goes there rather
+    // Today is home: system Back on any other area's root goes there rather
     // than leaving the app. Registered before the pages so their own Back
     // handling (Money sections, Ask, full-screen map) still comes first.
     BackHandler(enabled = previousRoute == null && isOtherAreaRoot(currentRoute)) {
-        switchArea(Destination.MONEY)
+        switchArea(Destination.DASHBOARD)
     }
 
     ModalNavigationDrawer(
@@ -219,8 +219,11 @@ fun LifeOsApp(
                 }
                 composable(Destination.DASHBOARD.route) {
                     DashboardScreen(
-                        onOpenTrips = { openFromPage(Destination.TRIPS) },
                         onOpenPulse = { openFromPage(Destination.MOOD) },
+                        onOpenMoney = { openFromPage(Destination.MONEY) },
+                        onOpenCards = { openFromPage(Destination.MONEY) },
+                        onOpenStatement = { id -> navController.navigate("statement/$id") },
+                        onOpenTrip = { id -> navController.navigate("trip/$id") },
                     )
                 }
                 composable(Destination.MOOD.route) { MoodScreen() }
@@ -304,7 +307,7 @@ private fun LifeOsBackBar(previousLabel: String?, onBack: () -> Unit) {
 }
 
 internal fun isOtherAreaRoot(route: String?): Boolean =
-    route != Destination.MONEY.route && Destination.entries.any { it.route == route }
+    route != Destination.DASHBOARD.route && Destination.entries.any { it.route == route }
 
 /** Shown on a drawer area, giving quick access to the drawer without a Back. */
 @Composable

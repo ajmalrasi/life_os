@@ -1,5 +1,10 @@
 package com.lifeos.app.presentation
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
@@ -43,16 +48,17 @@ class BackNavigationUiTest {
     }
 
     @Test
-    fun drawer_areas_have_no_back_bar_and_system_back_returns_to_money() {
+    fun drawer_areas_have_no_back_bar_and_system_back_returns_to_today() {
         openArea("Pulse")
         compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
-        openArea("Today")
+        openArea("Money")
         compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Your vitals", ignoreCase = true).assertIsDisplayed()
+        compose.onNodeWithText("Overview").assertIsDisplayed()
         compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithText("Overview").assertIsDisplayed()
+        compose.onNodeWithText("Overview").assertDoesNotExist()
+        compose.onNodeWithText(LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d"))).assertIsDisplayed()
     }
 
     @Test
@@ -78,7 +84,9 @@ class BackNavigationUiTest {
 
     private fun openArea(label: String) {
         compose.onNodeWithContentDescription("Open navigation drawer").performClick()
-        compose.onNode(hasText(label) and hasClickAction()).performClick()
+        // Drawer entries are tabs; Today's own cards also mention area names.
+        compose.onNode(hasText(label) and hasClickAction() and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+            .performClick()
         compose.waitForIdle()
     }
 }

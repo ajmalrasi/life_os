@@ -1,10 +1,8 @@
 package com.lifeos.app.presentation.dashboard
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,10 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.TravelExplore
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,7 +29,6 @@ import com.lifeos.app.presentation.components.TrendChart
 import com.lifeos.app.presentation.components.VitalsCard
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.domain.model.TodaySummary
-import com.lifeos.app.trips.ui.TripsViewModel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -43,15 +36,17 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun DashboardScreen(
-    onOpenTrips: () -> Unit = {},
     onOpenPulse: () -> Unit = {},
+    onOpenMoney: () -> Unit = {},
+    onOpenCards: () -> Unit = {},
+    onOpenStatement: (Int) -> Unit = {},
+    onOpenTrip: (String) -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
-    tripsViewModel: TripsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
-    val tripsState by tripsViewModel.state.collectAsStateWithLifecycle()
-    val activeTrip = tripsState.trips.firstOrNull { it.status == "active" || it.status == "paused" }
+    val today = remember { LocalDate.now() }
+    val dateLabel = remember { today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
+    val overview = state.overview
 
     Column(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
         AreaHeader("Today", dateLabel)
@@ -72,30 +67,43 @@ fun DashboardScreen(
                 item { TodayBriefCard(state.today) }
             }
 
-            if (activeTrip != null) {
+            // Today is also the overview: what needs doing, the trip, and Money,
+            // all from local caches so it works offline like Money does.
+            if (overview != null && overview.attention.isNotEmpty()) {
                 item {
-                    LifeOsCard(
-                        modifier = Modifier.clickable(onClick = onOpenTrips),
-                        accent = LifeOsColors.AccentSky,
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(Icons.Rounded.TravelExplore, null, tint = LifeOsColors.Primary)
-                            Column {
-                                Text(activeTrip.title, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    if (activeTrip.status == "active") "Trip tracking is active" else "Trip tracking is paused",
-                                    color = LifeOsColors.OnSurfaceMuted,
-                                )
-                            }
+                    AttentionCard(overview.attention) { attention ->
+                        when {
+                            attention.statementId != null -> onOpenStatement(attention.statementId)
+                            attention.target == OverviewTarget.CARDS -> onOpenCards()
+                            attention.target == OverviewTarget.TRIP -> overview.trip?.let { onOpenTrip(it.id) }
+                            else -> onOpenMoney()
                         }
                     }
                 }
+            }
+            overview?.trip?.let { trip ->
+                item { TripOverviewCard(trip, onOpen = { onOpenTrip(trip.id) }) }
+            }
+            if (overview != null) {
+                item { MoneyOverviewCard(overview.money, today, onOpen = onOpenMoney) }
             }
 
             // Put the actionable daily readings ahead of the longer history.
             item { SectionHeader("Your vitals") }
             item { VitalsCard(history = state.scoreHistory, onCheckIn = onOpenPulse) }
             item { TrendChart(history = state.scoreHistory) }
+
+            if (overview != null && overview.upcoming.isNotEmpty()) {
+                item { SectionHeader("Next 14 days") }
+                item {
+                    UpcomingCard(
+                        items = overview.upcoming,
+                        onOpenStatement = onOpenStatement,
+                        onOpenTrip = onOpenTrip,
+                        onOpenMoney = onOpenMoney,
+                    )
+                }
+            }
 
             // Spend↔sleep is a signal the user can actually act on tonight, so it
             // gets its own card ahead of the general notification feed.
