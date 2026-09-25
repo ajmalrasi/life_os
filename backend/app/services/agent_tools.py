@@ -479,6 +479,7 @@ class AgentTools:
                 "note": "Data arrives when the iPhone syncs; today and last night may be incomplete.",
             },
             "workouts": in_window,
+            "by_month": _workouts_by_month(in_window),
             "window_totals": {
                 "training_workouts": sum(1 for w in in_window if w["kind"] == "training"),
                 "training_minutes": round(sum(w["minutes"] for w in in_window if w["kind"] == "training"), 1),
@@ -534,6 +535,23 @@ class AgentTools:
 
     def _remaining(self, maximum: float) -> float:
         return maximum if self.deadline is None else max(0.01, min(maximum, self.deadline-monotonic()))
+
+
+def _workouts_by_month(workouts: list[dict]) -> dict:
+    """Per-calendar-month totals, so "how many in July" never needs hand counting."""
+    months: dict[str, dict] = {}
+    for w in sorted(workouts, key=lambda w: w["day"]):
+        m = months.setdefault(w["day"][:7], {
+            "training_workouts": 0, "training_minutes": 0.0, "walking_workouts": 0, "_days": set(),
+        })
+        if w["kind"] == "training":
+            m["training_workouts"] += 1
+            m["training_minutes"] = round(m["training_minutes"] + w["minutes"], 1)
+            m["_days"].add(w["day"])
+        else:
+            m["walking_workouts"] += 1
+    return {k: {**{x: y for x, y in v.items() if x != "_days"}, "training_days": len(v["_days"])}
+            for k, v in months.items()}
 
 
 def _clamp_days(value) -> int:

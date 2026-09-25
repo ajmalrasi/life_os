@@ -65,7 +65,9 @@ For money comparisons use its compare_start_date and compare_end_date arguments
 in the SAME call. Report its computed difference/percent_change fields. Do not
 invent or mentally calculate additional percentages. Mention unequal period lengths.
 Statements are separate from spending. get_life_context provides a broad overview.
-health_records returns synced sleep hours, vitals, steps and workouts by type;
+health_records returns synced sleep hours, vitals, steps and workouts by type.
+For a named month or period pass its start_date and end_date, and report the
+tool's window_totals or by_month counts; never count workouts yourself.
 health_summary returns scores, not raw sleep hours.
 Tool results override any conflicting earlier assistant claims. In comparisons,
 label each amount using its actual query window; do not reverse the periods.

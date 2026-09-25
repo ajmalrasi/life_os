@@ -489,3 +489,8 @@ def test_health_records_counts_an_exact_calendar_month(client):
     assert result["window_totals"] == {
         "training_workouts": 2, "training_minutes": 141.0, "walking_workouts": 0, "training_days": 2,
     }
+    wide = AgentTools(SessionLocal()).health_records(90, f"{year}-06-01", f"{year}-08-31")
+    assert wide["by_month"][f"{year}-07"] == {
+        "training_workouts": 2, "training_minutes": 141.0, "walking_workouts": 0, "training_days": 2,
+    }
+    assert wide["by_month"][f"{year}-06"]["training_workouts"] == 1
