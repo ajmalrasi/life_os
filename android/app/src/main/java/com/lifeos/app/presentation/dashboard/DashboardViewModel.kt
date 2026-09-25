@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -151,7 +152,11 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 analyticsRepository.refresh(HISTORY_DAYS)
-                transient.value = transient.value.copy(notifications = analyticsRepository.notifications())
+                // Fetch first, then update atomically: reading the state before a
+                // network call and writing it back after wiped out the brief that
+                // arrived meanwhile ("Reading today's data..." forever).
+                val notifications = analyticsRepository.notifications()
+                transient.update { it.copy(notifications = notifications) }
             }.onFailure { e ->
                 val url = runCatching { settingsRepository.apiBaseUrl.first() }.getOrDefault("unknown")
                 setMessage("Backend unreachable ($url). Showing cached data.")
@@ -178,7 +183,7 @@ class DashboardViewModel @Inject constructor(
             repeat(BRIEF_POLLS) { attempt ->
                 if (attempt > 0) delay(BRIEF_POLL_MS)
                 val summary = runCatching { analyticsRepository.today() }.getOrNull() ?: return@launch
-                transient.value = transient.value.copy(today = summary)
+                transient.update { it.copy(today = summary) }
                 if (summary.briefStatus != "refreshing") return@launch
                 // Scores change alongside the brief, so pick those up too.
                 if (attempt > 0) runCatching { analyticsRepository.refresh(HISTORY_DAYS) }
@@ -192,11 +197,11 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun setPulseNote(note: String) {
-        transient.value = transient.value.copy(pulseNoteDraft = note, pulseSavedMessage = null)
+        transient.update { it.copy(pulseNoteDraft = note, pulseSavedMessage = null) }
     }
 
     fun discardPulseNote() {
-        transient.value = transient.value.copy(pulseNoteDraft = null)
+        transient.update { it.copy(pulseNoteDraft = null) }
     }
 
     /** A note is saved with today's pulse; without a pulse there is nothing to attach it to. */
@@ -210,22 +215,24 @@ class DashboardViewModel @Inject constructor(
 
     private fun savePulse(pulse: DayPulse, note: String?, message: String) {
         viewModelScope.launch {
-            transient.value = transient.value.copy(pulseSelected = pulse, pulseSubmitting = true, pulseSavedMessage = null)
+            transient.update { it.copy(pulseSelected = pulse, pulseSubmitting = true, pulseSavedMessage = null) }
             // Saved locally first (offline-first); the backend push and the
             // score recompute are best-effort and catch up on the next sync.
             val saved = runCatching { moodRepository.submit(pulse.toCheckin(note)) }.isSuccess
-            transient.value = transient.value.copy(
-                pulseSelected = if (saved) pulse else null,
-                pulseSubmitting = false,
-                pulseNoteDraft = if (saved) null else transient.value.pulseNoteDraft,
-                pulseSavedMessage = if (saved) message else "Couldn't save. Try again.",
-            )
+            transient.update {
+                it.copy(
+                    pulseSelected = if (saved) pulse else null,
+                    pulseSubmitting = false,
+                    pulseNoteDraft = if (saved) null else it.pulseNoteDraft,
+                    pulseSavedMessage = if (saved) message else "Couldn't save. Try again.",
+                )
+            }
             if (saved) runCatching { analyticsRepository.recompute(60) }
         }
     }
 
     private fun setMessage(msg: String) {
-        transient.value = transient.value.copy(message = msg)
+        transient.update { it.copy(message = msg) }
     }
 
     private companion object {

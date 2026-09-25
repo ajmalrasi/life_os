@@ -13,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -53,15 +54,26 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            _state.value = _state.value.copy(
-                baseUrl = settingsRepository.apiBaseUrl.first(),
-                apiToken = settingsRepository.apiToken.first(),
-                lastSyncAt = settingsRepository.lastSyncAt.first(),
-                pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first(),
-                pulseReminderHour = settingsRepository.pulseReminderHour.first(),
-                cardDueRemindersEnabled = settingsRepository.cardDueRemindersEnabled.first(),
-                reopenLastTab = settingsRepository.reopenLastTab.first(),
-            )
+            // Read everything first, then update atomically, so a result that
+            // lands while these reads suspend is never overwritten.
+            val baseUrl = settingsRepository.apiBaseUrl.first()
+            val apiToken = settingsRepository.apiToken.first()
+            val lastSyncAt = settingsRepository.lastSyncAt.first()
+            val pulseReminderEnabled = settingsRepository.pulseReminderEnabled.first()
+            val pulseReminderHour = settingsRepository.pulseReminderHour.first()
+            val cardDueRemindersEnabled = settingsRepository.cardDueRemindersEnabled.first()
+            val reopenLastTab = settingsRepository.reopenLastTab.first()
+            _state.update {
+                it.copy(
+                    baseUrl = baseUrl,
+                    apiToken = apiToken,
+                    lastSyncAt = lastSyncAt,
+                    pulseReminderEnabled = pulseReminderEnabled,
+                    pulseReminderHour = pulseReminderHour,
+                    cardDueRemindersEnabled = cardDueRemindersEnabled,
+                    reopenLastTab = reopenLastTab,
+                )
+            }
         }
         viewModelScope.launch {
             settingsRepository.lastSyncAt.collect { lastSyncAt ->
