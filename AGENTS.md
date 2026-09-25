@@ -61,7 +61,7 @@ LifeOS never contacts the iPhone. Health Auto Export's server now runs at
 `http://<phone>:9000/mcp` behind a bearer token and stops whenever the app
 closes, so the old `live_health` Ask tool and `phone_health_client.py` (plain
 TCP, no token) were removed with the `HAE_HOST`/`HAE_PORT` settings. Ask reads
-synced data through `health_records(days)`: per-day sleep/stages, resting HR,
+synced data through `health_records` (days or exact start/end dates): per-day sleep/stages, resting HR,
 HRV, steps, active energy, exercise minutes, every workout with its type, the
 last training workout, and data freshness. Two automations push to
 `/health/auto-export`: Health Metrics (existing) and **Workouts** (added
@@ -72,7 +72,9 @@ last training workout, and data freshness. Two automations push to
 collector key `hae:workouts`; until then the brief says workouts are
 "unknown, not zero". Workouts from 2026-06-14 to 2026-09-25 were backfilled
 once via the phone's MCP `get_workouts` tool (28 sessions; last training
-2026-07-29). The 542 older XML-import workouts have no stored type.
+2026-07-29). The 542 older XML-import workouts got their types on 2026-09-25
+by re-parsing the original `export.zip` (iCloud Drive Downloads) with the
+importer's own `source_id` rule and updating `label` only; all 570 are typed.
 
 ## Today overview update (2026-09-25)
 
