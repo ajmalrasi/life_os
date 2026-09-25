@@ -55,6 +55,25 @@ calendar. Evaluate
 prompt changes with `backend/scripts/evaluate_priority.py` on a real corpus.
 See `backend/docs/priority-mail.md`.
 
+## Workouts and synced health update (2026-09-25)
+
+LifeOS never contacts the iPhone. Health Auto Export's server now runs at
+`http://<phone>:9000/mcp` behind a bearer token and stops whenever the app
+closes, so the old `live_health` Ask tool and `phone_health_client.py` (plain
+TCP, no token) were removed with the `HAE_HOST`/`HAE_PORT` settings. Ask reads
+synced data through `health_records(days)`: per-day sleep/stages, resting HR,
+HRV, steps, active energy, exercise minutes, every workout with its type, the
+last training workout, and data freshness. Two automations push to
+`/health/auto-export`: Health Metrics (existing) and **Workouts** (added
+2026-09-25). Workouts keep their activity in `health_records.label`
+(migration `0004`); the watch's `duration` is used, not end minus start
+(pauses). Walks/hikes logged as workouts are "walking", never training
+(`day_brief.is_walk_workout`). A workouts export (even empty) touches
+collector key `hae:workouts`; until then the brief says workouts are
+"unknown, not zero". Workouts from 2026-06-14 to 2026-09-25 were backfilled
+once via the phone's MCP `get_workouts` tool (28 sessions; last training
+2026-07-29). The 542 older XML-import workouts have no stored type.
+
 ## Today overview update (2026-09-25)
 
 Today is now the home screen and the app's overview: default start
@@ -296,8 +315,9 @@ read (see §6):
 3. **Live push** from the iOS app **Health Auto Export** (Premium) →
    `POST /health/auto-export` (parser: `app/services/apple_ingest.py`). Recomputes
    touched days so the dashboard updates immediately. This is the unattended path.
-4. **Live pull** in the chat: the `live_health` tool
-   (`app/services/phone_health_client.py`) opens a TCP socket to the phone's Health
+4. ~~**Live pull** in the chat~~ — **REMOVED 2026-09-25** (see the Workouts
+   update at the top). Historically: the `live_health` tool
+   (`app/services/phone_health_client.py`) opened a TCP socket to the phone's Health
    Auto Export server (`192.168.3.212:9000`) for "right now / last night"
    questions. This is the interactive path.
 
@@ -1291,8 +1311,7 @@ backend/app/models/transaction_reconciliation.py # audited repayment pairs + Und
 backend/app/api/routes/health_data.py    # /health/batch + /health/auto-export
 backend/app/api/routes/analytics.py      # /analytics/recompute (bg github scan), scores, state
 backend/app/services/apple_ingest.py     # Health Auto Export JSON -> records
-backend/app/services/phone_health_client.py  # TCP client to the iPhone's HAE server
-backend/app/services/agent_tools.py      # chat tools incl. live_health
+backend/app/services/agent_tools.py      # chat tools incl. health_records
 backend/app/services/money_query.py      # guarded semantic transaction queries for Ask
 backend/app/services/card_cycles.py      # exact recorded spend in each open card cycle
 backend/app/services/analytics.py        # recompute_day / run_nightly / baselines

@@ -89,14 +89,6 @@ class Settings(BaseSettings):
     # "AJMAL RASI K P" -> "AJMAL RAS"). Falls back to cc_owner_name when unset.
     expense_owner_identities: str = ""  # e.g. "AJMAL RASI K P, ajmalrasi@upi"
 
-    # Health Auto Export TCP server on the iPhone (live, on-demand health pull).
-    # The app exposes a JSON-RPC TCP server on the LAN (Automations -> Server).
-    # Used by the chat's `live_health` tool. Host is the phone's IP (DHCP — set a
-    # reservation, or update when it changes). Empty host disables the tool.
-    hae_host: str = ""          # e.g. 192.168.3.212
-    hae_port: int = 9000
-    hae_timeout_seconds: float = 8.0  # short: the phone server is foreground-only
-
     # Push notifications (Firebase Cloud Messaging, HTTP v1).
     # Path to a Firebase service-account JSON. Leave blank to disable push;
     # the backend still generates notifications for the client to poll.

@@ -115,7 +115,7 @@ def _time_of_day(now: datetime) -> str:
     return "evening"
 
 
-def _is_walk(label: str | None) -> bool:
+def is_walk_workout(label: str | None) -> bool:
     """A walk or hike logged as a workout is still walking, not training."""
     return bool(label) and any(word in label.lower() for word in ("walk", "hik"))
 
@@ -124,9 +124,9 @@ def _workout_fact(health: HealthRepository, day: date) -> str:
     """Recent training, told apart from walking, and honest about missing exports."""
     window_start = day - timedelta(days=_WORKOUT_WINDOW - 1)
     history = health.workouts_between(date(1970, 1, 1), day)
-    training = [w for w in history if not _is_walk(w.label)]
+    training = [w for w in history if not is_walk_workout(w.label)]
     recent = [w for w in training if _local(w.start_time).date() >= window_start]
-    walks = [w for w in history if _is_walk(w.label) and _local(w.start_time).date() >= window_start]
+    walks = [w for w in history if is_walk_workout(w.label) and _local(w.start_time).date() >= window_start]
     parts: list[str] = []
     if recent:
         minutes = sum(w.value for w in recent)

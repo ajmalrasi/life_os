@@ -65,7 +65,8 @@ For money comparisons use its compare_start_date and compare_end_date arguments
 in the SAME call. Report its computed difference/percent_change fields. Do not
 invent or mentally calculate additional percentages. Mention unequal period lengths.
 Statements are separate from spending. get_life_context provides a broad overview.
-live_health reads the phone; health_summary returns scores, not raw sleep hours.
+health_records returns synced sleep hours, vitals, steps and workouts by type;
+health_summary returns scores, not raw sleep hours.
 Tool results override any conflicting earlier assistant claims. In comparisons,
 label each amount using its actual query window; do not reverse the periods.
 Describe transaction totals as RECORDED spending, not proof of all real spending.
@@ -77,7 +78,7 @@ Keep answers concise and complete. Mention relevant source dates.
 Do not expose internal reasoning or raw tool-call syntax."""
 ACTIVITIES = {
     "query_money": "Checking transactions", "get_life_context": "Checking your recent data",
-    "health_summary": "Checking health records", "live_health": "Checking your phone",
+    "health_summary": "Checking health scores", "health_records": "Checking health records",
     "git_log": "Checking coding activity", "github_events": "Checking GitHub activity",
     "github_search": "Looking up GitHub",
 }

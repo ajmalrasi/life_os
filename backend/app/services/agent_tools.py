@@ -26,23 +26,11 @@ from app.repositories.github_repo import GithubRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.github_mcp_client import GitHubMcpClient
 from app.services.money_query import query_money
-from app.services.phone_health_client import (
-    PhoneHealthClient,
-    PhoneHealthUnavailable,
-    extract_metrics,
-    format_hae_date,
-)
+from app.models.health import HealthRecordType
+from app.repositories.health_repo import HealthRepository
 from app.models.trip import TripBackup
 
 _MAX_DAYS = 90
-
-# A small, useful default set for the live phone pull — keeping the request small
-# matters because the phone server reads ~8 KB per message.
-_DEFAULT_LIVE_METRICS = (
-    "heart_rate,resting_heart_rate,sleep_analysis,blood_oxygen_saturation,"
-    "respiratory_rate,step_count,active_energy"
-)
-
 
 # OpenAI-style function schemas advertised to the model.
 TOOL_SCHEMAS: list[dict] = [
@@ -246,31 +234,23 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "live_health",
+            "name": "health_records",
             "description": (
-                "Pull LIVE Apple Health data straight from the user's iPhone right now "
-                "(real-time heart rate, today's steps, last night's sleep stages, SpO2). "
-                "Use for 'right now' / 'today' / 'last night' questions, or when the stored "
-                "data is too stale to answer. Requires the phone's Health Auto Export "
-                "server to be running and on the same Wi-Fi; if it isn't reachable the tool "
-                "returns an error explaining how to start it."
+                "Stored Apple Health data synced from the user's iPhone and Apple Watch: "
+                "per-day sleep hours and stages, resting heart rate, HRV, steps, active "
+                "energy and exercise minutes, plus every workout with its type (e.g. "
+                "Traditional Strength Training) and the last training workout. Walks logged "
+                "as workouts are marked as walking, not training. Includes when data last "
+                "arrived, so recent days may be incomplete."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "metrics": {
-                        "type": "string",
-                        "description": (
-                            "Comma-separated Health Auto Export metric names, e.g. "
-                            "'heart_rate,sleep_analysis,step_count'. Omit for a sensible "
-                            "default set. Keep the list short."
-                        ),
-                    },
-                    "hours": {
+                    "days": {
                         "type": "integer",
-                        "description": "Look-back window in hours (1-168). Default 24.",
-                        "default": 24,
-                    },
+                        "description": "How many trailing days to cover (1-90).",
+                        "default": 14,
+                    }
                 },
             },
         },
@@ -335,11 +315,6 @@ class AgentTools:
                     tool=args.get("tool", ""),
                     arguments=args.get("arguments"),
                 )
-            if name == "live_health":
-                return self.live_health(
-                    metrics=args.get("metrics", ""),
-                    hours=args.get("hours", 24),
-                )
             if name == "query_money":
                 return query_money(self.db, **args)
             days = _clamp_days(args.get("days", 14))
@@ -347,6 +322,7 @@ class AgentTools:
                 "git_log": self.git_log,
                 "github_events": self.github_events,
                 "health_summary": self.health_summary,
+                "health_records": self.health_records,
             }[name]
             return handler(days)
         except Exception as exc:  # tools must degrade, never crash the chat
@@ -428,47 +404,67 @@ class AgentTools:
             return {"error": f"github-mcp-server unreachable or tool '{tool}' failed"}
         return {"tool": tool, "result": result}
 
-    def live_health(self, metrics: str = "", hours: int = 24) -> dict:
-        """Pull live Apple Health metrics from the iPhone's TCP server, summarized."""
-        settings = get_settings()
-        client = PhoneHealthClient(
-            settings.hae_host, settings.hae_port, self._remaining(settings.hae_timeout_seconds)
-        )
-        if not client.configured:
-            return {"error": "live phone health is not configured (HAE_HOST is unset)."}
+    def health_records(self, days: int) -> dict:
+        """Synced Apple Health readings and workouts; never contacts the phone."""
+        from app.services.day_brief import is_walk_workout
 
-        try:
-            window_hours = max(1, min(168, int(hours)))
-        except (TypeError, ValueError):
-            window_hours = 24
-        end = datetime.now(ZoneInfo("Asia/Kolkata"))
-        start = end - timedelta(hours=window_hours)
+        start, end = _window(days)
+        health = HealthRepository(self.db)
 
-        try:
-            response = client.call_tool(
-                "health_metrics",
-                {
-                    "start": format_hae_date(start),
-                    "end": format_hae_date(end),
-                    "interval": "days",
-                    "aggregate": True,
-                },
-                metrics=(metrics or _DEFAULT_LIVE_METRICS),
-            )
-        except PhoneHealthUnavailable as exc:
+        def total(d: date, t) -> float | None:
+            vals = health.daily_values(d, t)
+            return round(sum(vals), 1) if vals else None
+
+        def mean(d: date, t) -> float | None:
+            vals = health.daily_values(d, t)
+            return round(sum(vals) / len(vals), 1) if vals else None
+
+        # Newest days first: the chat bounds long lists, and recent days matter most.
+        daily = []
+        d = end
+        while d >= start:
+            night = health.sleep_for_day(d)
+            daily.append({
+                "day": d.isoformat(),
+                "sleep_hours": round(night.total_hours, 2) if night else None,
+                "deep_hours": round(night.deep_hours, 2) if night and night.deep_hours is not None else None,
+                "rem_hours": round(night.rem_hours, 2) if night and night.rem_hours is not None else None,
+                "resting_hr_bpm": mean(d, HealthRecordType.RESTING_HEART_RATE),
+                "hrv_ms": mean(d, HealthRecordType.HRV),
+                "steps": total(d, HealthRecordType.STEPS),
+                "active_kcal": total(d, HealthRecordType.CALORIES),
+                "exercise_minutes": total(d, "apple_exercise_time"),
+            })
+            d -= timedelta(days=1)
+
+        def workout(w) -> dict:
+            local = w.start_time.astimezone(ZoneInfo("Asia/Kolkata")) if w.start_time.tzinfo else w.start_time
             return {
-                "error": f"iPhone live health server could not be reached ({exc})",
-                "setup": {"app": "Health Auto Export", "path": "Automations > Server > Start Server",
-                          "network": "Phone must be on the same Wi-Fi",
-                          "availability": "The app must remain open in the foreground"},
+                "day": local.date().isoformat(),
+                "start": local.strftime("%H:%M"),
+                "type": w.label or "Workout (type not recorded)",
+                "minutes": round(w.value, 1),
+                "kind": "walking" if is_walk_workout(w.label) else "training",
             }
 
-        summarized = [_summarize_live_metric(m) for m in extract_metrics(response)]
+        in_window = [workout(w) for w in reversed(health.workouts_between(start, end))]
+        training = [w for w in health.workouts_between(date(1970, 1, 1), end) if not is_walk_workout(w.label)]
+        last_received = health.last_received_at()
+        export_seen = health.workout_export_seen_at()
         return {
-            "source": "iphone_live",
-            "window": {"start": start.isoformat(), "end": end.isoformat(),
-                       "hours": window_hours},
-            "metrics": [m for m in summarized if m],
+            "window": _win(start, end, days),
+            "freshness": {
+                "health_data_last_arrived": last_received.isoformat() if last_received else None,
+                "workouts_sync": (
+                    f"active since {export_seen.date().isoformat()}" if export_seen
+                    else "not set up; workouts after mid-June 2026 are unknown, not zero"
+                ),
+                "note": "Data arrives when the iPhone syncs; today and last night may be incomplete.",
+            },
+            "workouts": in_window,
+            "training_workouts_in_window": sum(1 for w in in_window if w["kind"] == "training"),
+            "last_training_workout": workout(training[-1]) if training else None,
+            "daily": daily,
         }
 
     def health_summary(self, days: int) -> dict:
@@ -516,30 +512,6 @@ class AgentTools:
 
     def _remaining(self, maximum: float) -> float:
         return maximum if self.deadline is None else max(0.01, min(maximum, self.deadline-monotonic()))
-
-
-def _summarize_live_metric(metric: dict) -> dict | None:
-    """Compact a live-metric block to its most recent reading (keeps payload tiny)."""
-    if not isinstance(metric, dict):
-        return None
-    name = metric.get("name") or ""
-    points = metric.get("data") or []
-    if not name or not isinstance(points, list) or not points:
-        return None
-    last = points[-1]
-    if not isinstance(last, dict):
-        return None
-    units = metric.get("units") or ""
-
-    if name == "sleep_analysis":
-        keep = ("date", "sleepStart", "sleepEnd", "totalSleep", "asleep",
-                "deep", "rem", "core", "awake", "inBed")
-    elif any(k in last for k in ("Min", "Avg", "Max")):
-        keep = ("date", "Min", "Avg", "Max")
-    else:
-        keep = ("date", "qty")
-    latest = {k: last[k] for k in keep if k in last}
-    return {"name": name, "units": units, "samples": len(points), "latest": latest}
 
 
 def _clamp_days(value) -> int:

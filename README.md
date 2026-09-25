@@ -66,8 +66,10 @@ There are three supported paths:
 2. **Historical backfill:** `backend/scripts/import_apple_health.py` streams a
    large Apple `export.zip` or `export.xml` into the idempotent
    `POST /health/batch` endpoint.
-3. **Live Ask tool:** `phone_health_client.py` can query Health Auto Export's
-   foreground TCP server for questions about the most recent readings.
+3. **Workouts:** a second Health Auto Export automation (Data Type = Workouts,
+   same URL) sends each workout with its type. Ask reads all of this from the
+   Jetson (`health_records` tool); it never contacts the phone, whose server only
+   runs while the app is open.
 
 For the Health Auto Export automation, use JSON, **Summarize Data = ON**, daily
 grouping, **Since Last Sync**, and a frequent cadence while the iPhone is on the
@@ -177,7 +179,6 @@ Important settings:
 | `OPENCLAW_BASE_URL`, `OPENCLAW_MODEL` | OpenAI-compatible local model endpoint and model name |
 | `OPENCLAW_TIMEOUT_SECONDS`, `OPENCLAW_CHAT_DEADLINE_SECONDS`, `OPENCLAW_MAX_TOKENS` | Ask latency and generation bounds; keep the Android 150-second read timeout in mind |
 | `GITHUB_TOKEN`, `GITHUB_USER` | Read-only execution discovery by author; `GITHUB_REPOS` is retained only for chat/backward compatibility |
-| `HAE_HOST`, `HAE_PORT` | Optional foreground live-health TCP server on the iPhone |
 | `GOGCLI_DATA_DIR`, `GOG_KEYRING_PASSWORD` | Persistent encrypted gog OAuth/keyring storage |
 | `CC_OWNER_NAME`, `CC_OWNER_DOB`, `CC_PDF_PASSWORD_OVERRIDES` | Credit-card PDF unlock inputs |
 | `EXPENSE_OWNER_IDENTITIES` | Names/UPI handles used to exclude self-transfers |

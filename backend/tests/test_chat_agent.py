@@ -143,8 +143,7 @@ def test_tool_deadline_is_enforced(client, monkeypatch):
         with pytest.raises(OpenClawTimeout):
             ChatService(db)._tool("health_summary", {}, monotonic()-1)
 
-def test_unavailable_live_tools_are_error_data(client, monkeypatch):
-    monkeypatch.setattr(agent_tools.get_settings(), "hae_host", "")
+def test_unavailable_live_tools_are_error_data(client):
     with SessionLocal() as db:
         assert AgentTools(db).run("live_health", {})["status"] == "error"
         assert AgentTools(db).run("github_search", {"tool": "delete_repository"})["status"] == "error"
@@ -437,3 +436,32 @@ def test_money_comparison_computes_exact_changes(client):
         empty = query_money(db, start_date="2026-09-01", end_date="2026-09-13",
                             compare_start_date="2026-07-01", compare_end_date="2026-07-31")
         assert empty["comparison"]["change"]["percent_change"] is None
+
+
+def test_health_records_reads_synced_data_and_separates_walks(client):
+    from datetime import date, datetime, timedelta
+    from app.repositories.health_repo import HealthRepository
+    from app.schemas.health import HealthRecordIn
+
+    today = date.today()
+    at = lambda d, h: datetime.combine(d, datetime.min.time()).replace(hour=h)
+    with SessionLocal() as db:
+        repo = HealthRepository(db)
+        repo.bulk_insert([
+            HealthRecordIn(source_id="hae-s", type="steps", value=4200, unit="count",
+                           start_time=at(today, 9), end_time=at(today, 9)),
+            HealthRecordIn(source_id="hae-w1", type="workout", value=50, unit="min",
+                           start_time=at(today - timedelta(days=3), 21), end_time=at(today - timedelta(days=3), 22),
+                           label="Traditional Strength Training"),
+            HealthRecordIn(source_id="hae-w2", type="workout", value=19, unit="min",
+                           start_time=at(today - timedelta(days=1), 18), end_time=at(today - timedelta(days=1), 19),
+                           label="Outdoor Walk"),
+        ])
+        result = AgentTools(db).run("health_records", {"days": 7})
+    assert result["daily"][0]["day"] == today.isoformat() and result["daily"][0]["steps"] == 4200
+    assert [(w["type"], w["kind"]) for w in result["workouts"]] == [
+        ("Outdoor Walk", "walking"), ("Traditional Strength Training", "training"),
+    ]
+    assert result["training_workouts_in_window"] == 1
+    assert result["last_training_workout"]["type"] == "Traditional Strength Training"
+    assert "not set up" in result["freshness"]["workouts_sync"]

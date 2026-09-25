@@ -38,8 +38,6 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_REPOS: ${GITHUB_REPOS:-}
       GITHUB_USER: ${GITHUB_USER:-}
-      HAE_HOST: ${HAE_HOST:-}
-      HAE_PORT: ${HAE_PORT:-9000}
       # Expense collector — read-only Gmail via the baked-in gog binary. Auth is
       # the mounted gogcli config below; only the keyring password is a secret.
       GMAIL_ACCOUNT: ${GMAIL_ACCOUNT:-}
