@@ -72,9 +72,11 @@ last training workout, and data freshness. Two automations push to
 backfilled; the 28 Jun–Sep phone-pulled ones lack them). **Every workout
 counts, walks included, and no code threshold decides what "real" exercise
 is** (the user's rule: a daily 30-second session must not pass as training,
-but don't hard-code it). `services/training.py` lists each session with
-duration/energy/HR and `WORKOUT_JUDGEMENT_RULE` tells the model (Today brief,
-Insights mentor, weekly recap) to judge substance over count. The brief
+but don't hard-code it). `services/training.py` gives the model 13 weeks: each session with
+duration/energy/HR, a week-by-week sessions/minutes series and days since the
+last workout; `WORKOUT_JUDGEMENT_RULE` (Today brief, Insights mentor, weekly
+recap) says to judge the routine and its trend (how often, how recently,
+building or fading), not one session. A 19-min walk counts as real. The brief
 returns `workout_note` + `workout_attention` (migration `0005`); Android shows
 the note in Today's Needs you when flagged (opens Insights). A workouts export (even empty) touches
 collector key `hae:workouts`; until then the brief says workouts are

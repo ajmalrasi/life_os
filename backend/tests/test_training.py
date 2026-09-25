@@ -44,9 +44,11 @@ def test_summary_lists_every_session_with_its_effort(client):
     )
     s = workout_summary(repo, today)
     db.close()
-    # Three token sessions still count as sessions; the model is shown how small they were.
-    assert len(s.recent) == 3 and s.sessions_prev_28 == 1 and s.days_since_last == 1
-    assert [(w.minutes, w.energy_kcal) for w in s.recent] == [(0.5, 2.0)] * 3
+    # Token sessions still count; the model is shown how small they were.
+    assert len(s.recent) == 4 and s.days_since_last == 1
+    assert s.weekly_counts == [0] * 7 + [1, 0, 0, 0, 0, 3]
+    assert s.weekly_minutes[-1] == 1.5
+    assert [(w.minutes, w.energy_kcal) for w in s.recent[1:]] == [(0.5, 2.0)] * 3
 
 
 def test_insights_and_weekly_recap_see_workouts_with_details(client):
@@ -57,7 +59,8 @@ def test_insights_and_weekly_recap_see_workouts_with_details(client):
     repo.mark_workout_export()
 
     fact = next(f for f in life_evidence._life_signal_facts(db, today) if f.id == "health:workouts")
-    assert "No workouts in the last 28 days." in fact.statement
+    assert "Workouts in the last 13 weeks (1):" in fact.statement
+    assert "Days since the most recent workout: 58." in fact.statement
     assert "(58 days ago)" in fact.statement
     assert "Traditional Strength Training, 50 min, 367 kcal active" in fact.statement
 
@@ -67,18 +70,22 @@ def test_insights_and_weekly_recap_see_workouts_with_details(client):
     db.close()
 
 
-def test_a_recent_walk_does_not_hide_the_last_real_session(client):
+def test_one_session_in_a_quiet_stretch_shows_the_gaps_on_both_sides(client):
+    """The Sep 2026 case: a June routine, Jul 29 lifting, one 19-minute walk 21 days ago."""
     today = date.today()
     db = SessionLocal()
     repo = HealthRepository(db)
     repo.bulk_insert(
-        _rows("hae-lift", today - timedelta(days=58), 50, "Traditional Strength Training", 367)
+        [r for d in (86, 84, 82) for r in _rows(f"hae-june{d}", today - timedelta(days=d), 60, "Traditional Strength Training", 400)]
+        + _rows("hae-lift", today - timedelta(days=58), 50, "Traditional Strength Training", 367)
         + _rows("hae-walk", today - timedelta(days=21), 19, "Outdoor Walk")
     )
     from app.services.training import workout_statement
     statement = workout_statement(workout_summary(repo, today))
     db.close()
-    assert "Workouts in the last 28 days (1):" in statement and "Outdoor Walk, 19 min" in statement
-    assert "Latest workout before that window:" in statement
-    assert "(58 days ago)" in statement and "(21 days ago)" in statement
-    assert "Traditional Strength Training, 50 min, 367 kcal active" in statement
+    assert "Workouts in the last 13 weeks (5):" in statement
+    assert "(21 days ago)" in statement and "Outdoor Walk, 19 min" in statement
+    assert "(58 days ago)" in statement and "Traditional Strength Training, 50 min" in statement
+    # The trend reads directly: a routine, one session, a long gap, one walk, nothing since.
+    assert "as sessions/minutes: 2/120, 1/60, 0/0, 0/0, 1/50, 0/0, 0/0, 0/0, 0/0, 1/19, 0/0, 0/0, 0/0." in statement
+    assert "Days since the most recent workout: 21." in statement

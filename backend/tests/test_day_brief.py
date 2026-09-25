@@ -223,7 +223,8 @@ def test_each_workout_keeps_its_type_duration_energy_and_heart_rate(client):
     db.close()
 
     fact = _workout_fact(today)
-    assert "Workouts in the last 28 days (2):" in fact
+    assert "Workouts in the last 13 weeks (2):" in fact
+    assert "as sessions/minutes: " + "0/0, " * 12 + "2/60." in fact
     assert "Traditional Strength Training, 40 min, 367 kcal active, avg HR 128 bpm" in fact
     assert "Functional Strength Training, 20 min, 54 kcal active" in fact
     assert "unknown" not in fact
@@ -234,13 +235,14 @@ def test_workouts_are_unknown_until_the_phone_sends_a_workouts_export(client):
     db = SessionLocal()
     HealthRepository(db).bulk_insert([HealthRecordIn(
         source_id="apple-w1", type="workout", value=52, unit="min",
-        start_time=_at(today - timedelta(days=90), 20), end_time=_at(today - timedelta(days=90), 21),
+        start_time=_at(today - timedelta(days=100), 20), end_time=_at(today - timedelta(days=100), 21),
         label="Traditional Strength Training",
     )])
     db.close()
     fact = _workout_fact(today)
-    assert "No workouts in the last 28 days." in fact
-    assert "(90 days ago)" in fact and "Traditional Strength Training, 52 min" in fact
+    assert "No workouts in the last 13 weeks." in fact
+    assert "Days since the most recent workout: 100." in fact
+    assert "(100 days ago)" in fact and "Traditional Strength Training, 52 min" in fact
     assert "unknown, not zero" in fact
 
     # An empty workouts export means "none recorded", not "not sent".
