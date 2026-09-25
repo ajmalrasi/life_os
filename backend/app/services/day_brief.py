@@ -115,31 +115,45 @@ def _time_of_day(now: datetime) -> str:
     return "evening"
 
 
+def _is_walk(label: str | None) -> bool:
+    """A walk or hike logged as a workout is still walking, not training."""
+    return bool(label) and any(word in label.lower() for word in ("walk", "hik"))
+
+
 def _workout_fact(health: HealthRepository, day: date) -> str:
     """Recent training, told apart from walking, and honest about missing exports."""
-    recent = health.workouts_between(day - timedelta(days=_WORKOUT_WINDOW - 1), day)
-    last = health.latest_workout(day)
+    window_start = day - timedelta(days=_WORKOUT_WINDOW - 1)
+    history = health.workouts_between(date(1970, 1, 1), day)
+    training = [w for w in history if not _is_walk(w.label)]
+    recent = [w for w in training if _local(w.start_time).date() >= window_start]
+    walks = [w for w in history if _is_walk(w.label) and _local(w.start_time).date() >= window_start]
     parts: list[str] = []
     if recent:
         minutes = sum(w.value for w in recent)
         kinds = ", ".join(dict.fromkeys(w.label or "Workout" for w in recent))
         parts.append(
-            f"Workouts in the last {_WORKOUT_WINDOW} days: {len(recent)}, {minutes:.0f} min in total ({kinds})."
+            f"Training workouts in the last {_WORKOUT_WINDOW} days: {len(recent)}, {minutes:.0f} min in total ({kinds})."
         )
-    if last is not None:
+    if training:
+        last = training[-1]
         d = _local(last.start_time).date()
         ago = (day - d).days
         when = _when(d, day) if ago <= 1 else f"{_when(d, day)}, {ago} days ago"
-        parts.append(f"Most recent recorded workout: {last.label or 'Workout'}, {last.value:.0f} min ({when}).")
+        parts.append(f"Most recent training workout: {last.label or 'Workout'}, {last.value:.0f} min ({when}).")
     else:
-        parts.append("No workout has ever been recorded.")
+        parts.append("No training workout has ever been recorded.")
+    if walks:
+        parts.append(
+            f"Walks logged as workouts in the last {_WORKOUT_WINDOW} days: {len(walks)}, "
+            f"{sum(w.value for w in walks):.0f} min; these are walking, not training."
+        )
     if health.workout_export_seen_at() is None:
         parts.append(
             "The phone does not send workouts yet, so workouts after the Apple Health history "
             "import are unknown, not zero."
         )
     elif not recent:
-        parts.append(f"No workouts in the last {_WORKOUT_WINDOW} days.")
+        parts.append(f"No training workouts in the last {_WORKOUT_WINDOW} days.")
     return " ".join(parts)
 
 

@@ -147,7 +147,9 @@ def _workout_record(w: dict[str, Any]) -> HealthRecordIn | None:
     end = _parse_date(w.get("end") or w.get("endDate"))
     if start is None or end is None or end <= start:
         return None
-    minutes = (end - start).total_seconds() / 60.0
+    # The watch's own duration (seconds) excludes pauses; end - start does not.
+    duration = _to_float(w.get("duration"))
+    minutes = duration / 60.0 if duration and duration > 0 else (end - start).total_seconds() / 60.0
     name = w.get("name") or w.get("workoutActivityType") or "workout"
     return HealthRecordIn(
         source_id=_sid("workout", w.get("start") or str(start), name),

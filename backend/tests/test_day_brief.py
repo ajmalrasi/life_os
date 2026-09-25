@@ -218,9 +218,9 @@ def test_workout_type_is_kept_and_both_strength_sessions_are_told_apart(client):
     db.close()
 
     fact = _workout_fact(today)
-    assert "Workouts in the last 28 days: 2, 60 min in total" in fact
+    assert "Training workouts in the last 28 days: 2, 60 min in total" in fact
     assert "Traditional Strength Training, Functional Strength Training" in fact
-    assert "Most recent recorded workout: Functional Strength Training, 20 min" in fact
+    assert "Most recent training workout: Functional Strength Training, 20 min" in fact
     assert "3 days ago" in fact
     assert "unknown" not in fact
 
@@ -241,7 +241,7 @@ def test_workouts_are_unknown_until_the_phone_sends_a_workouts_export(client):
     client.post("/health/auto-export", json={"data": {"workouts": []}})
     fact = _workout_fact(today)
     assert "unknown" not in fact
-    assert "No workouts in the last 28 days." in fact
+    assert "No training workouts in the last 28 days." in fact
 
     # A health-metrics export alone never claims anything about workouts.
     db = SessionLocal()
@@ -268,3 +268,16 @@ def test_apple_xml_activity_names_become_readable():
     assert workout_label("HKWorkoutActivityTypeTraditionalStrengthTraining") == "Traditional Strength Training"
     assert workout_label("Functional Strength Training") == "Functional Strength Training"
     assert workout_label(None) == "Workout"
+
+
+def test_a_logged_walk_is_not_training_and_duration_excludes_pauses(client):
+    today = date.today()
+    lift = _workout("Traditional Strength Training", _at(today - timedelta(days=58), 21), 50)
+    walk = _workout("Outdoor Walk", _at(today - timedelta(days=21), 18), 42)
+    walk["duration"] = 19.2 * 60  # paused: the watch counts 19 of the 42 minutes
+    client.post("/health/auto-export", json={"data": {"workouts": [lift, walk]}})
+    fact = _workout_fact(today)
+    assert "Most recent training workout: Traditional Strength Training, 50 min" in fact
+    assert "58 days ago" in fact
+    assert "Walks logged as workouts in the last 28 days: 1, 19 min; these are walking, not training." in fact
+    assert "No training workouts in the last 28 days." in fact
