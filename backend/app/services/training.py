@@ -115,6 +115,9 @@ def workout_statement(s: WorkoutSummary) -> str:
         "as sessions/minutes: "
         + ", ".join(f"{n}/{m:.0f}" for n, m in zip(s.weekly_counts, s.weekly_minutes)) + "."
     )
+    gaps = _gaps(s)
+    if gaps:
+        parts.append("Gaps of a week or more between workouts: " + "; ".join(gaps) + ".")
     if s.last is not None:
         parts.append(f"Days since the most recent workout: {s.days_since_last}.")
     if s.before_window is not None:
@@ -124,6 +127,18 @@ def workout_statement(s: WorkoutSummary) -> str:
     if not s.workouts_synced:
         parts.append("Workouts are not synced from the phone yet, so recent workouts are unknown, not zero.")
     return " ".join(parts)
+
+
+def _gaps(s: WorkoutSummary) -> list[str]:
+    """Quiet stretches of 7+ days between workout days, and the open one up to today."""
+    days = sorted({workout_day(w) for w in ([s.before_window] if s.before_window else []) + s.recent})
+    out = [
+        f"{a:%b} {a.day} to {b:%b} {b.day} ({(b - a).days} days)"
+        for a, b in zip(days, days[1:]) if (b - a).days >= 7
+    ]
+    if days and (s.today - days[-1]).days >= 7:
+        out.append(f"{days[-1]:%b} {days[-1].day} to today ({(s.today - days[-1]).days} days so far)")
+    return out
 
 
 # How the model should read workouts. Shared by every prompt that sees them.

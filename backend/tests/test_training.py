@@ -89,3 +89,8 @@ def test_one_session_in_a_quiet_stretch_shows_the_gaps_on_both_sides(client):
     # The trend reads directly: a routine, one session, a long gap, one walk, nothing since.
     assert "as sessions/minutes: 2/120, 1/60, 0/0, 0/0, 1/50, 0/0, 0/0, 0/0, 0/0, 1/19, 0/0, 0/0, 0/0." in statement
     assert "Days since the most recent workout: 21." in statement
+    def md(n):
+        x = date.today() - timedelta(days=n)
+        return f"{x:%b} {x.day}"
+    # Both sides of the lone walk, stated plainly.
+    assert f"{md(82)} to {md(58)} (24 days); {md(58)} to {md(21)} (37 days); {md(21)} to today (21 days so far)." in statement
