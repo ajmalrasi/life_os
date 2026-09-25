@@ -23,6 +23,7 @@ import com.lifeos.app.data.remote.dto.MonthTrendDto
 import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SourceStatusDto
+import com.lifeos.app.data.remote.dto.TodayDto
 import com.lifeos.app.data.remote.dto.BudgetPaceDto
 import com.lifeos.app.data.remote.dto.MoneyProfileDto
 import com.lifeos.app.data.remote.dto.RecurringChargeDto
@@ -35,6 +36,8 @@ import com.lifeos.app.data.remote.dto.SynthesizedInsightDto
 import com.lifeos.app.data.remote.dto.TransactionDto
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.SourceStatus
+import com.lifeos.app.domain.model.TodayBrief
+import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.domain.model.Budget
 import com.lifeos.app.domain.model.MoneyProfile
 import com.lifeos.app.domain.model.RecurringCharge
@@ -125,6 +128,21 @@ fun SynthesizedInsightEntity.toDomain() = SynthesizedInsight(
 
 // --- Notifications ---
 fun NotificationDto.toDomain() = AppNotification(severity, title, detail)
+
+fun TodayDto.toDomain() = TodaySummary(
+    brief = brief?.let {
+        TodayBrief(
+            state = it.state,
+            confidence = it.confidence,
+            headline = it.headline,
+            summary = it.summary,
+            suggestion = it.suggestion,
+            generatedAt = Instant.parse(it.generatedAt),
+        )
+    },
+    briefStatus = briefStatus,
+    healthLastReceivedAt = healthLastReceivedAt?.let(Instant::parse),
+)
 
 fun SourceStatusDto.toDomain() = SourceStatus(
     source = source,

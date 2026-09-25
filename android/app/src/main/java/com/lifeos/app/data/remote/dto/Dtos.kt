@@ -48,6 +48,24 @@ data class DailyScoreDto(
 )
 
 @Serializable
+data class TodayBriefDto(
+    val state: String,
+    val confidence: String,
+    val headline: String,
+    val summary: String,
+    val suggestion: String,
+    @SerialName("generated_at") val generatedAt: String,
+)
+
+@Serializable
+data class TodayDto(
+    val day: String,
+    val brief: TodayBriefDto? = null,
+    @SerialName("brief_status") val briefStatus: String,
+    @SerialName("health_last_received_at") val healthLastReceivedAt: String? = null,
+)
+
+@Serializable
 data class DeviceTokenDto(
     val token: String,
     val platform: String = "android",

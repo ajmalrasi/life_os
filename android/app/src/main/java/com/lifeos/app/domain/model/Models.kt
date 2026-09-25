@@ -40,6 +40,23 @@ data class DailyState(
     val rationale: String?,
 )
 
+/** The model-written read on today, grounded in facts the backend computed. */
+data class TodayBrief(
+    val state: String,
+    val confidence: String,
+    val headline: String,
+    val summary: String,
+    val suggestion: String,
+    val generatedAt: Instant,
+)
+
+data class TodaySummary(
+    val brief: TodayBrief?,
+    /** ready, refreshing (data changed; a new brief is being written), or unavailable. */
+    val briefStatus: String,
+    val healthLastReceivedAt: Instant?,
+)
+
 data class Insight(
     val driver: String,
     val outcome: String,

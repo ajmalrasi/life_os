@@ -18,6 +18,7 @@ import com.lifeos.app.data.remote.dto.MoodDto
 import com.lifeos.app.data.remote.dto.MoodOutDto
 import com.lifeos.app.data.remote.dto.NotificationDto
 import com.lifeos.app.data.remote.dto.SyncStatusDto
+import com.lifeos.app.data.remote.dto.TodayDto
 import com.lifeos.app.data.remote.dto.BudgetPaceDto
 import com.lifeos.app.data.remote.dto.BudgetInDto
 import com.lifeos.app.data.remote.dto.MoneyProfileDto
@@ -149,6 +150,9 @@ interface LifeOsApi {
 
     @GET("analytics/state")
     suspend fun states(@Query("days") days: Int): List<DailyStateDto>
+
+    @GET("analytics/today")
+    suspend fun today(): TodayDto
 
     @GET("analytics/insights")
     suspend fun insights(): List<InsightDto>

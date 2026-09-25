@@ -1,5 +1,32 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Today update (2026-09-25; supersedes older sleep-binning/state notes below)
+
+Today is no longer a rule-based state plus an averaged "Life score". Three
+aggregation bugs were fixed first (`repositories/health_repo.py`):
+(1) HAE re-sends a day's aggregate as it changes and the quantity `source_id`
+included the value, so revisions were stored side by side and summed or
+averaged. Ids are now `hae-md5(type|date)`, `/health/auto-export` upserts in
+place (bumping `created_at`), and `for_day`/`baseline_mean` keep only the
+newest hae row per (type, start, end) for the legacy rows. (2) Overlapping
+sleep sessions (a revised night, or XML import plus HAE) were added together;
+`sleep_for_day` keeps the longest session of each overlapping group and adds
+separate naps. (3) Sleep is filed under the **wake-up day** (`end_time`), not
+the start day: 589 of 1,618 nights cross midnight. Full history (2,887 days)
+was recomputed on 2026-09-25. `state_engine.py` is deleted (46 of 60 days
+were UNKNOWN). `services/day_brief.py` computes the day's facts (with
+better/worse-than-usual already stated) and Qwen picks the `LifeState` and
+writes headline/summary/suggestion under strict json_schema; code rejects
+uncited replies or summary numbers not in the facts, and keeps the last good
+brief (no canned text). It also writes that day's `daily_states` row for Ask
+and notifications; older state rows are historical rule output.
+`GET /analytics/today` never waits: stale facts return `refreshing` and a
+background rewrite (DAY_BRIEF_JOB lock); pushes and recomputes also refresh
+it. Android shows the brief, "Health data received HH:mm", each vital's latest
+reading with its day, and Wellness as a Check in link to Pulse; the Overall
+trend line is gone. Qwen 4B still editorialises a little ("reset HRV"):
+inspect real briefs after prompt changes.
+
 ## Priority update (2026-09-24; supersedes older Priority notes below)
 
 Priority mail is now **model-led**. The regex classifier and the unreachable

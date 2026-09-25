@@ -161,7 +161,10 @@ class MoneyFirstUiTest {
                 ))
             }
         }
-        compose.onNodeWithText("Overall").performClick()
+        compose.onNodeWithText("Sleep").performClick()
+        compose.onNodeWithText("Recovery").performClick()
+        compose.onNodeWithText("Latest 60 ·", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Recovery").performClick()
         compose.onNodeWithText("Sleep").performClick()
         compose.onNodeWithText("Latest 72 ·", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Only one day with sleep data", substring = true).assertIsDisplayed()

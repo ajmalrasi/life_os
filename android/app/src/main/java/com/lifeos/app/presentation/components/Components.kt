@@ -50,6 +50,8 @@ import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.SynthesizedInsight
 import com.lifeos.app.presentation.theme.LifeOsColors
 import kotlin.math.abs
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun lifeOsFieldColors() = OutlinedTextFieldDefaults.colors(
@@ -274,24 +276,46 @@ private fun metricBlurb(name: String): String = when (name) {
 }
 
 /**
- * All of today's scores grouped into one organized card. Tapping a row opens a
- * detail sheet with that metric's recent trajectory and stats.
+ * The five scores in one card. Each row shows its most recent reading and, when
+ * that reading is not from today, the day it is from, so a metric that has not
+ * arrived yet never reads as a bare "N/A". Wellness only exists once you check
+ * in, so without a check-in today its row offers one instead. Tapping any other
+ * row opens that metric's recent trajectory.
  *
- * @param history newest-first score history, used to chart each metric's trend.
+ * @param history newest-first score history.
  */
 @Composable
 fun VitalsCard(
-    score: DailyScore?,
-    history: List<DailyScore> = emptyList(),
+    history: List<DailyScore>,
+    onCheckIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var detail by remember { mutableStateOf<String?>(null) }
+    val today = LocalDate.now()
 
     LifeOsCard(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             VITALS.forEachIndexed { i, name ->
                 if (i > 0) VitalDivider()
-                VitalRow(name, score?.metricValue(name), onClick = { detail = name })
+                val latest = history.firstOrNull { it.metricValue(name) != null }
+                val value = latest?.metricValue(name)
+                val day = latest?.day
+                if (name == "Wellness" && day != today) {
+                    VitalRow(name, value = null, caption = "No check-in today", action = "Check in", onClick = onCheckIn)
+                } else {
+                    VitalRow(
+                        name,
+                        value = value,
+                        caption = when {
+                            day == null -> "No data yet"
+                            name == "Sleep" && day == today -> "Last night"
+                            day == today -> null
+                            name == "Sleep" -> "Night ending ${formatVitalDay(day, today).replaceFirstChar { it.lowercase() }}"
+                            else -> formatVitalDay(day, today)
+                        },
+                        onClick = { detail = name },
+                    )
+                }
             }
         }
     }
@@ -303,6 +327,11 @@ fun VitalsCard(
             onDismiss = { detail = null },
         )
     }
+}
+
+private fun formatVitalDay(day: LocalDate, today: LocalDate): String = when (day) {
+    today.minusDays(1) -> "Yesterday"
+    else -> day.format(DateTimeFormatter.ofPattern("MMM d"))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -410,7 +439,13 @@ private fun VitalDivider() {
 }
 
 @Composable
-private fun VitalRow(name: String, value: Double?, onClick: () -> Unit) {
+private fun VitalRow(
+    name: String,
+    value: Double?,
+    caption: String?,
+    onClick: () -> Unit,
+    action: String? = null,
+) {
     val color = metricColor(name)
     Row(
         modifier = Modifier
@@ -427,40 +462,53 @@ private fun VitalRow(name: String, value: Double?, onClick: () -> Unit) {
                 .background(if (value == null) LifeOsColors.SurfaceBorder else color),
         )
         Spacer(Modifier.width(12.dp))
-        Text(
-            name,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            color = LifeOsColors.OnBackground,
-            modifier = Modifier.weight(1f),
-        )
-        // Thin progress track on the right.
-        Box(
-            Modifier
-                .width(84.dp)
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(LifeOsColors.SurfaceMuted),
-        ) {
-            val frac = ((value ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = LifeOsColors.OnBackground,
+            )
+            if (caption != null) {
+                Text(caption, style = MaterialTheme.typography.labelMedium, color = LifeOsColors.OnSurfaceMuted)
+            }
+        }
+        if (action != null) {
+            Text(action, style = MaterialTheme.typography.titleSmall, color = LifeOsColors.Primary, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(6.dp))
+            Text("›", style = MaterialTheme.typography.titleMedium, color = LifeOsColors.Primary)
+        } else {
+            // Thin progress track on the right.
             Box(
                 Modifier
-                    .fillMaxWidth(frac)
+                    .width(84.dp)
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(color),
+                    .background(LifeOsColors.SurfaceMuted),
+            ) {
+                val frac = ((value ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+                Box(
+                    Modifier
+                        .fillMaxWidth(frac)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(color),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = value?.toInt()?.toString().orEmpty(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (value == null) LifeOsColors.OnSurfaceMuted else color,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.width(40.dp),
             )
+            Spacer(Modifier.width(6.dp))
+            Text("›", style = MaterialTheme.typography.titleMedium, color = LifeOsColors.OnSurfaceMuted)
         }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = value?.toInt()?.toString() ?: "N/A",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (value == null) LifeOsColors.OnSurfaceMuted else color,
-            modifier = Modifier.width(28.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text("›", style = MaterialTheme.typography.titleMedium, color = LifeOsColors.OnSurfaceMuted)
     }
 }
 
@@ -499,90 +547,6 @@ fun WeeklyTrendCard(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-/** Compact daily summary; blue provides emphasis without a bright filled panel. */
-@Composable
-fun LifeScoreHero(
-    score: Double?,
-    delta: Double?,
-    stateLabel: String,
-    confidence: Int?,
-    modifier: Modifier = Modifier,
-) {
-    LifeOsCard(modifier = modifier, accent = LifeOsColors.Primary) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Life score", style = MaterialTheme.typography.labelLarge, color = LifeOsColors.OnSurfaceMuted)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = score?.let { kotlin.math.round(it).toInt().toString() } ?: "N/A",
-                        style = MaterialTheme.typography.displaySmall,
-                        color = LifeOsColors.Primary,
-                    )
-                    Text(
-                        " / 100",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LifeOsColors.OnSurfaceMuted,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-                }
-                Spacer(Modifier.width(18.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        buildString {
-                            append(stateLabel)
-                            if (confidence != null) append(" · $confidence%")
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LifeOsColors.OnBackground,
-                    )
-                    if (delta != null) {
-                        Text(
-                            (if (delta >= 0) "↑ " else "↓ ") + "${kotlin.math.abs(delta).toInt()} vs yesterday",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = LifeOsColors.OnSurfaceMuted,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun StateHeroCard(
-    stateLabel: String,
-    confidence: Int?,
-    rationale: String?,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(22.dp)
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(2.dp, shape, ambientColor = LifeOsColors.Primary.copy(alpha = 0.12f), spotColor = LifeOsColors.Primary.copy(alpha = 0.12f))
-            .clip(shape)
-            .background(
-                Brush.linearGradient(
-                    listOf(LifeOsColors.PrimarySoft, LifeOsColors.SecondarySoft),
-                ),
-            )
-            .border(1.dp, LifeOsColors.Primary.copy(alpha = 0.2f), shape)
-            .padding(20.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("CURRENT STATE", style = MaterialTheme.typography.labelSmall, color = LifeOsColors.Primary)
-            Text(stateLabel, style = MaterialTheme.typography.headlineMedium, color = LifeOsColors.OnBackground)
-            if (confidence != null) {
-                Text("$confidence% confidence", style = MaterialTheme.typography.labelMedium, color = LifeOsColors.OnSurfaceMuted)
-            }
-            if (!rationale.isNullOrBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(rationale, style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnBackground.copy(alpha = 0.85f))
             }
         }
     }

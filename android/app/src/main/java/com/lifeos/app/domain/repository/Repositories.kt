@@ -18,6 +18,7 @@ import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.MoodCheckin
 import com.lifeos.app.domain.model.SourceStatus
+import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.domain.model.Repayment
 import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.Refund
@@ -58,6 +59,8 @@ interface AnalyticsRepository {
     /** Trigger a backend recompute (nightly analysis on demand). */
     suspend fun recompute(days: Int): ExecutionSyncReport
     suspend fun notifications(): List<AppNotification>
+    /** Today's model-written brief and when health data last arrived (online only). */
+    suspend fun today(): TodaySummary
     /** Per-source sync health (bank mail, statements, Priority mail,
      * sleep/vitals, the local model) for the Settings "Data sources" panel. */
     suspend fun syncStatus(): List<SourceStatus>

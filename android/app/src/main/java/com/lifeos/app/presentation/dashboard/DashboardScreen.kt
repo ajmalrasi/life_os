@@ -27,22 +27,24 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.DemoBanner
 import com.lifeos.app.presentation.components.LifeOsCard
-import com.lifeos.app.presentation.components.LifeScoreHero
 import com.lifeos.app.presentation.components.NotificationCard
 import com.lifeos.app.presentation.components.OfflineBanner
 import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.TrendChart
 import com.lifeos.app.presentation.components.VitalsCard
-import com.lifeos.app.presentation.components.compositeScore
 import com.lifeos.app.presentation.theme.LifeOsColors
+import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.trips.ui.TripsViewModel
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun DashboardScreen(
     onOpenTrips: () -> Unit = {},
+    onOpenPulse: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
     tripsViewModel: TripsViewModel = hiltViewModel(),
 ) {
@@ -50,22 +52,6 @@ fun DashboardScreen(
     val dateLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")) }
     val tripsState by tripsViewModel.state.collectAsStateWithLifecycle()
     val activeTrip = tripsState.trips.firstOrNull { it.status == "active" || it.status == "paused" }
-
-    val composite = compositeScore(state.latestScore)
-    val prevComposite = state.scoreHistory.getOrNull(1)?.let { compositeScore(it) }
-    val delta = if (composite != null && prevComposite != null) composite - prevComposite else null
-    // Treat an absent or "unknown" classification as a friendly placeholder rather
-    // than surfacing a confusing "Unknown · 0%" chip, and only show a confidence
-    // when there's a real state with non-zero confidence.
-    val rawState = state.latestState?.state
-        ?.takeIf { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }
-    val stateLabel = rawState
-        ?.replace('_', ' ')
-        ?.replaceFirstChar { it.uppercase() }
-        ?: if (state.latestState == null) "Awaiting data" else "No clear state yet"
-    val confidence = rawState?.let {
-        state.latestState?.confidence?.let { c -> (c * 100).toInt() }?.takeIf { it > 0 }
-    }
 
     Column(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
         AreaHeader("Today", dateLabel)
@@ -80,14 +66,10 @@ fun DashboardScreen(
                 item { DemoBanner() }
             }
 
-            // Hero focal point: composite Life Score, delta, and current state.
-            item {
-                LifeScoreHero(
-                    score = composite,
-                    delta = delta,
-                    stateLabel = stateLabel,
-                    confidence = confidence,
-                )
+            // The model's read on the day, grounded in facts the backend computed.
+            // Offline with nothing fetched yet, the banner below explains instead.
+            if (state.today != null || state.message == null) {
+                item { TodayBriefCard(state.today) }
             }
 
             if (activeTrip != null) {
@@ -112,30 +94,8 @@ fun DashboardScreen(
 
             // Put the actionable daily readings ahead of the longer history.
             item { SectionHeader("Your vitals") }
-            item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
+            item { VitalsCard(history = state.scoreHistory, onCheckIn = onOpenPulse) }
             item { TrendChart(history = state.scoreHistory) }
-
-            // Why-this-state explanation, only when the model gives a rationale.
-            val rationale = state.latestState?.rationale
-            if (!rationale.isNullOrBlank()) {
-                item {
-                    LifeOsCard(accent = LifeOsColors.Primary) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                "WHY THIS STATE",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = LifeOsColors.OnSurfaceMuted,
-                            )
-                            Text(
-                                rationale,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = LifeOsColors.OnBackground,
-                            )
-                        }
-                    }
-                }
-            }
-
 
             // Spend↔sleep is a signal the user can actually act on tonight, so it
             // gets its own card ahead of the general notification feed.
@@ -177,5 +137,60 @@ fun DashboardScreen(
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+}
+
+@Composable
+private fun TodayBriefCard(today: TodaySummary?) {
+    val brief = today?.brief
+    LifeOsCard(accent = LifeOsColors.Primary) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                brief?.state?.takeIf { it != "unknown" }
+                    ?.let { "TODAY · " + it.replace('_', ' ').uppercase() }
+                    ?: "TODAY",
+                style = MaterialTheme.typography.labelSmall,
+                color = LifeOsColors.OnSurfaceMuted,
+            )
+            if (brief != null) {
+                Text(brief.headline, style = MaterialTheme.typography.titleLarge, color = LifeOsColors.OnBackground)
+                Text(brief.summary, style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnBackground)
+                Text(
+                    "→ ${brief.suggestion}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LifeOsColors.Primary,
+                )
+            } else {
+                Text(
+                    when (today?.briefStatus) {
+                        null, "refreshing" -> "Reading today's data..."
+                        else -> "Today's read needs the local model, which is switched off."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+            val footer = listOfNotNull(
+                today?.healthLastReceivedAt?.let { "Health data received ${formatArrival(it)}" },
+                if (brief != null && today?.briefStatus == "refreshing") "updating..." else null,
+            )
+            if (footer.isNotEmpty()) {
+                Text(
+                    footer.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                )
+            }
+        }
+    }
+}
+
+private fun formatArrival(at: Instant): String {
+    val local = at.atZone(ZoneId.systemDefault())
+    val time = local.format(DateTimeFormatter.ofPattern("HH:mm"))
+    return when (local.toLocalDate()) {
+        LocalDate.now() -> time
+        LocalDate.now().minusDays(1) -> "yesterday $time"
+        else -> local.format(DateTimeFormatter.ofPattern("MMM d, HH:mm"))
     }
 }

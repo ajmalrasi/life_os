@@ -220,6 +220,7 @@ fun LifeOsApp(
                 composable(Destination.DASHBOARD.route) {
                     DashboardScreen(
                         onOpenTrips = { openFromPage(Destination.TRIPS) },
+                        onOpenPulse = { openFromPage(Destination.MOOD) },
                     )
                 }
                 composable(Destination.MOOD.route) { MoodScreen() }

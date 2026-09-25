@@ -4,11 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.AppNotification
 import com.lifeos.app.domain.model.DailyScore
-import com.lifeos.app.domain.model.DailyState
 import com.lifeos.app.data.demo.DemoData
 import com.lifeos.app.data.demo.DemoMode
 import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.domain.model.Insight
+import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.SettingsRepository
@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
@@ -26,7 +27,8 @@ import javax.inject.Inject
 data class DashboardUiState(
     val latestScore: DailyScore? = null,
     val scoreHistory: List<DailyScore> = emptyList(),
-    val latestState: DailyState? = null,
+    /** Model-written brief + data freshness; null until the first fetch returns. */
+    val today: TodaySummary? = null,
     val todayPulse: DayPulse? = null,
     val pulseSavedMessage: String? = null,
     val pulseSubmitting: Boolean = false,
@@ -47,8 +49,6 @@ class DashboardViewModel @Inject constructor(
 
     private val transient = MutableStateFlow(TransientState())
 
-    // combine() tops out at 5 typed flows, so insights + lastSyncAt are
-    // pre-combined into one slot rather than nesting the outer combine.
     private val extra = combine(
         analyticsRepository.observeInsights(),
         settingsRepository.lastSyncAt,
@@ -58,22 +58,20 @@ class DashboardViewModel @Inject constructor(
         // Keep up to a year of scores cached so the trend chart can slice any
         // range (1D…1Y) client-side without re-querying.
         analyticsRepository.observeScores(HISTORY_DAYS),
-        analyticsRepository.observeStates(30),
         moodRepository.observe(7),
         extra,
         transient,
-    ) { scores, states, moods, ex, t ->
+    ) { scores, moods, ex, t ->
         val insights = ex.insights
         val useDemo = DemoMode.active && scores.isEmpty()
         val displayScores = if (useDemo) DemoData.scores else scores
-        val displayState = if (useDemo) DemoData.state else states.firstOrNull()
         val displayNotifications = if (useDemo && t.notifications.isEmpty()) DemoData.notifications else t.notifications
         val todayPulse = moods.firstOrNull { it.day == LocalDate.now() }?.let { DayPulse.fromCheckin(it) }
             ?: if (useDemo) DemoData.todayPulse else null
         DashboardUiState(
             latestScore = displayScores.firstOrNull(),
             scoreHistory = displayScores,
-            latestState = displayState,
+            today = t.today,
             todayPulse = t.pulseSelected ?: todayPulse,
             pulseSavedMessage = t.pulseSavedMessage,
             pulseSubmitting = t.pulseSubmitting,
@@ -103,6 +101,21 @@ class DashboardViewModel @Inject constructor(
                 setMessage("Backend unreachable ($url). Showing cached data.")
             }
         }
+        loadToday()
+    }
+
+    /** Fetch the brief; while the backend is rewriting it, check back a few times. */
+    private fun loadToday() {
+        viewModelScope.launch {
+            repeat(BRIEF_POLLS) { attempt ->
+                if (attempt > 0) delay(BRIEF_POLL_MS)
+                val summary = runCatching { analyticsRepository.today() }.getOrNull() ?: return@launch
+                transient.value = transient.value.copy(today = summary)
+                if (summary.briefStatus != "refreshing") return@launch
+                // Scores change alongside the brief, so pick those up too.
+                if (attempt > 0) runCatching { analyticsRepository.refresh(HISTORY_DAYS) }
+            }
+        }
     }
 
     fun submitPulse(pulse: DayPulse) {
@@ -126,6 +139,8 @@ class DashboardViewModel @Inject constructor(
     private companion object {
         /** Widest trend window the chart can show (1 year). */
         const val HISTORY_DAYS = 365
+        const val BRIEF_POLLS = 4
+        const val BRIEF_POLL_MS = 20_000L
     }
 
     private data class ExtraState(
@@ -139,5 +154,6 @@ class DashboardViewModel @Inject constructor(
         val pulseSubmitting: Boolean = false,
         val notifications: List<AppNotification> = emptyList(),
         val message: String? = null,
+        val today: TodaySummary? = null,
     )
 }

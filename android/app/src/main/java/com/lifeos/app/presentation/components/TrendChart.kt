@@ -52,7 +52,6 @@ import kotlin.math.roundToInt
 
 /** Selectable series shown on the trend chart. "Overall" is the composite of all vitals. */
 private enum class TrendMetric(val label: String) {
-    OVERALL("Overall"),
     SLEEP("Sleep"),
     RECOVERY("Recovery"),
     EXECUTION("Execution"),
@@ -70,7 +69,6 @@ private enum class TrendRange(val label: String, val days: Int) {
 }
 
 private fun TrendMetric.color(): Color = when (this) {
-    TrendMetric.OVERALL -> LifeOsColors.Primary
     TrendMetric.SLEEP -> LifeOsColors.MetricSleep
     TrendMetric.RECOVERY -> LifeOsColors.MetricRecovery
     TrendMetric.EXECUTION -> LifeOsColors.MetricExecution
@@ -78,18 +76,7 @@ private fun TrendMetric.color(): Color = when (this) {
     TrendMetric.FITNESS -> LifeOsColors.MetricFitness
 }
 
-/** Composite "Life Score": average of the available vitals for a day. */
-fun compositeScore(score: DailyScore?): Double? {
-    if (score == null) return null
-    val parts = listOfNotNull(
-        score.sleepScore, score.recoveryScore, score.executionScore,
-        score.wellnessScore, score.fitnessScore,
-    )
-    return if (parts.isEmpty()) null else parts.average()
-}
-
 private fun TrendMetric.valueOf(score: DailyScore): Double? = when (this) {
-    TrendMetric.OVERALL -> compositeScore(score)
     TrendMetric.SLEEP -> score.sleepScore
     TrendMetric.RECOVERY -> score.recoveryScore
     TrendMetric.EXECUTION -> score.executionScore
@@ -105,7 +92,7 @@ private fun TrendMetric.valueOf(score: DailyScore): Double? = when (this) {
  */
 @Composable
 fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
-    var metric by rememberSaveable { mutableStateOf(TrendMetric.OVERALL) }
+    var metric by rememberSaveable { mutableStateOf(TrendMetric.SLEEP) }
     var range by rememberSaveable { mutableStateOf(TrendRange.MONTH) }
     var showMetrics by remember { mutableStateOf(false) }
     val color = metric.color()
@@ -122,13 +109,10 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
     val current = present.lastOrNull()
     val avg = if (present.isNotEmpty()) present.average() else null
 
-    // The headline value is the most recent reading in the window. When that
-    // reading is NOT the window's latest day (e.g. today has no sleep yet, but an
-    // earlier night does), the number is stale. Flag it so it doesn't read as
-    // "today's score". `lastDataIdx` is the slot of that reading in `chrono`.
+    // The latest reading in the window is always labelled with its own day, so
+    // an older night never reads as "today's score". `lastDataIdx` is its slot.
     val lastDataIdx = values.indexOfLast { it != null }
     val latestDay = chrono.getOrNull(lastDataIdx)
-    val isStale = latestDay != null && (lastDataIdx < values.lastIndex || latestDay < LocalDate.now())
 
     LifeOsCard(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -155,9 +139,8 @@ fun TrendChart(history: List<DailyScore>, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            // The overall score already appears above; keep context for other
-            // metrics and always identify an older reading by its date.
-            if (current != null && latestDay != null && (metric != TrendMetric.OVERALL || isStale)) {
+            // Always identify the latest reading by its date.
+            if (current != null && latestDay != null) {
                 Text(
                     "Latest ${current.roundToInt()} · ${formatShort(latestDay)}",
                     style = MaterialTheme.typography.bodySmall,

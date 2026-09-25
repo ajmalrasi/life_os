@@ -14,6 +14,7 @@ import com.lifeos.app.domain.model.ExecutionSyncReport
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.SourceStatus
 import com.lifeos.app.domain.model.SynthesizedInsight
+import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -77,6 +78,8 @@ class AnalyticsRepositoryImpl @Inject constructor(
 
     override suspend fun notifications(): List<AppNotification> =
         api.notifications().map { it.toDomain() }
+
+    override suspend fun today(): TodaySummary = api.today().toDomain()
 
     override suspend fun syncStatus(): List<SourceStatus> =
         api.syncStatus().sources.map { it.toDomain() }
