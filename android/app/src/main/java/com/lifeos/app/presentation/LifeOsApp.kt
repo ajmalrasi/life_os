@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lifeos.app.presentation.chat.ChatScreen
+import com.lifeos.app.presentation.components.LocalOpenNavigation
 import com.lifeos.app.presentation.dashboard.DashboardScreen
 import com.lifeos.app.presentation.insights.InsightsScreen
 import com.lifeos.app.presentation.money.CurrentCycleDetailsScreen
@@ -134,35 +136,40 @@ fun LifeOsApp(
         }
     }
 
-    val navigateTo: (Destination) -> Unit = { destination ->
+    // Drawer areas are siblings, not a history: switching area clears the
+    // stack so the area is the root and shows no Back bar. Only pages opened
+    // from within an area (details, Settings sub-pages, in-page links) stack.
+    val switchArea: (Destination) -> Unit = { destination ->
         navController.navigate(destination.route) {
-            // Keep the page we came from so both visible and system Back retrace
-            // the user's journey, including Today -> Settings -> Today.
+            popUpTo(navController.graph.id) { inclusive = true }
             launchSingleTop = true
         }
         scope.launch { drawerState.close() }
     }
+    // An in-page link (Today's settings gear, its trip card) is a step deeper
+    // from where the user is, so it keeps that page and earns a Back bar.
+    val openFromPage: (Destination) -> Unit = { destination ->
+        navController.navigate(destination.route) { launchSingleTop = true }
+    }
+    val showBackBar = previousRoute != null
+    val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
-    // Deep links still reach the quieter LifeOS areas, but Money remains under
-    // them on the back stack and is the app's normal home.
+    // Notification/widget opens land on the area as its root, like the drawer.
     LaunchedEffect(startTab, openRequestId) {
-        val destination = Destination.entries.firstOrNull { it.route == startTab }
+        val destination = Destination.entries.firstOrNull { it.route == startTab } ?: return@LaunchedEffect
+        switchArea(destination)
         if (destination == Destination.MONEY) {
-            navController.navigate(Destination.MONEY.route) {
-                popUpTo(navController.graph.findStartDestination().id)
-                launchSingleTop = true
-            }
             moneyOverviewRequest = openRequestId
-        } else if (destination != null) {
-            navController.navigate(destination.route) {
-                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
-            if (destination == Destination.PRIORITY && openPriorityItemId != null) {
-                navController.navigate("priority/$openPriorityItemId")
-            }
+        } else if (destination == Destination.PRIORITY && openPriorityItemId != null) {
+            navController.navigate("priority/$openPriorityItemId")
         }
+    }
+
+    // Money is home: system Back on any other area's root goes there rather
+    // than leaving the app. Registered before the pages so their own Back
+    // handling (Money sections, Ask, full-screen map) still comes first.
+    BackHandler(enabled = previousRoute == null && isOtherAreaRoot(currentRoute)) {
+        switchArea(Destination.MONEY)
     }
 
     ModalNavigationDrawer(
@@ -173,7 +180,7 @@ fun LifeOsApp(
         drawerContent = {
             LifeOsNavigationDrawer(
                 currentRoute = currentRoute,
-                onDestinationSelected = navigateTo,
+                onDestinationSelected = switchArea,
                 hasStaleSources = hasStaleSources,
             )
         },
@@ -182,21 +189,19 @@ fun LifeOsApp(
             modifier = Modifier.fillMaxSize(),
             containerColor = LifeOsColors.Background,
             topBar = {
-                if (!tripMapFullscreen) {
-                    if (previousRoute != null) {
-                        LifeOsBackBar(
-                            previousLabel = Destination.entries.firstOrNull { it.route == previousRoute }?.label,
-                            onBack = { navController.popBackStack() },
-                            onOpenNavigation = { scope.launch { drawerState.open() } },
-                        )
-                    } else if (currentRoute != Destination.MONEY.route) {
-                        LifeOsTopMenuBar(
-                            onOpenNavigation = { scope.launch { drawerState.open() } },
-                        )
-                    }
+                // Area roots draw their own AreaHeader (menu top-left); only
+                // pages opened from within an area get this Back bar.
+                if (!tripMapFullscreen && showBackBar) {
+                    LifeOsBackBar(
+                        previousLabel = Destination.entries.firstOrNull { it.route == previousRoute }?.label,
+                        onBack = { navController.popBackStack() },
+                    )
                 }
             },
         ) { contentPadding ->
+          CompositionLocalProvider(
+            LocalOpenNavigation provides openDrawer.takeUnless { showBackBar },
+          ) {
             NavHost(
                 navController = navController,
                 startDestination = startDestination,
@@ -205,9 +210,7 @@ fun LifeOsApp(
                 composable(Destination.MONEY.route) {
                     MoneyScreen(
                         overviewRequestId = moneyOverviewRequest,
-                        showNavigationButton = previousRoute == null,
                         navigationDrawerOpen = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open,
-                        onOpenNavigation = { scope.launch { drawerState.open() } },
                         onOpenStatement = { id -> navController.navigate("statement/$id") },
                         onOpenCurrentCycle = { bank, cardLast4 ->
                             navController.navigate("cycle/$bank/$cardLast4")
@@ -216,8 +219,7 @@ fun LifeOsApp(
                 }
                 composable(Destination.DASHBOARD.route) {
                     DashboardScreen(
-                        onOpenSettings = { navigateTo(Destination.SETTINGS) },
-                        onOpenTrips = { navigateTo(Destination.TRIPS) },
+                        onOpenTrips = { openFromPage(Destination.TRIPS) },
                     )
                 }
                 composable(Destination.MOOD.route) { MoodScreen() }
@@ -272,6 +274,7 @@ fun LifeOsApp(
                     )
                 }
             }
+          }
         }
     }
     // Register after the page handlers: Back dismisses an open/opening drawer
@@ -283,9 +286,9 @@ fun LifeOsApp(
 
 /** Outside the scrolling page, so Back is available even in long detail views. */
 @Composable
-private fun LifeOsBackBar(previousLabel: String?, onBack: () -> Unit, onOpenNavigation: () -> Unit) {
+private fun LifeOsBackBar(previousLabel: String?, onBack: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp),
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TextButton(onClick = onBack) {
@@ -296,14 +299,13 @@ private fun LifeOsBackBar(previousLabel: String?, onBack: () -> Unit, onOpenNavi
                 style = MaterialTheme.typography.labelLarge,
             )
         }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onOpenNavigation) {
-            Icon(Icons.Rounded.Menu, contentDescription = "Open navigation drawer")
-        }
     }
 }
 
-/** Shown when a non-Money area is the root screen, giving quick access to the drawer. */
+internal fun isOtherAreaRoot(route: String?): Boolean =
+    route != Destination.MONEY.route && Destination.entries.any { it.route == route }
+
+/** Shown on a drawer area, giving quick access to the drawer without a Back. */
 @Composable
 private fun LifeOsTopMenuBar(onOpenNavigation: () -> Unit) {
     Row(

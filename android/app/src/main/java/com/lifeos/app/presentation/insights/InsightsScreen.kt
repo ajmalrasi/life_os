@@ -23,7 +23,7 @@ import androidx.compose.material3.Text
 import com.lifeos.app.presentation.components.DemoBanner
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.OfflineBanner
-import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.SynthesizedInsightCard
 import com.lifeos.app.presentation.theme.LifeOsColors
 
@@ -34,61 +34,56 @@ fun InsightsScreen(viewModel: InsightsViewModel = hiltViewModel()) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
 
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = viewModel::refresh,
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(LifeOsColors.Background)
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+    Column(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
+        AreaHeader("Insights", "Your mentor's read on your life")
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
-            item {
-                ScreenHeader(
-                    "Insights",
-                    "What your mentor thinks, from your money, trips, health and work.",
-                )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 if (state.usingDemoData) {
-                    Spacer(Modifier.height(10.dp))
-                    DemoBanner()
+                    item { DemoBanner() }
                 }
-            }
-            if (refreshing) {
-                item {
-                    Text(
-                        "Thinking it over… this can take up to a minute.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = LifeOsColors.OnSurfaceMuted,
-                    )
-                }
-            }
-            if (error != null) {
-                item { OfflineBanner(lastSyncAt = null) }
-            }
-            if (state.synthesized.isEmpty()) {
-                item {
-                    LifeOsCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                "No insights yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = LifeOsColors.OnBackground,
-                            )
-                            Text(
-                                "They're generated after each sync, or pull down to generate now.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = LifeOsColors.OnSurfaceMuted,
-                            )
-                        }
+                if (refreshing) {
+                    item {
+                        Text(
+                            "Thinking it over… this can take up to a minute.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
                     }
                 }
-            } else {
-                items(state.synthesized) { SynthesizedInsightCard(it) }
+                if (error != null) {
+                    item { OfflineBanner(lastSyncAt = null) }
+                }
+                if (state.synthesized.isEmpty()) {
+                    item {
+                        LifeOsCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    "No insights yet",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = LifeOsColors.OnBackground,
+                                )
+                                Text(
+                                    "They're generated after each sync, or pull down to generate now.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = LifeOsColors.OnSurfaceMuted,
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(state.synthesized) { SynthesizedInsightCard(it) }
+                }
+                item { Spacer(Modifier.height(24.dp)) }
             }
-            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }

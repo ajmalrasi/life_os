@@ -40,7 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.LifeOsCard
-import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.trips.data.TripEntity
 import java.time.LocalDate
@@ -61,7 +61,6 @@ fun TripsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showImport by remember { mutableStateOf(false) }
-    var tripToDelete by remember { mutableStateOf<TripEntity?>(null) }
     var json by remember { mutableStateOf("") }
     val context = LocalContext.current
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -74,14 +73,11 @@ fun TripsScreen(
     }
 
     Column(Modifier.fillMaxSize().background(LifeOsColors.Background)) {
+        AreaHeader("Trips", "Plans, places and spending")
         LazyColumn(
             modifier = Modifier.weight(1f).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Spacer(Modifier.height(12.dp))
-                ScreenHeader("Trips", "Plan the day, remember where you went, and keep everything together.")
-            }
             if (state.trips.isEmpty()) {
                 item {
                     LifeOsCard {
@@ -111,13 +107,6 @@ fun TripsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     AssistChip(onClick = { onOpenTrip(trip.id) }, label = { Text(tripDisplayStatus(trip)) })
-                                    IconButton(onClick = { tripToDelete = trip }) {
-                                        Icon(
-                                            Icons.Rounded.DeleteOutline,
-                                            contentDescription = "Delete trip",
-                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                                        )
-                                    }
                                 }
                             }
                             Text(tripListDate(trip), color = LifeOsColors.OnSurfaceMuted)
@@ -134,30 +123,6 @@ fun TripsScreen(
                 }
             }
         }
-    }
-
-    tripToDelete?.let { trip ->
-        AlertDialog(
-            onDismissRequest = { tripToDelete = null },
-            title = { Text("Delete trip?") },
-            text = {
-                Text("Are you sure you want to delete \"${trip.title}\"? All planned stops, recorded visits, photos, and tracking data for this trip will be permanently removed.")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTrip(trip.id)
-                        tripToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { tripToDelete = null }) { Text("Cancel") }
-            },
-        )
     }
 
     if (showImport) {

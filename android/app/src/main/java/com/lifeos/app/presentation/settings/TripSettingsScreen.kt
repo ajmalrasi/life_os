@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.theme.LifeOsColors
 
 @Composable
@@ -39,14 +40,7 @@ fun TripSettingsScreen(viewModel: TripSettingsViewModel = hiltViewModel()) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Column {
-            Text("Trips", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                "Backup.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = LifeOsColors.OnSurfaceMuted,
-            )
-        }
+        ScreenHeader("Trips", "Backup to your LifeOS server")
 
         SettingsSectionLabel("Backup")
         SettingsGroup {

@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -25,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +40,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lifeos.app.domain.model.DailyScore
@@ -91,6 +97,72 @@ fun DemoBanner() {
                 color = Color(0xFFB45309),
             )
         }
+    }
+}
+
+/**
+ * Opens the navigation drawer. Provided only while a drawer area is the root
+ * page; pages reached deeper (with a Back bar) get null and show no menu.
+ */
+val LocalOpenNavigation = staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/**
+ * The one header every drawer area uses, fixed above its scrolling content,
+ * so the menu button, title size and spacing never move between areas.
+ */
+@Composable
+fun AreaHeader(
+    title: String,
+    subtitle: String? = null,
+    modifier: Modifier = Modifier,
+    subtitleContent: (@Composable () -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
+    val openNavigation = LocalOpenNavigation.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(LifeOsColors.Background)
+            .padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (openNavigation != null) {
+            Surface(
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = openNavigation),
+                shape = RoundedCornerShape(14.dp),
+                color = LifeOsColors.SurfaceMuted,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.Menu,
+                        contentDescription = "Open navigation drawer",
+                        tint = LifeOsColors.OnBackground,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineLarge,
+                color = LifeOsColors.OnBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            when {
+                subtitleContent != null -> subtitleContent()
+                subtitle != null -> Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LifeOsColors.OnSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        action?.invoke()
     }
 }
 
@@ -528,7 +600,7 @@ fun QuickCheckInCard(
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("How was today?", style = MaterialTheme.typography.titleMedium)
             Text(
-                "One tap. Skip anytime. Sleep and execution still teach LifeOS.",
+                "Skip anytime. Sleep and execution still teach LifeOS.",
                 style = MaterialTheme.typography.bodySmall,
                 color = LifeOsColors.OnSurfaceMuted,
             )

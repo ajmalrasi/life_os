@@ -23,38 +23,48 @@ class BackNavigationUiTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun settings_returns_to_today_and_back_stays_visible_after_scrolling() {
-        openArea("Today")
-        compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Back to Today").assertIsDisplayed()
+    fun settings_sub_page_returns_to_settings_and_back_stays_visible_after_scrolling() {
+        openArea("Settings")
+        compose.onNodeWithText("Income, budgets, bill reminders").performClick()
+        compose.onNodeWithText("Back to Settings").assertIsDisplayed()
         compose.onRoot().performTouchInput { swipeUp() }
-        compose.onNodeWithText("Back to Today").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Your vitals", ignoreCase = true).assertIsDisplayed()
-        compose.onNodeWithText("Back to Money").performClick()
-        compose.onNodeWithText("Overview").assertIsDisplayed()
+        compose.onNodeWithText("Back to Settings").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Sync everything").assertExists()
+        compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
     }
 
     @Test
-    fun drawer_history_survives_recreation_and_system_back_retraces_it() {
-        openArea("Today")
+    fun every_area_puts_the_menu_in_the_same_header() {
+        listOf("Money", "Today", "Pulse", "Priority", "Insights", "Ask", "Trips", "Settings").forEach { area ->
+            openArea(area)
+            compose.onNodeWithContentDescription("Open navigation drawer").assertIsDisplayed()
+            compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun drawer_areas_have_no_back_bar_and_system_back_returns_to_money() {
         openArea("Pulse")
-        compose.onNodeWithText("Back to Today").assertIsDisplayed()
+        compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
+        openArea("Today")
+        compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Back to Today").assertIsDisplayed()
-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Your vitals", ignoreCase = true).assertIsDisplayed()
-        compose.onNodeWithText("Back to Money").assertIsDisplayed()
-        compose.onNodeWithText("Back to Money").performClick()
+        compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Overview").assertIsDisplayed()
     }
 
     @Test
     fun money_sections_remain_available_after_scrolling() {
+        openArea("Money")
         compose.onNodeWithText("Overview").assertIsDisplayed()
         compose.onRoot().performTouchInput { swipeUp() }
         compose.onRoot().performTouchInput { swipeUp() }
         compose.onNodeWithText("Transactions").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("Back to Overview").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Transactions").assertIsSelected()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("Overview").assertIsSelected()
         compose.onNodeWithText("Transactions").performClick()
         compose.onNodeWithText("Cards").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Open navigation drawer").performClick()

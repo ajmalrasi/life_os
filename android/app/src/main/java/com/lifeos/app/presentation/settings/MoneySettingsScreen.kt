@@ -48,6 +48,7 @@ import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.money.BUDGETABLE_CATEGORIES
 import com.lifeos.app.presentation.money.BudgetEditDialog
 import com.lifeos.app.presentation.money.prettyCategory
+import com.lifeos.app.presentation.components.ScreenHeader
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.presentation.money.BudgetPace
 import java.math.BigDecimal
@@ -87,14 +88,7 @@ fun MoneySettingsScreen(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Column {
-            Text("Money", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                "Income, budgets, bill reminders.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = LifeOsColors.OnSurfaceMuted,
-            )
-        }
+        ScreenHeader("Money", "Income, budgets and bill reminders")
 
         SettingsSectionLabel("Income")
         SettingsGroup {

@@ -1138,10 +1138,22 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   polish) remain in the plan file, not started.
 - **Android navigation and spending UI pass (2026-09-11, extended 2026-09-13).** A shared, fixed
   back bar now covers every non-root route, including loading/error states and
-  long statement/Priority detail pages. In-app drawer navigation preserves the
-  actual previous route; do not reinstate `popUpTo(Money)` for ordinary screen
-  changes, which broke Today -> Settings -> Back. External widget/notification
-  routing retains its explicit home-stack behavior. Root Money Transactions and
+  long statement/Priority detail pages. **Revised 2026-09-25:** drawer areas
+  are siblings, not history. Choosing one from the drawer (or a notification/
+  widget open) clears the stack so that area is the root and shows no Back bar.
+  System Back on a non-Money area root returns to Money, and Back on Money exits
+  the app. Only pages opened from inside an area show "Back to X": details,
+  Settings sub-pages, and in-page links such as Today's settings gear (which
+  still returns to Today). The app can start on the last-used area, so "home" is
+  never inferred from the stack. Every area root draws the shared fixed
+  `AreaHeader` (`components/Components.kt`): menu button top-left, 26sp title
+  matching the drawer label, one-line subtitle, optional trailing action. The
+  menu comes from `LocalOpenNavigation`, provided only for area roots, so the
+  button never moves or doubles up with Back. Detail pages have the Back bar
+  plus a `ScreenHeader` and no menu. Today no longer has its own Settings gear,
+  and Money's Transactions/Cards tabs return to Overview with system Back or the
+  tabs, not by turning the menu button into an arrow. Trip deletion lives only
+  in the trip's own page. Root Money Transactions and
   Cards return to Overview through either the visible arrow or Android Back;
   an open drawer or modal gets Back first. Money's header/tabs are fixed, with
   separate remembered scroll positions per section. Today uses a compact neutral

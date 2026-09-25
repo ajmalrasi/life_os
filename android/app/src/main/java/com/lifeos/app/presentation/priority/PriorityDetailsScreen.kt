@@ -65,10 +65,6 @@ fun PriorityDetailsScreen(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Priority", style = MaterialTheme.typography.headlineMedium)
-        }
-
         if (state.loading) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 64.dp),

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,7 +30,7 @@ import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.components.LifeScoreHero
 import com.lifeos.app.presentation.components.NotificationCard
 import com.lifeos.app.presentation.components.OfflineBanner
-import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.SectionHeader
 import com.lifeos.app.presentation.components.TrendChart
 import com.lifeos.app.presentation.components.VitalsCard
@@ -43,7 +42,6 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun DashboardScreen(
-    onOpenSettings: () -> Unit = {},
     onOpenTrips: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
     tripsViewModel: TripsViewModel = hiltViewModel(),
@@ -69,124 +67,115 @@ fun DashboardScreen(
         state.latestState?.confidence?.let { c -> (c * 100).toInt() }?.takeIf { it > 0 }
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LifeOsColors.Background)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            ScreenHeader("Today", dateLabel) {
-                IconButton(onClick = onOpenSettings) {
-                    Icon(
-                        Icons.Rounded.Settings,
-                        contentDescription = "Settings",
-                        tint = LifeOsColors.OnSurfaceMuted,
-                    )
+    Column(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
+        AreaHeader("Today", dateLabel)
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (state.usingDemoData) {
+                item { DemoBanner() }
+            }
+
+            // Hero focal point: composite Life Score, delta, and current state.
+            item {
+                LifeScoreHero(
+                    score = composite,
+                    delta = delta,
+                    stateLabel = stateLabel,
+                    confidence = confidence,
+                )
+            }
+
+            if (activeTrip != null) {
+                item {
+                    LifeOsCard(
+                        modifier = Modifier.clickable(onClick = onOpenTrips),
+                        accent = LifeOsColors.AccentSky,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Rounded.TravelExplore, null, tint = LifeOsColors.Primary)
+                            Column {
+                                Text(activeTrip.title, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (activeTrip.status == "active") "Trip tracking is active" else "Trip tracking is paused",
+                                    color = LifeOsColors.OnSurfaceMuted,
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            if (state.usingDemoData) {
-                Spacer(Modifier.height(10.dp))
-                DemoBanner()
-            }
-        }
 
-        // Hero focal point: composite Life Score, delta, and current state.
-        item {
-            LifeScoreHero(
-                score = composite,
-                delta = delta,
-                stateLabel = stateLabel,
-                confidence = confidence,
-            )
-        }
+            // Put the actionable daily readings ahead of the longer history.
+            item { SectionHeader("Your vitals") }
+            item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
+            item { TrendChart(history = state.scoreHistory) }
 
-        if (activeTrip != null) {
-            item {
-                LifeOsCard(
-                    modifier = Modifier.clickable(onClick = onOpenTrips),
-                    accent = LifeOsColors.AccentSky,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Rounded.TravelExplore, null, tint = LifeOsColors.Primary)
-                        Column {
-                            Text(activeTrip.title, style = MaterialTheme.typography.titleMedium)
+            // Why-this-state explanation, only when the model gives a rationale.
+            val rationale = state.latestState?.rationale
+            if (!rationale.isNullOrBlank()) {
+                item {
+                    LifeOsCard(accent = LifeOsColors.Primary) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                if (activeTrip.status == "active") "Trip tracking is active" else "Trip tracking is paused",
+                                "WHY THIS STATE",
+                                style = MaterialTheme.typography.labelSmall,
                                 color = LifeOsColors.OnSurfaceMuted,
+                            )
+                            Text(
+                                rationale,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LifeOsColors.OnBackground,
                             )
                         }
                     }
                 }
             }
-        }
 
-        // Put the actionable daily readings ahead of the longer history.
-        item { SectionHeader("Your vitals") }
-        item { VitalsCard(score = state.latestScore, history = state.scoreHistory) }
-        item { TrendChart(history = state.scoreHistory) }
 
-        // Why-this-state explanation, only when the model gives a rationale.
-        val rationale = state.latestState?.rationale
-        if (!rationale.isNullOrBlank()) {
-            item {
-                LifeOsCard(accent = LifeOsColors.Primary) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "WHY THIS STATE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = LifeOsColors.OnSurfaceMuted,
-                        )
-                        Text(
-                            rationale,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = LifeOsColors.OnBackground,
-                        )
+            // Spend↔sleep is a signal the user can actually act on tonight, so it
+            // gets its own card ahead of the general notification feed.
+            val spendSleepInsight = state.spendSleepInsight
+            if (spendSleepInsight != null) {
+                item {
+                    LifeOsCard(accent = LifeOsColors.AccentSky) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "SPENDING & SLEEP",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                            Text(
+                                spendSleepInsight.narrative ?: spendSleepInsight.summary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LifeOsColors.OnBackground,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-
-        // Spend↔sleep is a signal the user can actually act on tonight, so it
-        // gets its own card ahead of the general notification feed.
-        val spendSleepInsight = state.spendSleepInsight
-        if (spendSleepInsight != null) {
-            item {
-                LifeOsCard(accent = LifeOsColors.AccentSky) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "SPENDING & SLEEP",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = LifeOsColors.OnSurfaceMuted,
-                        )
-                        Text(
-                            spendSleepInsight.narrative ?: spendSleepInsight.summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = LifeOsColors.OnBackground,
-                        )
-                    }
+            if (state.message != null) {
+                item {
+                    OfflineBanner(lastSyncAt = state.lastSyncAt)
                 }
             }
-        }
 
-        if (state.message != null) {
-            item {
-                OfflineBanner(lastSyncAt = state.lastSyncAt)
+            item { SectionHeader("Notifications") }
+            if (state.notifications.isEmpty()) {
+                item {
+                    Text("No nudges yet.", style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnSurfaceMuted)
+                }
+            } else {
+                items(state.notifications) { n ->
+                    NotificationCard(n.title, n.detail, n.severity)
+                }
             }
+            item { Spacer(Modifier.height(24.dp)) }
         }
-
-        item { SectionHeader("Notifications") }
-        if (state.notifications.isEmpty()) {
-            item {
-                Text("No nudges yet.", style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnSurfaceMuted)
-            }
-        } else {
-            items(state.notifications) { n ->
-                NotificationCard(n.title, n.detail, n.severity)
-            }
-        }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }

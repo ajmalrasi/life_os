@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.domain.model.ConnectedMailAccount
@@ -103,350 +104,342 @@ fun SettingsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LifeOsColors.Background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("Settings", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "Connection and quiet automation.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
+    Column(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
+        AreaHeader("Settings", "Connection and automation")
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            SettingsGroup {
+                Column {
+                    SettingsNavRow(
+                        icon = Icons.Rounded.AccountBalanceWallet,
+                        title = "Money",
+                        subtitle = "Income, budgets, bill reminders",
+                        onClick = onOpenMoneySettings,
+                    )
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                    SettingsNavRow(
+                        icon = Icons.Rounded.TravelExplore,
+                        title = "Trips",
+                        subtitle = "Backup",
+                        onClick = onOpenTripSettings,
+                    )
+                }
             }
-        }
 
-        SettingsGroup {
-            Column {
-                SettingsNavRow(
-                    icon = Icons.Rounded.AccountBalanceWallet,
-                    title = "Money",
-                    subtitle = "Income, budgets, bill reminders",
-                    onClick = onOpenMoneySettings,
-                )
-                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
-                SettingsNavRow(
-                    icon = Icons.Rounded.TravelExplore,
-                    title = "Trips",
-                    subtitle = "Backup",
-                    onClick = onOpenTripSettings,
-                )
-            }
-        }
-
-        SettingsSectionLabel("Sync")
-        SettingsGroup {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text("Sync LifeOS", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Checks Priority mail, bank alerts, and card statements, then refreshes Pulse, Apple Health scores, execution, and insights.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-                Button(
-                    onClick = viewModel::syncAll,
-                    enabled = !state.syncing,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = LifeOsColors.Primary,
-                        contentColor = LifeOsColors.OnPrimary,
-                    ),
+            SettingsSectionLabel("Sync")
+            SettingsGroup {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (state.syncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(end = 10.dp).size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = LifeOsColors.OnPrimary,
-                        )
-                    } else {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 8.dp),
+                    Text("Sync LifeOS", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Checks Priority mail, bank alerts, and card statements, then refreshes Pulse, Apple Health scores, execution, and insights.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                    Button(
+                        onClick = viewModel::syncAll,
+                        enabled = !state.syncing,
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LifeOsColors.Primary,
+                            contentColor = LifeOsColors.OnPrimary,
+                        ),
+                    ) {
+                        if (state.syncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(end = 10.dp).size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = LifeOsColors.OnPrimary,
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 8.dp),
+                            )
+                        }
+                        Text(if (state.syncing) "Syncing LifeOS…" else "Sync everything")
+                    }
+                    Text(
+                        state.syncMessage ?: "Last refreshed ${formatLastSync(state.lastSyncAt)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (state.syncError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                    )
+                }
+            }
+
+            SettingsSectionLabel("Connection")
+            SettingsGroup {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("LifeOS server", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "The app talks to your Jetson over local Wi-Fi.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                    OutlinedTextField(
+                        value = state.baseUrl,
+                        onValueChange = viewModel::onUrlChange,
+                        label = { Text("Backend address") },
+                        placeholder = { Text("http://192.168.3.30:8000/") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors,
+                    )
+                    if (state.baseUrl.contains("10.0.2.2")) {
+                        Text(
+                            "10.0.2.2 is emulator-only. Use the Jetson LAN address on your phone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LifeOsColors.Warning,
                         )
                     }
-                    Text(if (state.syncing) "Syncing LifeOS…" else "Sync everything")
-                }
-                Text(
-                    state.syncMessage ?: "Last refreshed ${formatLastSync(state.lastSyncAt)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (state.syncError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
-                )
-            }
-        }
-
-        SettingsSectionLabel("Connection")
-        SettingsGroup {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("LifeOS server", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "The app talks to your Jetson over local Wi-Fi.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-                OutlinedTextField(
-                    value = state.baseUrl,
-                    onValueChange = viewModel::onUrlChange,
-                    label = { Text("Backend address") },
-                    placeholder = { Text("http://192.168.3.30:8000/") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = fieldColors,
-                )
-                if (state.baseUrl.contains("10.0.2.2")) {
+                    OutlinedTextField(
+                        value = state.apiToken,
+                        onValueChange = viewModel::onTokenChange,
+                        label = { Text("API token") },
+                        placeholder = { Text("Optional — leave blank if none") },
+                        singleLine = true,
+                        visualTransformation = if (tokenVisible) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { tokenVisible = !tokenVisible }) {
+                                Icon(
+                                    imageVector = if (tokenVisible) Icons.Rounded.VisibilityOff
+                                        else Icons.Rounded.Visibility,
+                                    contentDescription = if (tokenVisible) "Hide token" else "Show token",
+                                    tint = LifeOsColors.OnSurfaceMuted,
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors,
+                    )
                     Text(
-                        "10.0.2.2 is emulator-only. Use the Jetson LAN address on your phone.",
+                        "Only needed once the backend's API_TOKEN is set (Tailscale/remote " +
+                            "access, see AGENTS.md §2). Must match exactly, or requests get 401.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                    Button(
+                        onClick = viewModel::save,
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LifeOsColors.Primary,
+                            contentColor = LifeOsColors.OnPrimary,
+                        ),
+                    ) {
+                        Text(if (state.saved) "Saved" else "Save address", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            SettingsSectionLabel("Mail accounts")
+            SettingsGroup {
+                Column {
+                    MailConnectionRow(
+                        title = "Money email",
+                        description = "Bank alerts, UPI transactions, and card statements.",
+                        purpose = "finance",
+                        account = state.mailAccounts.firstOrNull { "finance" in it.purposes },
+                        busy = state.connectingPurpose == "finance",
+                        loading = state.mailLoading,
+                        onConnect = { current, force ->
+                            viewModel.connectMail("finance", current, force)
+                        },
+                        onDisconnect = { account ->
+                            disconnectPrompt = MailDisconnectPrompt(account.id, "finance", account.address)
+                        },
+                    )
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                    MailConnectionRow(
+                        title = "Priority email",
+                        description = "Important personal mail, interviews, schedules, and actions.",
+                        purpose = "priority",
+                        account = state.mailAccounts.firstOrNull { "priority" in it.purposes },
+                        busy = state.connectingPurpose == "priority",
+                        loading = state.mailLoading,
+                        onConnect = { current, force ->
+                            viewModel.connectMail("priority", current, force)
+                        },
+                        onDisconnect = { account ->
+                            disconnectPrompt = MailDisconnectPrompt(account.id, "priority", account.address)
+                        },
+                    )
+                    state.mailMessage?.let { message ->
+                        HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                        Text(
+                            message,
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.mailError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
+                }
+            }
+
+            SettingsSectionLabel("Data sources")
+            SettingsGroup {
+                if (state.sourceStatusLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = LifeOsColors.Primary)
+                    }
+                } else if (state.sourceStatusError) {
+                    Text(
+                        "Data source health could not be loaded.",
+                        modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.Warning,
                     )
-                }
-                OutlinedTextField(
-                    value = state.apiToken,
-                    onValueChange = viewModel::onTokenChange,
-                    label = { Text("API token") },
-                    placeholder = { Text("Optional — leave blank if none") },
-                    singleLine = true,
-                    visualTransformation = if (tokenVisible) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { tokenVisible = !tokenVisible }) {
-                            Icon(
-                                imageVector = if (tokenVisible) Icons.Rounded.VisibilityOff
-                                    else Icons.Rounded.Visibility,
-                                contentDescription = if (tokenVisible) "Hide token" else "Show token",
-                                tint = LifeOsColors.OnSurfaceMuted,
-                            )
+                } else {
+                    Column {
+                        state.sourceStatuses.forEachIndexed { index, status ->
+                            if (index > 0) HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                            DataSourceRow(status)
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = fieldColors,
-                )
-                Text(
-                    "Only needed once the backend's API_TOKEN is set (Tailscale/remote " +
-                        "access, see AGENTS.md §2). Must match exactly, or requests get 401.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-                Button(
-                    onClick = viewModel::save,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = LifeOsColors.Primary,
-                        contentColor = LifeOsColors.OnPrimary,
-                    ),
-                ) {
-                    Text(if (state.saved) "Saved" else "Save address", fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-
-        SettingsSectionLabel("Mail accounts")
-        SettingsGroup {
-            Column {
-                MailConnectionRow(
-                    title = "Money email",
-                    description = "Bank alerts, UPI transactions, and card statements.",
-                    purpose = "finance",
-                    account = state.mailAccounts.firstOrNull { "finance" in it.purposes },
-                    busy = state.connectingPurpose == "finance",
-                    loading = state.mailLoading,
-                    onConnect = { current, force ->
-                        viewModel.connectMail("finance", current, force)
-                    },
-                    onDisconnect = { account ->
-                        disconnectPrompt = MailDisconnectPrompt(account.id, "finance", account.address)
-                    },
-                )
-                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
-                MailConnectionRow(
-                    title = "Priority email",
-                    description = "Important personal mail, interviews, schedules, and actions.",
-                    purpose = "priority",
-                    account = state.mailAccounts.firstOrNull { "priority" in it.purposes },
-                    busy = state.connectingPurpose == "priority",
-                    loading = state.mailLoading,
-                    onConnect = { current, force ->
-                        viewModel.connectMail("priority", current, force)
-                    },
-                    onDisconnect = { account ->
-                        disconnectPrompt = MailDisconnectPrompt(account.id, "priority", account.address)
-                    },
-                )
-                state.mailMessage?.let { message ->
-                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
-                    Text(
-                        message,
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (state.mailError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
-                    )
-                }
-            }
-        }
-
-        SettingsSectionLabel("Data sources")
-        SettingsGroup {
-            if (state.sourceStatusLoading) {
-                Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = LifeOsColors.Primary)
-                }
-            } else if (state.sourceStatusError) {
-                Text(
-                    "Data source health could not be loaded.",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.Warning,
-                )
-            } else {
-                Column {
-                    state.sourceStatuses.forEachIndexed { index, status ->
-                        if (index > 0) HorizontalDivider(color = LifeOsColors.SurfaceBorder)
-                        DataSourceRow(status)
                     }
                 }
             }
-        }
 
-        SettingsSectionLabel("Automation")
-        SettingsGroup {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Daily Pulse reminder", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            if (state.pulseReminderEnabled) {
-                                "Around ${formatHour(state.pulseReminderHour)}, only if today’s Pulse is still empty."
-                            } else {
-                                "Optional local notification. Nothing is sent off-device."
+            SettingsSectionLabel("Automation")
+            SettingsGroup {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Daily Pulse reminder", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (state.pulseReminderEnabled) {
+                                    "Around ${formatHour(state.pulseReminderHour)}, only if today’s Pulse is still empty."
+                                } else {
+                                    "Optional local notification. Nothing is sent off-device."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LifeOsColors.OnSurfaceMuted,
+                            )
+                        }
+                        Switch(
+                            checked = state.pulseReminderEnabled && notificationPermissionGranted,
+                            onCheckedChange = { enabled ->
+                                when {
+                                    !enabled -> viewModel.setPulseReminderEnabled(false)
+                                    notificationPermissionGranted -> viewModel.setPulseReminderEnabled(true)
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                    else -> viewModel.setPulseReminderEnabled(true)
+                                }
                             },
+                        )
+                    }
+
+                    if (state.pulseReminderEnabled && notificationPermissionGranted) {
+                        HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Reminder time",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour - 1) }) {
+                                Icon(Icons.Rounded.Remove, contentDescription = "One hour earlier")
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = LifeOsColors.PrimarySoft,
+                            ) {
+                                Text(
+                                    formatHour(state.pulseReminderHour),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = LifeOsColors.Primary,
+                                )
+                            }
+                            IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour + 1) }) {
+                                Icon(Icons.Rounded.Add, contentDescription = "One hour later")
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("Nightly refresh", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Asks the Jetson to recompute LifeOS overnight. Apple Health continues to arrive through Health Auto Export.",
                             style = MaterialTheme.typography.bodySmall,
                             color = LifeOsColors.OnSurfaceMuted,
                         )
                     }
-                    Switch(
-                        checked = state.pulseReminderEnabled && notificationPermissionGranted,
-                        onCheckedChange = { enabled ->
-                            when {
-                                !enabled -> viewModel.setPulseReminderEnabled(false)
-                                notificationPermissionGranted -> viewModel.setPulseReminderEnabled(true)
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                                else -> viewModel.setPulseReminderEnabled(true)
-                            }
-                        },
-                    )
                 }
+            }
 
-                if (state.pulseReminderEnabled && notificationPermissionGranted) {
-                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+            SettingsSectionLabel("Navigation")
+            SettingsGroup {
+                Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Text(
-                            "Reminder time",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour - 1) }) {
-                            Icon(Icons.Rounded.Remove, contentDescription = "One hour earlier")
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = LifeOsColors.PrimarySoft,
-                        ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Reopen last used screen", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                formatHour(state.pulseReminderHour),
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = LifeOsColors.Primary,
+                                if (state.reopenLastTab) {
+                                    "Opens the area you were last using (e.g. Trips or Today) when launching the app."
+                                } else {
+                                    "Always starts on Money when opening the app."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LifeOsColors.OnSurfaceMuted,
                             )
                         }
-                        IconButton(onClick = { viewModel.setPulseReminderHour(state.pulseReminderHour + 1) }) {
-                            Icon(Icons.Rounded.Add, contentDescription = "One hour later")
-                        }
+                        Switch(
+                            checked = state.reopenLastTab,
+                            onCheckedChange = viewModel::setReopenLastTab,
+                        )
                     }
                 }
+            }
 
-                HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+            SettingsSectionLabel("About")
+            SettingsGroup {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    Text("Nightly refresh", style = MaterialTheme.typography.titleMedium)
+                    Text("Private by design", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Asks the Jetson to recompute LifeOS overnight. Apple Health continues to arrive through Health Auto Export.",
+                        "Your data stays on your phone and Jetson. Settings here affect this device only.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.OnSurfaceMuted,
                     )
                 }
             }
+            Spacer(Modifier.height(20.dp))
         }
-
-        SettingsSectionLabel("Navigation")
-        SettingsGroup {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Reopen last used screen", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            if (state.reopenLastTab) {
-                                "Opens the area you were last using (e.g. Trips or Today) when launching the app."
-                            } else {
-                                "Always starts on Money when opening the app."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = LifeOsColors.OnSurfaceMuted,
-                        )
-                    }
-                    Switch(
-                        checked = state.reopenLastTab,
-                        onCheckedChange = viewModel::setReopenLastTab,
-                    )
-                }
-            }
-        }
-
-        SettingsSectionLabel("About")
-        SettingsGroup {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Text("Private by design", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Your data stays on your phone and Jetson. Settings here affect this device only.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LifeOsColors.OnSurfaceMuted,
-                )
-            }
-        }
-        Spacer(Modifier.height(20.dp))
     }
 
     disconnectPrompt?.let { prompt ->

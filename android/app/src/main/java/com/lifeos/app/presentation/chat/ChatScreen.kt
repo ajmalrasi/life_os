@@ -55,7 +55,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeos.app.presentation.components.ScreenHeader
+import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.lifeOsFieldColors
 import com.lifeos.app.presentation.theme.LifeOsColors
 
@@ -72,65 +72,65 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         focusManager.clearFocus()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LifeOsColors.Background)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-    ) {
-        ScreenHeader("Ask LifeOS", "Ask about your life, or anything else.")
-        Spacer(Modifier.height(16.dp))
-
-        StreamingMessageList(
-            messages = state.messages,
-            sending = state.sending,
-            status = state.status,
-            suggestions = state.suggestions,
-            onSuggestion = { viewModel.send(it) },
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-        )
-
-        val waitingForFirstToken = state.sending && state.messages.lastOrNull()?.role == "user"
-        if (state.sending && !waitingForFirstToken && state.status.isNotBlank()) {
-            Text(state.status, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
-        }
-        state.error?.let { error ->
-            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            if (state.retryable) {
-                Text("Retry", modifier = Modifier.clickable { viewModel.retry() }.padding(8.dp),
-                    color = LifeOsColors.Primary)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = state.input,
-                onValueChange = viewModel::onInputChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask anything…") },
-                shape = RoundedCornerShape(18.dp),
-                colors = fieldColors,
-                // Single-line + IME "Send" so Enter submits the question instead of
-                // inserting a newline and growing the field (which shoved the layout).
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { submit() }),
+    Column(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
+        AreaHeader("Ask", "Your life, or anything else")
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+        ) {
+            StreamingMessageList(
+                messages = state.messages,
+                sending = state.sending,
+                status = state.status,
+                suggestions = state.suggestions,
+                onSuggestion = { viewModel.send(it) },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(LifeOsColors.Primary)
-                    .clickable(enabled = !state.sending && state.input.isNotBlank()) { submit() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send",
-                    tint = LifeOsColors.OnPrimary,
-                    modifier = Modifier.size(22.dp),
+
+            val waitingForFirstToken = state.sending && state.messages.lastOrNull()?.role == "user"
+            if (state.sending && !waitingForFirstToken && state.status.isNotBlank()) {
+                Text(state.status, style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+            }
+            state.error?.let { error ->
+                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (state.retryable) {
+                    Text("Retry", modifier = Modifier.clickable { viewModel.retry() }.padding(8.dp),
+                        color = LifeOsColors.Primary)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = state.input,
+                    onValueChange = viewModel::onInputChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Ask anything…") },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                    // Single-line + IME "Send" so Enter submits the question instead of
+                    // inserting a newline and growing the field (which shoved the layout).
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submit() }),
                 )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(LifeOsColors.Primary)
+                        .clickable(enabled = !state.sending && state.input.isNotBlank()) { submit() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send",
+                        tint = LifeOsColors.OnPrimary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
     }

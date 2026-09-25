@@ -93,6 +93,7 @@ import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.RecurringCharge
 import com.lifeos.app.domain.model.RepaymentCandidate
 import com.lifeos.app.domain.model.Transaction
+import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.LifeOsCard
 import com.lifeos.app.presentation.theme.LifeOsColors
 import java.math.BigDecimal
@@ -258,8 +259,6 @@ internal fun sortTransactions(
 @Composable
 fun MoneyScreen(
     overviewRequestId: Long = 0L,
-    onOpenNavigation: () -> Unit = {},
-    showNavigationButton: Boolean = true,
     navigationDrawerOpen: Boolean = false,
     onOpenStatement: (Int) -> Unit = {},
     onOpenCurrentCycle: (String, String) -> Unit = { _, _ -> },
@@ -278,7 +277,7 @@ fun MoneyScreen(
 
     // A root Money section has an in-app way home as well as Android Back.
     // Modal sheets/dialogs declared below retain first refusal on Back.
-    BackHandler(enabled = showNavigationButton && !navigationDrawerOpen && state.section != MoneySection.OVERVIEW) {
+    BackHandler(enabled = !navigationDrawerOpen && state.section != MoneySection.OVERVIEW) {
         viewModel.setSection(MoneySection.OVERVIEW)
     }
 
@@ -525,15 +524,8 @@ fun MoneyScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(LifeOsColors.Background)) {
         Column(modifier = Modifier.fillMaxSize()) {
+            MoneyTopBar(lastSyncAt = state.lastSyncAt)
             Column(Modifier.padding(horizontal = 20.dp)) {
-                MoneyTopBar(
-                    lastSyncAt = state.lastSyncAt,
-                    onOpenNavigation = onOpenNavigation,
-                    showNavigationButton = showNavigationButton,
-                    onBackToOverview = if (state.section != MoneySection.OVERVIEW) {
-                        { viewModel.setSection(MoneySection.OVERVIEW) }
-                    } else null,
-                )
                 MoneySectionTabs(selected = state.section, onSelect = viewModel::setSection)
                 Spacer(Modifier.height(16.dp))
             }
@@ -788,35 +780,10 @@ fun MoneyScreen(
 }
 
 @Composable
-private fun MoneyTopBar(
-    lastSyncAt: Long?,
-    onOpenNavigation: () -> Unit,
-    showNavigationButton: Boolean,
-    onBackToOverview: (() -> Unit)?,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (showNavigationButton) {
-            Surface(
-                modifier = Modifier.size(48.dp).clickable(onClick = onBackToOverview ?: onOpenNavigation),
-                shape = RoundedCornerShape(14.dp),
-                color = LifeOsColors.SurfaceMuted,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        if (onBackToOverview != null) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu,
-                        contentDescription = if (onBackToOverview != null) "Back to Overview" else "Open navigation drawer",
-                        tint = LifeOsColors.OnBackground,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.width(14.dp))
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Money", style = MaterialTheme.typography.headlineLarge, color = LifeOsColors.OnBackground)
+private fun MoneyTopBar(lastSyncAt: Long?) {
+    AreaHeader(
+        title = "Money",
+        subtitleContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(
                     when {
@@ -832,14 +799,8 @@ private fun MoneyTopBar(
                     color = LifeOsColors.OnSurfaceMuted,
                 )
             }
-        }
-        if (showNavigationButton && onBackToOverview != null) {
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onOpenNavigation) {
-                Icon(Icons.Rounded.Menu, contentDescription = "Open navigation drawer")
-            }
-        }
-    }
+        },
+    )
 }
 
 private fun syncFreshness(lastSyncAt: Long?): String {
