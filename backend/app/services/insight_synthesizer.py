@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from app.services.training import WORKOUT_JUDGEMENT_RULE
@@ -125,6 +126,9 @@ def synthesize(
         return []
 
     valid_ids = {f.id for f in evidence}
+    known_numbers: set[str] = set()
+    for f in evidence:
+        known_numbers |= _numbers(f.statement)
     drafts: list[dict] = []
     for item in _parse(raw):
         title = (item.get("title") or "").strip()
@@ -136,6 +140,13 @@ def synthesize(
         # insight that cites nothing real is an invented judgement — drop it.
         cites = [c for c in cites_raw if isinstance(c, str) and c in valid_ids]
         if not cites:
+            continue
+        # A number the facts never stated is an invented or recomputed one
+        # (it once wrote "lapsed for 50 days" from a fact saying 58). The
+        # action may set a new target, so only the judgement is checked.
+        invented = _numbers(title + " " + body) - known_numbers
+        if invented:
+            logger.info("insight dropped: numbers not in evidence %s", sorted(invented))
             continue
 
         action = item.get("action")
@@ -159,6 +170,13 @@ def synthesize(
 
     drafts.sort(key=lambda d: _SEVERITY_ORDER.get(d["severity"], 1))
     return drafts
+
+
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _numbers(text: str) -> set[str]:
+    return {m.group().replace(",", "").rstrip(".") for m in _NUMBER.finditer(text)}
 
 
 def _parse(raw: str) -> list[dict]:

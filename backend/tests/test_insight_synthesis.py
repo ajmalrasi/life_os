@@ -41,7 +41,7 @@ def _item(**overrides) -> str:
 
     base = {
         "title": "Shopping is too high",
-        "verdict": "You spent ₹25,000 on shopping this month, 3x your usual.",
+        "verdict": "You spent ₹25,000 on shopping this month against a usual ₹8,000.",
         "action": "Cap shopping at ₹10,000 for the rest of the month.",
         "domain": "money",
         "severity": "high",
@@ -99,7 +99,7 @@ def test_unknown_domain_and_severity_clamp_to_defaults():
 
 
 def test_synthesize_caps_to_five_and_returned_count_can_be_seven():
-    items = ",".join(_item(cites=["cat:shopping"], title=f"t{i}") for i in range(7))
+    items = ",".join(_item(cites=["cat:shopping"], title=f"t{chr(97 + i)}") for i in range(7))
     client = _FakeClient(f"[{items}]")
     assert len(synthesize(_evidence(), client=client)) == 5
 
@@ -244,3 +244,17 @@ def test_parse_accepts_objects_without_outer_brackets():
     assert [i["title"] for i in _parse(raw)] == ["A", "B"]
     assert [i["title"] for i in _parse("[" + raw + "]")] == ["A", "B"]
     assert _parse("not json") == []
+
+
+def test_synthesize_drops_an_insight_with_a_number_not_in_the_evidence():
+    evidence = _evidence() + [EvidenceFact(
+        "health:workouts",
+        "No workouts in the last 28 days. Last workout: Jul 29 21:02 Traditional Strength Training, 50 min, 58 days ago.",
+    )]
+    wrong = _item(title="Workouts have lapsed", verdict="No substantial workout for 45 days.",
+                  domain="health", cites=["health:workouts"])
+    right = _item(title="Workouts have lapsed", verdict="No workout for 58 days since Jul 29.",
+                  domain="health", cites=["health:workouts"])
+    assert synthesize(evidence, client=_FakeClient(f"[{wrong}]")) == []
+    kept = synthesize(evidence, client=_FakeClient(f"[{right}]"))
+    assert [i["body"] for i in kept] == ["No workout for 58 days since Jul 29."]
