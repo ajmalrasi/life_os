@@ -180,3 +180,9 @@ def test_today_endpoint_reports_brief_status(client):
     body = client.get("/analytics/today").json()
     assert body["brief"] is None
     assert body["brief_status"] in {"refreshing", "unavailable"}
+
+
+def test_facts_state_the_direction_of_a_comparison():
+    assert day_brief._versus(55, 64, "lower") == "below your usual, which is better"
+    assert day_brief._versus(31, 40, "higher") == "below your usual, which is worse"
+    assert day_brief._versus(41, 40, "higher") == "about your usual"

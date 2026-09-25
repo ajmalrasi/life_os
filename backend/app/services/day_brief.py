@@ -56,6 +56,9 @@ _SYSTEM_PROMPT = (
     "- Use the current time. Few steps or commits early in the day are normal, not avoidance.\n"
     "- Missing data is not zero. If last night's sleep or today's vitals have not arrived, say so.\n"
     "- Use only numbers that appear in the facts. Do not calculate new ones.\n"
+    "- The facts already say whether a reading is better or worse than usual. Repeat that; never reverse it.\n"
+    "- Describe what the numbers show. Do not claim one thing caused another.\n"
+    "- Keep the suggestion proportionate and practical; never tell the user to stop working.\n"
     "- No diagnoses, no markdown, no emoji.\n"
     "- headline: at most 8 words. summary: 1-2 sentences, at most 45 words. "
     "suggestion: one concrete thing for the rest of today, at most 20 words.\n"
@@ -91,6 +94,17 @@ def _avg(values: list[float | None]) -> float | None:
     return sum(vals) / len(vals) if vals else None
 
 
+def _versus(value: float, usual: float, good_when: str) -> str:
+    """Say which way a reading sits against its usual, so the model never has to
+    work out the direction (it once called a lower resting HR "elevated")."""
+    if usual <= 0 or abs(value - usual) / usual < 0.05:
+        return "about your usual"
+    higher = value > usual
+    side = "above" if higher else "below"
+    better = (higher and good_when == "higher") or (not higher and good_when == "lower")
+    return f"{side} your usual, which is {'better' if better else 'worse'}"
+
+
 def _time_of_day(now: datetime) -> str:
     if now.hour < 12:
         return "morning"
@@ -120,7 +134,7 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
             parts.append(", ".join(stages))
         facts.append(EvidenceFact("sleep_last_night", "; ".join(parts) + "."))
     else:
-        text = "No sleep has been recorded for last night yet."
+        text = "No sleep has been recorded for last night yet; this is missing data, not a bad night."
         for back in range(1, _USUAL_WINDOW + 1):
             earlier = health.sleep_for_day(day - timedelta(days=back))
             if earlier is not None:
@@ -131,15 +145,16 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
     usual_nights = [health.sleep_for_day(day - timedelta(days=i)) for i in range(1, _USUAL_WINDOW + 1)]
     usual_hours = [n.total_hours for n in usual_nights if n is not None]
     if len(usual_hours) >= 3:
-        facts.append(EvidenceFact(
-            "sleep_usual",
-            f"Usual sleep: {sum(usual_hours) / len(usual_hours):.1f} h a night over the {len(usual_hours)} recorded nights of the past {_USUAL_WINDOW} days.",
-        ))
+        usual = sum(usual_hours) / len(usual_hours)
+        text = f"Usual sleep: {usual:.1f} h a night over the {len(usual_hours)} recorded nights of the past {_USUAL_WINDOW} days"
+        if night is not None:
+            text += f"; last night was {_versus(night.total_hours, usual, 'higher')}"
+        facts.append(EvidenceFact("sleep_usual", text + "."))
 
     # --- recovery vitals: the latest daily value, with its date ---
-    for fid, label, unit, t in (
-        ("hrv", "HRV", "ms", T.HRV),
-        ("resting_hr", "Resting heart rate", "bpm", T.RESTING_HEART_RATE),
+    for fid, label, unit, t, good_when in (
+        ("hrv", "HRV", "ms", T.HRV, "higher"),
+        ("resting_hr", "Resting heart rate", "bpm", T.RESTING_HEART_RATE, "lower"),
     ):
         for back in range(0, 4):
             d = day - timedelta(days=back)
@@ -149,7 +164,7 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
             baseline = health.baseline_mean(d - timedelta(days=30), d, t)
             text = f"{label} {value:.0f} {unit} ({_when(d, day)})"
             if baseline is not None:
-                text += f"; 30-day usual {baseline:.0f} {unit}"
+                text += f"; 30-day usual {baseline:.0f} {unit}, so {_versus(value, baseline, good_when)}"
             facts.append(EvidenceFact(fid, text + "."))
             break
         else:
@@ -172,7 +187,10 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
         facts.append(EvidenceFact("activity_today", "So far today: " + ", ".join(bits) + "."))
     usual_steps = _avg([_day_total(health, day - timedelta(days=i), T.STEPS) for i in range(1, _USUAL_WINDOW + 1)])
     if usual_steps is not None:
-        facts.append(EvidenceFact("steps_usual", f"Usual full-day steps: {usual_steps:,.0f}."))
+        facts.append(EvidenceFact(
+            "steps_usual",
+            f"Usual full-day steps: {usual_steps:,.0f} (today's count is partial until the day ends).",
+        ))
 
     # --- work output ---
     github = GithubRepository(db)
