@@ -69,7 +69,8 @@ last training workout, and data freshness. Two automations push to
 (migration `0004`); the watch's `duration` is used, not end minus start
 (pauses). Each workout also stores `workout_energy` (kcal) and
 `workout_avg_hr` rows with the same times and label (all 542 XML workouts
-backfilled; the 28 Jun–Sep phone-pulled ones lack them). **Every workout
+backfilled from the XML; the 28 Jun–Sep ones re-pulled from the phone's MCP
+server on 2026-09-25, when all 570 phone workouts were matched one-for-one). **Every workout
 counts, walks included, and no code threshold decides what "real" exercise
 is** (the user's rule: a daily 30-second session must not pass as training,
 but don't hard-code it). `services/training.py` gives the model 13 weeks: each session with
@@ -85,6 +86,15 @@ once via the phone's MCP `get_workouts` tool (28 sessions; last training
 2026-07-29). The 542 older XML-import workouts got their types on 2026-09-25
 by re-parsing the original `export.zip` (iCloud Drive Downloads) with the
 importer's own `source_id` rule and updating `label` only; all 570 are typed.
+
+Also 2026-09-25: Health Auto Export sends energy in **kJ**; it was stored as-is
+(699 `calories`/`basal_energy_burned` rows, ~4.2x too high for scoring since
+2026-06-19). Ingest now converts kJ to kcal and migration `0006` fixed stored
+rows; scores were recomputed. The 2026-06-15..18 activity gap (between the XML
+import and the automation) was filled from the phone. The Today brief also
+rejects a suggestion that tells the user to stop working. The weekly recap
+timer is installed as a **user** unit (`~/.config/systemd/user`, linger is on;
+no sudo on the Jetson), next run Sunday 21:00.
 
 ## Today overview update (2026-09-25)
 

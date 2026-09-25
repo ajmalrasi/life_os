@@ -84,6 +84,9 @@ def _value_and_unit(rec_type: str, value: float, units: str) -> tuple[float, str
         return value, "m"
     if rec_type == "weight":
         return (value * 0.45359237 if u == "lb" else value), "kg"
+    if u == "kj":
+        # Health Auto Export sends energy in kJ; LifeOS scores it as kcal.
+        return value / 4.184, "kcal"
     if rec_type == "basal_body_temperature":
         return ((value - 32.0) * 5.0 / 9.0 if u in ("degf", "f") else value), "C"
     return value, (units or "")[:32]

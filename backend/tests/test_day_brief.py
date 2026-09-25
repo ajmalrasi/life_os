@@ -303,3 +303,26 @@ def test_workout_duration_excludes_pauses(client):
     walk["duration"] = 19.2 * 60
     record = parse_export({"data": {"workouts": [walk]}})[0]
     assert round(record.value, 1) == 19.2
+
+
+def test_energy_sent_in_kilojoules_is_stored_as_kcal():
+    records = parse_export({"data": {"metrics": [{
+        "name": "active_energy", "units": "kJ",
+        "data": [{"date": "2026-06-15 00:00:00 +0530", "qty": 2235.0}],
+    }]}})
+    assert records[0].type == "calories" and records[0].unit == "kcal"
+    assert round(records[0].value) == 534
+
+
+def test_a_brief_telling_the_user_to_stop_working_is_rejected(client):
+    db = SessionLocal()
+    facts = day_brief.compute_day_facts(db, date.today())
+    db.close()
+    reply = {
+        "state": "burnout_risk", "confidence": "medium", "headline": "Strained day",
+        "summary": "HRV is below your usual.", "suggestion": "Stop heavy output now and rest.",
+        "workout_note": "", "workout_attention": False, "cites": ["now"],
+    }
+    assert day_brief.validate_brief(reply, facts) is None
+    ok = {**reply, "suggestion": "Take a 20-minute walk and keep tonight light."}
+    assert day_brief.validate_brief(ok, facts) is not None

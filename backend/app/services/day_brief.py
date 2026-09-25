@@ -283,6 +283,13 @@ def _schema(fact_ids: list[str]) -> dict:
     }
 
 
+# The prompt forbids telling the user to stop working; the model sometimes
+# does anyway ("Stop heavy output now"). Such a reply is rejected like one
+# with an invented number, and the last good brief stays.
+_STOP_WORK = re.compile(
+    r"\b(stop|quit|cease|halt|pause)\b[^.]{0,30}\b(work|working|output|coding|job)\b", re.IGNORECASE
+)
+
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
@@ -307,6 +314,9 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
     if confidence not in _CONFIDENCE or not (headline and summary and suggestion):
         return None
     if not cites or not set(cites) <= ids:
+        return None
+    if _STOP_WORK.search(suggestion + " " + summary):
+        logger.info("day brief rejected: tells the user to stop working")
         return None
     known = set()
     for f in facts:
