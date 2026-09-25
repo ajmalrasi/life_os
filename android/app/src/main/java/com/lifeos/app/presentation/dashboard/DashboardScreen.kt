@@ -40,6 +40,7 @@ fun DashboardScreen(
     onOpenCards: () -> Unit = {},
     onOpenStatement: (Int) -> Unit = {},
     onOpenTrip: (String) -> Unit = {},
+    onOpenInsights: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -68,13 +69,17 @@ fun DashboardScreen(
 
             // Today is also the overview: what needs doing, the trip, and Money,
             // all from local caches so it works offline like Money does.
-            if (overview != null && overview.attention.isNotEmpty()) {
+            // The model's workout judgement leads: it is a health problem the
+            // money items below cannot show.
+            val attention = listOfNotNull(workoutAttention(state.today?.brief)) + overview?.attention.orEmpty()
+            if (attention.isNotEmpty()) {
                 item {
-                    AttentionCard(overview.attention) { attention ->
+                    AttentionCard(attention) { item ->
                         when {
-                            attention.statementId != null -> onOpenStatement(attention.statementId)
-                            attention.target == OverviewTarget.CARDS -> onOpenCards()
-                            attention.target == OverviewTarget.TRIP -> overview.trip?.let { onOpenTrip(it.id) }
+                            item.statementId != null -> onOpenStatement(item.statementId)
+                            item.target == OverviewTarget.HEALTH -> onOpenInsights()
+                            item.target == OverviewTarget.CARDS -> onOpenCards()
+                            item.target == OverviewTarget.TRIP -> overview?.trip?.let { onOpenTrip(it.id) }
                             else -> onOpenMoney()
                         }
                     }

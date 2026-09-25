@@ -142,6 +142,46 @@ def workout_label(raw: str | None) -> str:
     return (name or "Workout")[:64]
 
 
+def _quantity(value: Any) -> tuple[float | None, str]:
+    """HAE quantities arrive as {"qty": .., "units": ..}; tolerate a bare number."""
+    if isinstance(value, dict):
+        return _to_float(value.get("qty")), str(value.get("units") or "")
+    return _to_float(value), ""
+
+
+def _workout_avg_hr(w: dict[str, Any]) -> float | None:
+    hr, _ = _quantity(w.get("avgHeartRate"))
+    if hr is None and isinstance(w.get("heartRate"), dict):
+        hr, _ = _quantity(w["heartRate"].get("avg"))
+    return hr
+
+
+def _workout_records(w: dict[str, Any]) -> list[HealthRecordIn]:
+    """A workout plus its active energy and average heart rate, when sent.
+
+    The extra readings share the workout's times and label so the model can
+    judge a session by its duration and effort, not merely that it exists.
+    """
+    rec = _workout_record(w)
+    if rec is None:
+        return []
+    out = [rec]
+    energy, units = _quantity(w.get("activeEnergyBurned"))
+    if energy is not None and energy >= 0:
+        kcal = energy / 4.184 if units.lower() == "kj" else energy
+        out.append(rec.model_copy(update={
+            "source_id": _sid("workout_energy", w.get("start") or str(rec.start_time), rec.label),
+            "type": "workout_energy", "value": round(kcal, 1), "unit": "kcal",
+        }))
+    hr = _workout_avg_hr(w)
+    if hr is not None and hr > 0:
+        out.append(rec.model_copy(update={
+            "source_id": _sid("workout_avg_hr", w.get("start") or str(rec.start_time), rec.label),
+            "type": "workout_avg_hr", "value": round(hr, 1), "unit": "bpm",
+        }))
+    return out
+
+
 def _workout_record(w: dict[str, Any]) -> HealthRecordIn | None:
     start = _parse_date(w.get("start") or w.get("startDate"))
     end = _parse_date(w.get("end") or w.get("endDate"))
@@ -199,8 +239,6 @@ def parse_export(payload: dict[str, Any]) -> list[HealthRecordIn]:
 
     for w in data.get("workouts") or []:
         if isinstance(w, dict):
-            rec = _workout_record(w)
-            if rec is not None:
-                out.append(rec)
+            out += _workout_records(w)
 
     return out

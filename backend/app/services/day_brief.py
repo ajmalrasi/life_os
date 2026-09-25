@@ -30,7 +30,7 @@ from app.repositories.github_repo import GithubRepository
 from app.repositories.health_repo import HealthRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.insight_synthesizer import EvidenceFact
-from app.services.training import is_walk_workout
+from app.services.training import WORKOUT_JUDGEMENT_RULE, workout_statement, workout_summary
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.day_brief")
@@ -57,7 +57,10 @@ _SYSTEM_PROMPT = (
     "Rules:\n"
     "- Use the current time. Few steps or commits early in the day are normal, not avoidance.\n"
     "- Missing data is not zero. If last night's sleep or today's vitals have not arrived, say so.\n"
-    "- A workout is deliberate training logged on the watch. Walking shows up only as steps; never call it a workout.\n"
+    "- " + WORKOUT_JUDGEMENT_RULE + "\n"
+    "- workout_note: one sentence (at most 20 words) judging the recent workouts from the "
+    "workouts fact. workout_attention: true only if the workouts show a real problem worth "
+    "acting on, such as weeks without a substantial session.\n"
     "- Use only numbers that appear in the facts. Do not calculate new ones.\n"
     "- The facts already say whether a reading is better or worse than usual. Repeat that; never reverse it.\n"
     "- Describe what the numbers show. Do not claim one thing caused another.\n"
@@ -114,43 +117,6 @@ def _time_of_day(now: datetime) -> str:
     if now.hour < 17:
         return "afternoon"
     return "evening"
-
-
-def _workout_fact(health: HealthRepository, day: date) -> str:
-    """Recent training, told apart from walking, and honest about missing exports."""
-    window_start = day - timedelta(days=_WORKOUT_WINDOW - 1)
-    history = health.workouts_between(date(1970, 1, 1), day)
-    training = [w for w in history if not is_walk_workout(w.label)]
-    recent = [w for w in training if _local(w.start_time).date() >= window_start]
-    walks = [w for w in history if is_walk_workout(w.label) and _local(w.start_time).date() >= window_start]
-    parts: list[str] = []
-    if recent:
-        minutes = sum(w.value for w in recent)
-        kinds = ", ".join(dict.fromkeys(w.label or "Workout" for w in recent))
-        parts.append(
-            f"Training workouts in the last {_WORKOUT_WINDOW} days: {len(recent)}, {minutes:.0f} min in total ({kinds})."
-        )
-    if training:
-        last = training[-1]
-        d = _local(last.start_time).date()
-        ago = (day - d).days
-        when = _when(d, day) if ago <= 1 else f"{_when(d, day)}, {ago} days ago"
-        parts.append(f"Most recent training workout: {last.label or 'Workout'}, {last.value:.0f} min ({when}).")
-    else:
-        parts.append("No training workout has ever been recorded.")
-    if walks:
-        parts.append(
-            f"Walks logged as workouts in the last {_WORKOUT_WINDOW} days: {len(walks)}, "
-            f"{sum(w.value for w in walks):.0f} min; these are walking, not training."
-        )
-    if health.workout_export_seen_at() is None:
-        parts.append(
-            "The phone does not send workouts yet, so workouts after the Apple Health history "
-            "import are unknown, not zero."
-        )
-    elif not recent:
-        parts.append(f"No training workouts in the last {_WORKOUT_WINDOW} days.")
-    return " ".join(parts)
 
 
 def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> list[EvidenceFact]:
@@ -233,7 +199,7 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
         ))
 
     # --- training: workouts, as opposed to walking ---
-    facts.append(EvidenceFact("workouts", _workout_fact(health, day)))
+    facts.append(EvidenceFact("workouts", workout_statement(workout_summary(health, day))))
 
     # --- work output ---
     github = GithubRepository(db)
@@ -305,9 +271,14 @@ def _schema(fact_ids: list[str]) -> dict:
             "headline": {"type": "string"},
             "summary": {"type": "string"},
             "suggestion": {"type": "string"},
+            "workout_note": {"type": "string"},
+            "workout_attention": {"type": "boolean"},
             "cites": {"type": "array", "items": {"type": "string", "enum": fact_ids}},
         },
-        "required": ["state", "confidence", "headline", "summary", "suggestion", "cites"],
+        "required": [
+            "state", "confidence", "headline", "summary", "suggestion",
+            "workout_note", "workout_attention", "cites",
+        ],
         "additionalProperties": False,
     }
 
@@ -328,6 +299,8 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
         headline = str(reply["headline"]).strip()
         summary = str(reply["summary"]).strip()
         suggestion = str(reply["suggestion"]).strip()
+        workout_note = str(reply.get("workout_note") or "").strip()
+        workout_attention = bool(reply.get("workout_attention")) and bool(workout_note)
         cites = [str(c) for c in reply["cites"]]
     except (KeyError, TypeError, ValueError):
         return None
@@ -338,7 +311,7 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
     known = set()
     for f in facts:
         known |= _numbers(f.statement)
-    invented = _numbers(headline + " " + summary) - known
+    invented = _numbers(headline + " " + summary + " " + workout_note) - known
     if invented:
         logger.info("day brief rejected: numbers not in facts %s", sorted(invented))
         return None
@@ -348,6 +321,8 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
         "headline": headline[:160],
         "summary": summary[:600],
         "suggestion": suggestion[:300],
+        "workout_note": workout_note[:200] or None,
+        "workout_attention": workout_attention,
         "cites": ",".join(dict.fromkeys(cites))[:500],
     }
 
@@ -381,7 +356,7 @@ def generate_brief(
     ]
     try:
         reply = client.chat_json(
-            messages, _schema([f.id for f in facts]), "today_brief", max_tokens=320, temperature=0.3,
+            messages, _schema([f.id for f in facts]), "today_brief", max_tokens=400, temperature=0.3,
         )
     except OpenClawUnavailable as exc:
         logger.info("day brief skipped (model unavailable): %s", exc)

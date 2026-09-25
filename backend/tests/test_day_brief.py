@@ -188,9 +188,14 @@ def test_facts_state_the_direction_of_a_comparison():
     assert day_brief._versus(41, 40, "higher") == "about your usual"
 
 
-def _workout(name: str, start: datetime, minutes: int) -> dict:
+def _workout(name: str, start: datetime, minutes: int, kj: float | None = None, hr: float | None = None) -> dict:
     fmt = "%Y-%m-%d %H:%M:%S +0530"
-    return {"name": name, "start": start.strftime(fmt), "end": (start + timedelta(minutes=minutes)).strftime(fmt)}
+    w = {"name": name, "start": start.strftime(fmt), "end": (start + timedelta(minutes=minutes)).strftime(fmt)}
+    if kj is not None:
+        w["activeEnergyBurned"] = {"qty": kj, "units": "kJ"}
+    if hr is not None:
+        w["avgHeartRate"] = {"qty": hr, "units": "bpm"}
+    return w
 
 
 def _workout_fact(day: date) -> str:
@@ -200,28 +205,27 @@ def _workout_fact(day: date) -> str:
     return fact.statement
 
 
-def test_workout_type_is_kept_and_both_strength_sessions_are_told_apart(client):
+def test_each_workout_keeps_its_type_duration_energy_and_heart_rate(client):
     today = date.today()
     day = today - timedelta(days=3)
     payload = {"data": {"workouts": [
-        _workout("Traditional Strength Training", _at(day, 19), 40),
-        _workout("Functional Strength Training", _at(day, 19, 45), 20),
+        _workout("Traditional Strength Training", _at(day, 19), 40, kj=1534.5, hr=128),
+        _workout("Functional Strength Training", _at(day, 19, 45), 20, kj=224.0),
     ]}}
-    assert client.post("/health/auto-export", json=payload).json()["inserted"] == 2
+    assert client.post("/health/auto-export", json=payload).json()["inserted"] == 5
 
     db = SessionLocal()
-    rows = HealthRepository(db).workouts_between(day, day)
-    assert [(r.label, round(r.value)) for r in rows] == [
-        ("Traditional Strength Training", 40),
-        ("Functional Strength Training", 20),
+    sessions = HealthRepository(db).workout_sessions(day, day)
+    assert [(s.label, round(s.minutes), round(s.energy_kcal), s.avg_hr) for s in sessions] == [
+        ("Traditional Strength Training", 40, 367, 128.0),
+        ("Functional Strength Training", 20, 54, None),
     ]
     db.close()
 
     fact = _workout_fact(today)
-    assert "Training workouts in the last 28 days: 2, 60 min in total" in fact
-    assert "Traditional Strength Training, Functional Strength Training" in fact
-    assert "Most recent training workout: Functional Strength Training, 20 min" in fact
-    assert "3 days ago" in fact
+    assert "Workouts in the last 28 days (2):" in fact
+    assert "Traditional Strength Training, 40 min, 367 kcal active, avg HR 128 bpm" in fact
+    assert "Functional Strength Training, 20 min, 54 kcal active" in fact
     assert "unknown" not in fact
 
 
@@ -235,18 +239,39 @@ def test_workouts_are_unknown_until_the_phone_sends_a_workouts_export(client):
     )])
     db.close()
     fact = _workout_fact(today)
-    assert "90 days ago" in fact and "unknown, not zero" in fact
+    assert "No workouts in the last 28 days." in fact
+    assert "Traditional Strength Training, 52 min, 90 days ago" in fact
+    assert "unknown, not zero" in fact
 
     # An empty workouts export means "none recorded", not "not sent".
     client.post("/health/auto-export", json={"data": {"workouts": []}})
-    fact = _workout_fact(today)
-    assert "unknown" not in fact
-    assert "No training workouts in the last 28 days." in fact
+    assert "unknown" not in _workout_fact(today)
 
-    # A health-metrics export alone never claims anything about workouts.
+
+def test_walks_count_as_workouts(client):
+    today = date.today()
+    client.post("/health/auto-export", json={"data": {"workouts": [
+        _workout("Outdoor Walk", _at(today - timedelta(days=2), 18), 19, kj=240),
+    ]}})
+    assert "Outdoor Walk, 19 min, 57 kcal active" in _workout_fact(today)
+
+
+def test_brief_keeps_the_models_workout_judgement(client):
+    today = date.today()
     db = SessionLocal()
-    assert HealthRepository(db).workout_export_seen_at() is not None
+    facts = day_brief.compute_day_facts(db, today)
     db.close()
+    reply = {
+        "state": "unknown", "confidence": "low", "headline": "Quiet start", "summary": "Little data yet.",
+        "suggestion": "Take a walk.", "cites": ["now"],
+        "workout_note": "No real workout in weeks; restart with a proper session.", "workout_attention": True,
+    }
+    kept = day_brief.validate_brief(reply, facts)
+    assert kept["workout_attention"] is True and kept["workout_note"].startswith("No real workout")
+    # An invented number in the note rejects the reply, like the summary.
+    assert day_brief.validate_brief({**reply, "workout_note": "Only 3 sessions of 9999 min."}, facts) is None
+    # Attention without a note is meaningless and is dropped.
+    assert day_brief.validate_brief({**reply, "workout_note": ""}, facts)["workout_attention"] is False
 
 
 def test_resending_a_workout_fills_in_a_missing_type(client):
@@ -270,14 +295,9 @@ def test_apple_xml_activity_names_become_readable():
     assert workout_label(None) == "Workout"
 
 
-def test_a_logged_walk_is_not_training_and_duration_excludes_pauses(client):
-    today = date.today()
-    lift = _workout("Traditional Strength Training", _at(today - timedelta(days=58), 21), 50)
-    walk = _workout("Outdoor Walk", _at(today - timedelta(days=21), 18), 42)
-    walk["duration"] = 19.2 * 60  # paused: the watch counts 19 of the 42 minutes
-    client.post("/health/auto-export", json={"data": {"workouts": [lift, walk]}})
-    fact = _workout_fact(today)
-    assert "Most recent training workout: Traditional Strength Training, 50 min" in fact
-    assert "58 days ago" in fact
-    assert "Walks logged as workouts in the last 28 days: 1, 19 min; these are walking, not training." in fact
-    assert "No training workouts in the last 28 days." in fact
+def test_workout_duration_excludes_pauses(client):
+    start = _at(date.today() - timedelta(days=5), 18)
+    walk = _workout("Outdoor Walk", start, 42)
+    walk["duration"] = 19.2 * 60
+    record = parse_export({"data": {"workouts": [walk]}})[0]
+    assert round(record.value, 1) == 19.2

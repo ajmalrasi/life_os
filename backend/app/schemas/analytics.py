@@ -36,6 +36,8 @@ class TodayBriefOut(BaseModel):
     headline: str
     summary: str
     suggestion: str
+    workout_note: str | None = None
+    workout_attention: bool = False
     generated_at: datetime
 
     @field_validator("generated_at")

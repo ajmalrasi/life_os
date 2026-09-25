@@ -13,6 +13,8 @@ import com.lifeos.app.presentation.dashboard.overviewTrip
 import com.lifeos.app.presentation.dashboard.pastDueStatements
 import com.lifeos.app.presentation.dashboard.pickOverviewTrip
 import com.lifeos.app.presentation.dashboard.upcomingItems
+import com.lifeos.app.presentation.dashboard.workoutAttention
+import com.lifeos.app.domain.model.TodayBrief
 import com.lifeos.app.trips.data.TripActivityEntity
 import com.lifeos.app.trips.data.TripDayEntity
 import com.lifeos.app.trips.data.TripDetail
@@ -192,5 +194,19 @@ class TodayOverviewTest {
         assertNull(icici.statementId)
         assertEquals(3, items[3].statementId)
         assertEquals(BigDecimal("31735"), trip.billsDuringTrip)
+    }
+
+    @Test
+    fun `workout item appears only when the model flags it`() {
+        fun brief(note: String?, flag: Boolean) = TodayBrief(
+            state = "unknown", confidence = "low", headline = "h", summary = "s", suggestion = "x",
+            workoutNote = note, workoutAttention = flag, generatedAt = Instant.EPOCH,
+        )
+        val item = workoutAttention(brief("No real workout in 58 days.", true))!!
+        assertEquals(OverviewTarget.HEALTH, item.target)
+        assertEquals("No real workout in 58 days.", item.detail)
+        assertNull(workoutAttention(brief("Two solid sessions this week.", false)))
+        assertNull(workoutAttention(brief(null, true)))
+        assertNull(workoutAttention(null))
     }
 }

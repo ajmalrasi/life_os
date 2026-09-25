@@ -1,4 +1,4 @@
-"""Training workouts are judged apart from walks everywhere exercise is scored."""
+"""Every workout counts; the model, not a threshold, judges whether it was real exercise."""
 
 from __future__ import annotations
 
@@ -10,61 +10,57 @@ from app.repositories.health_repo import HealthRepository
 from app.schemas.health import HealthRecordIn
 from app.services import life_evidence, weekly_recap
 from app.services.analytics import AnalyticsService
-from app.services.training import training_summary
+from app.services.training import workout_summary
 
 
-def _workout(sid: str, d: date, minutes: float, label: str) -> HealthRecordIn:
+def _rows(sid: str, d: date, minutes: float, label: str, kcal: float | None = None) -> list[HealthRecordIn]:
     start = datetime.combine(d, datetime.min.time()).replace(hour=19)
-    return HealthRecordIn(source_id=sid, type="workout", value=minutes, unit="min",
-                          start_time=start, end_time=start + timedelta(minutes=minutes), label=label)
+    end = start + timedelta(minutes=minutes)
+    rows = [HealthRecordIn(source_id=sid, type="workout", value=minutes, unit="min",
+                           start_time=start, end_time=end, label=label)]
+    if kcal is not None:
+        rows.append(HealthRecordIn(source_id=sid + "-e", type="workout_energy", value=kcal, unit="kcal",
+                                   start_time=start, end_time=end, label=label))
+    return rows
 
 
-def test_a_walk_logged_as_a_workout_does_not_raise_the_fitness_score(client):
+def test_a_logged_walk_counts_toward_the_fitness_score(client):
     day = date.today() - timedelta(days=2)
     db = SessionLocal()
-    scores = ScoreRepository(db)
-    HealthRepository(db).bulk_insert([_workout("hae-walk", day, 60, "Outdoor Walk")])
+    HealthRepository(db).bulk_insert(_rows("hae-walk", day, 45, "Outdoor Walk"))
     AnalyticsService(db).recompute_day(day)
     db.commit()
-    walk_only = scores.get(day).fitness_score
-    HealthRepository(db).bulk_insert([_workout("hae-lift", day, 45, "Traditional Strength Training")])
-    AnalyticsService(db).recompute_day(day)
-    db.commit()
-    with_lift = scores.get(day).fitness_score
+    assert ScoreRepository(db).get(day).fitness_score == 55.0
     db.close()
-    assert walk_only == 0.0
-    assert with_lift == 55.0
 
 
-def test_training_summary_counts_windows_and_the_gap(client):
+def test_summary_lists_every_session_with_its_effort(client):
     today = date.today()
     db = SessionLocal()
     repo = HealthRepository(db)
-    repo.bulk_insert([
-        _workout("hae-a", today - timedelta(days=58), 50, "Traditional Strength Training"),
-        _workout("hae-b", today - timedelta(days=40), 30, "Functional Strength Training"),
-        _workout("hae-c", today - timedelta(days=3), 20, "Outdoor Walk"),
-    ])
-    s = training_summary(repo, today)
+    repo.bulk_insert(
+        _rows("hae-a", today - timedelta(days=40), 50, "Traditional Strength Training", 367)
+        + [r for d in range(1, 4) for r in _rows(f"hae-t{d}", today - timedelta(days=d), 0.5, "Functional Strength Training", 2)]
+    )
+    s = workout_summary(repo, today)
     db.close()
-    assert s.last_label == "Functional Strength Training" and s.days_since_last == 40
-    assert (s.sessions_last_28, s.sessions_prev_28, s.sessions_last_7) == (0, 1, 0)
+    # Three token sessions still count as sessions; the model is shown how small they were.
+    assert len(s.recent) == 3 and s.sessions_prev_28 == 1 and s.days_since_last == 1
+    assert [(w.minutes, w.energy_kcal) for w in s.recent] == [(0.5, 2.0)] * 3
 
 
-def test_insights_and_weekly_recap_see_the_training_gap(client):
+def test_insights_and_weekly_recap_see_workouts_with_details(client):
     today = date.today()
     db = SessionLocal()
     repo = HealthRepository(db)
-    repo.bulk_insert([_workout("hae-a", today - timedelta(days=58), 50, "Traditional Strength Training")])
+    repo.bulk_insert(_rows("hae-a", today - timedelta(days=58), 50, "Traditional Strength Training", 367))
     repo.mark_workout_export()
 
-    fact = next(f for f in life_evidence._life_signal_facts(db, today) if f.id == "health:training")
-    assert "Last training workout: Traditional Strength Training, 50 min" in fact.statement
-    assert "58 days ago" in fact.statement
-    assert "0 in the last 28 days" in fact.statement
-    assert "unknown" not in fact.statement
+    fact = next(f for f in life_evidence._life_signal_facts(db, today) if f.id == "health:workouts")
+    assert "No workouts in the last 28 days." in fact.statement
+    assert "Traditional Strength Training, 50 min, 367 kcal active, 58 days ago" in fact.statement
 
-    recap = next(f for f in weekly_recap.compute_weekly_facts(db, today) if f.id == "training")
-    assert recap.statement.startswith("Training workouts this week: 0 (last week: 0)")
-    assert "Traditional Strength Training" in recap.statement
+    recap = next(f for f in weekly_recap.compute_weekly_facts(db, today) if f.id == "workouts")
+    assert recap.statement.startswith("Workouts this week: 0 (last week: 0)")
+    assert "367 kcal active" in recap.statement
     db.close()

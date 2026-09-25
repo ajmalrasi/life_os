@@ -22,7 +22,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.services.training import training_statement, training_summary
+from app.services.training import workout_statement, workout_summary
 from app.api.routes.statements import build_categorizer
 from app.models.card_statement import CardStatement
 from app.models.money_profile import MoneyProfile
@@ -538,11 +538,11 @@ def _life_signal_facts(db: Session, today: date) -> list[EvidenceFact]:
             )
         )
 
-    # Training is judged on its own, over weeks: a long gap matters more than a
-    # day's HRV, and walks never count as training.
-    summary = training_summary(health, today)
+    # Workouts over weeks, each with its duration and effort, so the mentor can
+    # tell real exercise from token sessions and weigh a long gap properly.
+    summary = workout_summary(health, today)
     if summary.last is not None or summary.workouts_synced:
-        facts.append(EvidenceFact(id="health:training", statement=training_statement(summary, today)))
+        facts.append(EvidenceFact(id="health:workouts", statement=workout_statement(summary)))
 
     moods = MoodRepository(db)
     this_week_moods = moods.range(start, end)

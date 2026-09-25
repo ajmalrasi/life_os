@@ -28,7 +28,7 @@ from app.services.github_mcp_client import GitHubMcpClient
 from app.services.money_query import query_money
 from app.models.health import HealthRecordType
 from app.repositories.health_repo import HealthRepository
-from app.services.training import is_walk_workout
+from app.services.training import workout_day
 from app.models.trip import TripBackup
 
 _MAX_DAYS = 90
@@ -239,10 +239,11 @@ TOOL_SCHEMAS: list[dict] = [
             "description": (
                 "Stored Apple Health data synced from the user's iPhone and Apple Watch: "
                 "per-day sleep hours and stages, resting heart rate, HRV, steps, active "
-                "energy and exercise minutes, plus every workout with its type (e.g. "
-                "Traditional Strength Training) and the last training workout. Walks logged "
-                "as workouts are marked as walking, not training. Counts and minutes are "
-                "computed for the exact window; report them instead of counting yourself. "
+                "energy and exercise minutes, plus every workout with its type, duration, "
+                "active energy and average heart rate, and the last workout. Judge whether "
+                "workouts were substantial from duration and energy, not their count. Counts, "
+                "minutes and energy are computed for the exact window; report them instead of "
+                "counting yourself. "
                 "Pass start_date and end_date for a calendar period such as a month."
             ),
             "parameters": {
@@ -458,13 +459,18 @@ class AgentTools:
             return {
                 "day": local.date().isoformat(),
                 "start": local.strftime("%H:%M"),
-                "type": w.label or "Workout (type not recorded)",
-                "minutes": round(w.value, 1),
-                "kind": "walking" if is_walk_workout(w.label) else "training",
+                "type": w.label,
+                "minutes": round(w.minutes, 1),
+                "active_kcal": round(w.energy_kcal) if w.energy_kcal is not None else None,
+                "avg_hr_bpm": round(w.avg_hr) if w.avg_hr is not None else None,
             }
 
-        in_window = [workout(w) for w in reversed(health.workouts_between(start, end))]
-        training = [w for w in health.workouts_between(date(1970, 1, 1), end) if not is_walk_workout(w.label)]
+        in_window = [workout(w) for w in reversed(health.workout_sessions(start, end))]
+        latest = health.latest_workout(end)
+        last = None
+        if latest is not None:
+            day = workout_day(latest)
+            last = next((workout(w) for w in reversed(health.workout_sessions(day, day))), None)
         last_received = health.last_received_at()
         export_seen = health.workout_export_seen_at()
         return {
@@ -479,13 +485,8 @@ class AgentTools:
             },
             "workouts": in_window,
             "by_month": _workouts_by_month(in_window),
-            "window_totals": {
-                "training_workouts": sum(1 for w in in_window if w["kind"] == "training"),
-                "training_minutes": round(sum(w["minutes"] for w in in_window if w["kind"] == "training"), 1),
-                "walking_workouts": sum(1 for w in in_window if w["kind"] == "walking"),
-                "training_days": len({w["day"] for w in in_window if w["kind"] == "training"}),
-            },
-            "last_training_workout": workout(training[-1]) if training else None,
+            "window_totals": _workout_totals(in_window),
+            "last_workout": last,
             "daily": daily,
         }
 
@@ -536,21 +537,22 @@ class AgentTools:
         return maximum if self.deadline is None else max(0.01, min(maximum, self.deadline-monotonic()))
 
 
+def _workout_totals(workouts: list[dict]) -> dict:
+    kcal = [w["active_kcal"] for w in workouts if w["active_kcal"] is not None]
+    return {
+        "workouts": len(workouts),
+        "minutes": round(sum(w["minutes"] for w in workouts), 1),
+        "active_kcal": round(sum(kcal)) if kcal else None,
+        "workout_days": len({w["day"] for w in workouts}),
+    }
+
+
 def _workouts_by_month(workouts: list[dict]) -> dict:
     """Per-calendar-month totals, so "how many in July" never needs hand counting."""
-    months: dict[str, dict] = {}
-    for w in sorted(workouts, key=lambda w: w["day"]):
-        m = months.setdefault(w["day"][:7], {
-            "training_workouts": 0, "training_minutes": 0.0, "walking_workouts": 0, "_days": set(),
-        })
-        if w["kind"] == "training":
-            m["training_workouts"] += 1
-            m["training_minutes"] = round(m["training_minutes"] + w["minutes"], 1)
-            m["_days"].add(w["day"])
-        else:
-            m["walking_workouts"] += 1
-    return {k: {**{x: y for x, y in v.items() if x != "_days"}, "training_days": len(v["_days"])}
-            for k, v in months.items()}
+    months: dict[str, list[dict]] = {}
+    for w in workouts:
+        months.setdefault(w["day"][:7], []).append(w)
+    return {month: _workout_totals(items) for month, items in sorted(months.items())}
 
 
 def _clamp_days(value) -> int:

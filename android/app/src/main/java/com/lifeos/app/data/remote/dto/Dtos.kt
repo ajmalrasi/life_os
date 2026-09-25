@@ -54,6 +54,8 @@ data class TodayBriefDto(
     val headline: String,
     val summary: String,
     val suggestion: String,
+    @SerialName("workout_note") val workoutNote: String? = null,
+    @SerialName("workout_attention") val workoutAttention: Boolean = false,
     @SerialName("generated_at") val generatedAt: String,
 )
 

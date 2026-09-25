@@ -1,9 +1,10 @@
-"""Training workouts, told apart from walking.
+"""Workouts, described in full so the model can judge them.
 
-Apple Watch logs both deliberate training (strength, cycling, running...) and
-walks as workouts. Walking already counts through steps, so everything that
-judges exercise (the fitness score, the Today brief, Insights, the weekly
-recap) uses these helpers and never counts a walk as training.
+Every workout the watch logs counts, walks included. What code never decides
+is whether a workout was *real* exercise: a 30-second session every day is not
+training, but no fixed threshold captures that well. So these helpers state
+each session plainly (type, duration, active energy, average heart rate) and
+the model makes the call, in the Today brief, Insights and the weekly recap.
 """
 
 from __future__ import annotations
@@ -12,83 +13,95 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-from app.models.health import HealthRecord
-from app.repositories.health_repo import HealthRepository
+from app.repositories.health_repo import HealthRepository, WorkoutSession
 
 IST = ZoneInfo("Asia/Kolkata")
+# Sessions listed individually in a prompt; older ones are summarised by count.
+_MAX_LISTED = 12
 
 
-def is_walk_workout(label: str | None) -> bool:
-    """A walk or hike logged as a workout is still walking, not training."""
-    return bool(label) and any(word in label.lower() for word in ("walk", "hik"))
-
-
-def workout_day(w: HealthRecord) -> date:
+def workout_day(w) -> date:
     start = w.start_time
     return (start.astimezone(IST) if start.tzinfo else start).date()
 
 
-def training_minutes(health: HealthRepository, day: date) -> float | None:
-    """Training minutes on ``day``; 0 when only walks were logged, None when no workouts."""
+def workout_minutes(health: HealthRepository, day: date) -> float | None:
+    """All workout minutes on ``day``; None when no workout was logged."""
     workouts = health.workouts_between(day, day)
-    if not workouts:
-        return None
-    return sum(w.value for w in workouts if not is_walk_workout(w.label))
+    return sum(w.value for w in workouts) if workouts else None
+
+
+def describe_session(w: WorkoutSession) -> str:
+    start = w.start_time.astimezone(IST) if w.start_time.tzinfo else w.start_time
+    bits = [f"{start:%b} {start.day} {start:%H:%M} {w.label}, {w.minutes:.0f} min"]
+    if w.energy_kcal is not None:
+        bits.append(f"{w.energy_kcal:.0f} kcal active")
+    if w.avg_hr is not None:
+        bits.append(f"avg HR {w.avg_hr:.0f} bpm")
+    return ", ".join(bits)
 
 
 @dataclass
-class TrainingSummary:
-    last: HealthRecord | None
-    days_since_last: int | None
-    sessions_last_28: int
-    minutes_last_28: float
+class WorkoutSummary:
+    recent: list[WorkoutSession]          # last 28 days, oldest first
     sessions_prev_28: int
+    last: WorkoutSession | None           # most recent ever, even if older than 28 days
+    days_since_last: int | None
     sessions_last_7: int
     sessions_prev_7: int
     # False until the phone has sent a workouts export: absence is then unknown.
     workouts_synced: bool
 
-    @property
-    def last_label(self) -> str:
-        return (self.last.label or "Workout") if self.last else ""
 
-
-def training_summary(health: HealthRepository, today: date) -> TrainingSummary:
-    history = [w for w in health.workouts_between(date(1970, 1, 1), today) if not is_walk_workout(w.label)]
-
-    def between(start: date, end: date) -> list[HealthRecord]:
-        return [w for w in history if start <= workout_day(w) <= end]
-
-    last_28 = between(today - timedelta(days=27), today)
-    last = history[-1] if history else None
-    return TrainingSummary(
+def workout_summary(health: HealthRepository, today: date) -> WorkoutSummary:
+    recent = health.workout_sessions(today - timedelta(days=27), today)
+    prev = health.workout_sessions(today - timedelta(days=55), today - timedelta(days=28))
+    last = recent[-1] if recent else None
+    if last is None:
+        latest = health.latest_workout(today)
+        if latest is not None:
+            day = workout_day(latest)
+            last = next((s for s in reversed(health.workout_sessions(day, day))), None)
+    return WorkoutSummary(
+        recent=recent,
+        sessions_prev_28=len(prev),
         last=last,
         days_since_last=(today - workout_day(last)).days if last else None,
-        sessions_last_28=len(last_28),
-        minutes_last_28=sum(w.value for w in last_28),
-        sessions_prev_28=len(between(today - timedelta(days=55), today - timedelta(days=28))),
-        sessions_last_7=len(between(today - timedelta(days=6), today)),
-        sessions_prev_7=len(between(today - timedelta(days=13), today - timedelta(days=7))),
+        sessions_last_7=sum(1 for s in recent if workout_day(s) >= today - timedelta(days=6)),
+        sessions_prev_7=sum(
+            1 for s in recent if today - timedelta(days=13) <= workout_day(s) <= today - timedelta(days=7)
+        ),
         workouts_synced=health.workout_export_seen_at() is not None,
     )
 
 
-def training_statement(s: TrainingSummary, today: date) -> str:
-    """One plain sentence set about training for grounded model prompts."""
+def workout_statement(s: WorkoutSummary) -> str:
+    """Every recent session with its effort, for the model to judge."""
     parts: list[str] = []
-    if s.last is not None:
-        d = workout_day(s.last)
+    if s.recent:
+        listed = s.recent[-_MAX_LISTED:]
         parts.append(
-            f"Last training workout: {s.last_label}, {s.last.value:.0f} min on "
-            f"{d:%b} {d.day}, {s.days_since_last} days ago."
+            f"Workouts in the last 28 days ({len(s.recent)}): "
+            + "; ".join(describe_session(w) for w in listed) + "."
         )
+        if len(s.recent) > len(listed):
+            parts.append(f"{len(s.recent) - len(listed)} earlier sessions in that window are not listed.")
     else:
-        parts.append("No training workout has ever been recorded.")
-    parts.append(
-        f"Training sessions: {s.sessions_last_28} in the last 28 days "
-        f"({s.minutes_last_28:.0f} min), {s.sessions_prev_28} in the 28 days before."
-    )
+        parts.append("No workouts in the last 28 days.")
+        if s.last is not None:
+            parts.append(f"Last workout: {describe_session(s.last)}, {s.days_since_last} days ago.")
+        else:
+            parts.append("No workout has ever been recorded.")
+    parts.append(f"Workouts in the 28 days before that: {s.sessions_prev_28}.")
     if not s.workouts_synced:
-        parts.append("Workouts are not synced from the phone yet, so recent training is unknown, not zero.")
-    parts.append("Walks are not counted as training.")
+        parts.append("Workouts are not synced from the phone yet, so recent workouts are unknown, not zero.")
     return " ".join(parts)
+
+
+# How the model should read workouts. Shared by every prompt that sees them.
+WORKOUT_JUDGEMENT_RULE = (
+    "Judge workouts by their substance, not their count: use each session's duration, "
+    "active energy and heart rate. A few minutes or very little energy is not real "
+    "exercise, even if it happens every day. Weeks without a substantial workout "
+    "matter more than a day's HRV or sleep dip."
+)

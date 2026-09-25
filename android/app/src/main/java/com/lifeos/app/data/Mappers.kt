@@ -137,6 +137,8 @@ fun TodayDto.toDomain() = TodaySummary(
             headline = it.headline,
             summary = it.summary,
             suggestion = it.suggestion,
+            workoutNote = it.workoutNote,
+            workoutAttention = it.workoutAttention,
             generatedAt = Instant.parse(it.generatedAt),
         )
     },

@@ -24,6 +24,7 @@ import json
 import logging
 from dataclasses import dataclass
 
+from app.services.training import WORKOUT_JUDGEMENT_RULE
 from app.config import get_settings
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
@@ -48,9 +49,8 @@ _SYSTEM_PROMPT = (
     "each. Prioritise: money problems first (overspending against income or "
     "budget, a category far above its usual level, a big purchase, a costly "
     "comparison between categories, bills due soon), then trips, then health, mood "
-    "and work. Within health, weeks without a training workout outrank a day's "
-    "HRV or sleep dip: say plainly how long it has been and push a restart. "
-    "Walks are not training. Skip anything that is normal or minor. Fewer, sharper insights beat "
+    "and work. " + WORKOUT_JUDGEMENT_RULE + " If workouts "
+    "have lapsed, say plainly for how long and push a restart. Skip anything that is normal or minor. Fewer, sharper insights beat "
     "more.\n\n"
     "For each insight:\n"
     "- Give a clear judgement. Say plainly when something is too much, a bad "

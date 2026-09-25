@@ -438,33 +438,33 @@ def test_money_comparison_computes_exact_changes(client):
         assert empty["comparison"]["change"]["percent_change"] is None
 
 
-def test_health_records_reads_synced_data_and_separates_walks(client):
+def test_health_records_reads_synced_data_with_workout_effort(client):
     from datetime import date, datetime, timedelta
     from app.repositories.health_repo import HealthRepository
     from app.schemas.health import HealthRecordIn
 
     today = date.today()
     at = lambda d, h: datetime.combine(d, datetime.min.time()).replace(hour=h)
+    lift_day = today - timedelta(days=3)
     with SessionLocal() as db:
-        repo = HealthRepository(db)
-        repo.bulk_insert([
+        HealthRepository(db).bulk_insert([
             HealthRecordIn(source_id="hae-s", type="steps", value=4200, unit="count",
                            start_time=at(today, 9), end_time=at(today, 9)),
             HealthRecordIn(source_id="hae-w1", type="workout", value=50, unit="min",
-                           start_time=at(today - timedelta(days=3), 21), end_time=at(today - timedelta(days=3), 22),
-                           label="Traditional Strength Training"),
+                           start_time=at(lift_day, 21), end_time=at(lift_day, 22), label="Traditional Strength Training"),
+            HealthRecordIn(source_id="hae-w1e", type="workout_energy", value=367, unit="kcal",
+                           start_time=at(lift_day, 21), end_time=at(lift_day, 22), label="Traditional Strength Training"),
             HealthRecordIn(source_id="hae-w2", type="workout", value=19, unit="min",
                            start_time=at(today - timedelta(days=1), 18), end_time=at(today - timedelta(days=1), 19),
                            label="Outdoor Walk"),
         ])
         result = AgentTools(db).run("health_records", {"days": 7})
     assert result["daily"][0]["day"] == today.isoformat() and result["daily"][0]["steps"] == 4200
-    assert [(w["type"], w["kind"]) for w in result["workouts"]] == [
-        ("Outdoor Walk", "walking"), ("Traditional Strength Training", "training"),
+    assert [(w["type"], w["minutes"], w["active_kcal"]) for w in result["workouts"]] == [
+        ("Outdoor Walk", 19, None), ("Traditional Strength Training", 50, 367),
     ]
-    assert result["window_totals"]["training_workouts"] == 1
-    assert result["window_totals"]["walking_workouts"] == 1
-    assert result["last_training_workout"]["type"] == "Traditional Strength Training"
+    assert result["window_totals"] == {"workouts": 2, "minutes": 69.0, "active_kcal": 367, "workout_days": 2}
+    assert result["last_workout"]["type"] == "Outdoor Walk"
     assert "not set up" in result["freshness"]["workouts_sync"]
 
 
@@ -478,19 +478,15 @@ def test_health_records_counts_an_exact_calendar_month(client):
         return HealthRecordIn(source_id=sid, type="workout", value=minutes, unit="min",
                               start_time=start, end_time=start, label="Traditional Strength Training")
 
-    year = date.today().year - 1  # a complete past month, well inside any window
+    year = date.today().year - 1
     with SessionLocal() as db:
         HealthRepository(db).bulk_insert([
             lift("hae-a", date(year, 6, 29), 61), lift("hae-b", date(year, 7, 1), 91),
             lift("hae-c", date(year, 7, 29), 50), lift("hae-d", date(year, 8, 2), 30),
         ])
         result = AgentTools(db).run("health_records", {"start_date": f"{year}-07-01", "end_date": f"{year}-07-31"})
-    assert result["window"]["start"] == f"{year}-07-01" and result["window"]["end"] == f"{year}-07-31"
-    assert result["window_totals"] == {
-        "training_workouts": 2, "training_minutes": 141.0, "walking_workouts": 0, "training_days": 2,
-    }
-    wide = AgentTools(SessionLocal()).health_records(90, f"{year}-06-01", f"{year}-08-31")
-    assert wide["by_month"][f"{year}-07"] == {
-        "training_workouts": 2, "training_minutes": 141.0, "walking_workouts": 0, "training_days": 2,
-    }
-    assert wide["by_month"][f"{year}-06"]["training_workouts"] == 1
+        wide = AgentTools(db).health_records(90, f"{year}-06-01", f"{year}-08-31")
+    july = {"workouts": 2, "minutes": 141.0, "active_kcal": None, "workout_days": 2}
+    assert result["window"]["start"] == f"{year}-07-01" and result["window_totals"] == july
+    assert wide["by_month"][f"{year}-07"] == july
+    assert wide["by_month"][f"{year}-06"]["workouts"] == 1

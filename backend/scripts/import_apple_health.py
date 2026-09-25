@@ -287,6 +287,26 @@ class Importer:
             "end_time": end.isoformat(),
             "label": workout_label(elem.get("workoutActivityType")),
         })
+        # Effort, so a session can be judged by more than its existence.
+        label = workout_label(elem.get("workoutActivityType"))
+        wtype = elem.get("workoutActivityType", "")
+        for stat in elem.findall("WorkoutStatistics"):
+            kind = stat.get("type", "")
+            if kind == "HKQuantityTypeIdentifierActiveEnergyBurned" and stat.get("sum"):
+                rec_type, value, unit = "workout_energy", _energy_kcal(float(stat.get("sum")), stat.get("unit", "kcal")), "kcal"
+            elif kind == "HKQuantityTypeIdentifierHeartRate" and stat.get("average"):
+                rec_type, value, unit = "workout_avg_hr", float(stat.get("average")), "bpm"
+            else:
+                continue
+            self._emit({
+                "source_id": make_source_id(rec_type, start.isoformat(), end.isoformat(), wtype),
+                "type": rec_type,
+                "value": round(value, 1),
+                "unit": unit,
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+                "label": label,
+            })
 
     def _feed_sleep(self, elem: ET.Element) -> None:
         if not self._wanted("sleep"):

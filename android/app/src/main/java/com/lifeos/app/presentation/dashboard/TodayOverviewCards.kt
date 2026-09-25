@@ -72,6 +72,7 @@ internal fun AttentionCard(items: List<AttentionItem>, onOpen: (AttentionItem) -
                             OverviewTarget.MONEY -> "Money"
                             OverviewTarget.CARDS -> "Cards"
                             OverviewTarget.TRIP -> "Trip"
+                            OverviewTarget.HEALTH -> "Health"
                         },
                     )
                 }

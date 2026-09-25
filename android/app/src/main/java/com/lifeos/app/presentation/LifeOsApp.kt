@@ -219,6 +219,7 @@ fun LifeOsApp(
                         onOpenCards = { openFromPage(Destination.MONEY) },
                         onOpenStatement = { id -> navController.navigate("statement/$id") },
                         onOpenTrip = { id -> navController.navigate("trip/$id") },
+                        onOpenInsights = { openFromPage(Destination.INSIGHTS) },
                     )
                 }
                 composable(Destination.PRIORITY.route) {

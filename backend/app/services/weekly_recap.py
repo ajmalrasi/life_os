@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.repositories.health_repo import HealthRepository
-from app.services.training import training_summary
+from app.services.training import WORKOUT_JUDGEMENT_RULE, describe_session, workout_day, workout_summary
 from app.api.routes.statements import build_categorizer
 from app.config import get_settings
 from app.repositories.analytics_repo import ScoreRepository
@@ -35,7 +35,8 @@ _RECAP_TIMEOUT_SECONDS = 45.0
 _SYSTEM_PROMPT = (
     "You are LifeOS, a personal-analytics companion. You are given EVIDENCE: a list "
     "of already-computed facts about ONE user's own last 7 days versus the 7 days "
-    "before that — sleep, mood, spending, budgets. Each fact has an \"id\".\n\n"
+    "before that — sleep, mood, workouts, spending, budgets. Each fact has an \"id\".\n\n"
+    + WORKOUT_JUDGEMENT_RULE + "\n\n"
     "Write a short weekly recap: 2-4 sentences, warm but plain, no markdown, no "
     "emojis. Use ONLY the numbers given — never invent or round differently than "
     "the facts state. Do not claim one fact causes another; just report what "
@@ -101,17 +102,17 @@ def compute_weekly_facts(db: Session, today: date | None = None) -> list[Evidenc
         facts.append(EvidenceFact(id="spend", statement=detail))
 
     try:
-        summary = training_summary(HealthRepository(db), end)
+        summary = workout_summary(HealthRepository(db), end)
         if summary.last is not None or summary.workouts_synced:
-            detail = (
-                f"Training workouts this week: {summary.sessions_last_7} "
-                f"(last week: {summary.sessions_prev_7})"
-            )
-            if summary.sessions_last_7 == 0 and summary.days_since_last is not None:
-                detail += f"; the last one was {summary.days_since_last} days ago ({summary.last_label})"
-            facts.append(EvidenceFact(id="training", statement=detail))
-    except Exception:  # training is a nicety in the recap, never a blocker
-        logger.debug("weekly recap training summary failed", exc_info=True)
+            this_week = [w for w in summary.recent if workout_day(w) >= start]
+            detail = f"Workouts this week: {summary.sessions_last_7} (last week: {summary.sessions_prev_7})"
+            if this_week:
+                detail += ": " + "; ".join(describe_session(w) for w in this_week)
+            elif summary.days_since_last is not None:
+                detail += f"; the last one was {summary.days_since_last} days ago ({describe_session(summary.last)})"
+            facts.append(EvidenceFact(id="workouts", statement=detail))
+    except Exception:  # workouts are a nicety in the recap, never a blocker
+        logger.debug("weekly recap workout summary failed", exc_info=True)
 
     try:
         categorize = build_categorizer(db)

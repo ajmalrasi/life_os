@@ -181,6 +181,8 @@ def get_today(background_tasks: BackgroundTasks, db: Session = Depends(get_db)) 
             headline=brief.headline,
             summary=brief.summary,
             suggestion=brief.suggestion,
+            workout_note=brief.workout_note,
+            workout_attention=bool(brief.workout_attention),
             generated_at=brief.generated_at,
         ) if brief is not None else None,
         brief_status=status,

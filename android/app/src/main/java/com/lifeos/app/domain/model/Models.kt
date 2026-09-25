@@ -47,6 +47,10 @@ data class TodayBrief(
     val headline: String,
     val summary: String,
     val suggestion: String,
+    /** The model's judgement of recent workouts (duration and effort, not just count). */
+    val workoutNote: String? = null,
+    /** True when the model thinks the workouts need attention on Today. */
+    val workoutAttention: Boolean = false,
     val generatedAt: Instant,
 )
 

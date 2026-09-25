@@ -5,6 +5,7 @@ import com.lifeos.app.domain.model.CardStatement
 import com.lifeos.app.domain.model.CurrentCardCycle
 import com.lifeos.app.domain.model.MoneyProfile
 import com.lifeos.app.domain.model.RecurringCharge
+import com.lifeos.app.domain.model.TodayBrief
 import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.money.budgetPace
 import com.lifeos.app.presentation.money.filterEmiTransactions
@@ -93,7 +94,7 @@ data class OverviewTrip(
     val billsDuringTrip: BigDecimal,
 )
 
-enum class OverviewTarget { MONEY, CARDS, TRIP }
+enum class OverviewTarget { MONEY, CARDS, TRIP, HEALTH }
 
 data class AttentionItem(
     val title: String,
@@ -305,6 +306,16 @@ internal fun upcomingItems(
         }
 
     return items.sortedWith(compareBy<UpcomingItem> { it.date }.thenBy { it.kind.ordinal })
+}
+
+/**
+ * The model's workout judgement, when it flags one. Whether workouts were real
+ * exercise is judged by the model from each session's duration and effort, so
+ * the app never applies its own threshold here.
+ */
+internal fun workoutAttention(brief: TodayBrief?): AttentionItem? {
+    val note = brief?.workoutNote?.takeIf { brief.workoutAttention && it.isNotBlank() } ?: return null
+    return AttentionItem(title = "Workouts need attention", detail = note, target = OverviewTarget.HEALTH)
 }
 
 /** A few items worth acting on now, most costly first. */

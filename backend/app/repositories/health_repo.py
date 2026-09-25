@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import case, func, literal, select
 from sqlalchemy.orm import Session
@@ -57,6 +57,22 @@ def _latest_revisions(rows: list[HealthRecord]) -> list[HealthRecord]:
         if key not in latest or r.id > latest[key].id:
             latest[key] = r
     return sorted(kept + list(latest.values()), key=lambda r: r.start_time)
+
+
+@dataclass
+class WorkoutSession:
+    """One workout with the effort Apple recorded for it (None when not sent)."""
+
+    start_time: datetime
+    label: str
+    minutes: float
+    energy_kcal: float | None
+    avg_hr: float | None
+
+
+def _instant(dt: datetime) -> datetime:
+    """Compare the same moment whether or not the driver returned tzinfo."""
+    return dt.replace(tzinfo=None) if dt.tzinfo is None else dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 # Collector-state key touched whenever Health Auto Export sends a workouts export.
@@ -230,6 +246,36 @@ class HealthRepository:
             .order_by(HealthRecord.start_time)
         )
         return list(self.db.execute(stmt).scalars())
+
+    def workout_sessions(self, start: date, end: date) -> list["WorkoutSession"]:
+        """Workouts on days ``[start, end]`` with their active energy and heart rate."""
+        lo = datetime.combine(start, time.min)
+        hi = datetime.combine(end + timedelta(days=1), time.min)
+        rows = list(self.db.execute(
+            select(HealthRecord)
+            .where(
+                HealthRecord.type.in_(("workout", "workout_energy", "workout_avg_hr")),
+                HealthRecord.start_time >= lo,
+                HealthRecord.start_time < hi,
+            )
+            .order_by(HealthRecord.start_time)
+        ).scalars())
+        extra: dict[tuple, dict[str, float]] = {}
+        for r in rows:
+            if r.type != "workout":
+                extra.setdefault((_instant(r.start_time), r.label), {})[r.type] = r.value
+        sessions = []
+        for r in rows:
+            if r.type == "workout":
+                more = extra.get((_instant(r.start_time), r.label), {})
+                sessions.append(WorkoutSession(
+                    start_time=r.start_time,
+                    label=r.label or "Workout",
+                    minutes=r.value,
+                    energy_kcal=more.get("workout_energy"),
+                    avg_hr=more.get("workout_avg_hr"),
+                ))
+        return sessions
 
     def latest_workout(self, before: date) -> HealthRecord | None:
         """The most recent workout starting before the end of ``before``."""
