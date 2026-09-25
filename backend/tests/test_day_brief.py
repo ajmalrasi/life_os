@@ -240,7 +240,7 @@ def test_workouts_are_unknown_until_the_phone_sends_a_workouts_export(client):
     db.close()
     fact = _workout_fact(today)
     assert "No workouts in the last 28 days." in fact
-    assert "Traditional Strength Training, 52 min, 90 days ago" in fact
+    assert "(90 days ago)" in fact and "Traditional Strength Training, 52 min" in fact
     assert "unknown, not zero" in fact
 
     # An empty workouts export means "none recorded", not "not sent".

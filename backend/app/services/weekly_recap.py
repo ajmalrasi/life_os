@@ -107,9 +107,9 @@ def compute_weekly_facts(db: Session, today: date | None = None) -> list[Evidenc
             this_week = [w for w in summary.recent if workout_day(w) >= start]
             detail = f"Workouts this week: {summary.sessions_last_7} (last week: {summary.sessions_prev_7})"
             if this_week:
-                detail += ": " + "; ".join(describe_session(w) for w in this_week)
+                detail += ": " + "; ".join(describe_session(w, summary.today) for w in this_week)
             elif summary.days_since_last is not None:
-                detail += f"; the last one was {summary.days_since_last} days ago ({describe_session(summary.last)})"
+                detail += f"; the last one: {describe_session(summary.last, summary.today)}"
             facts.append(EvidenceFact(id="workouts", statement=detail))
     except Exception:  # workouts are a nicety in the recap, never a blocker
         logger.debug("weekly recap workout summary failed", exc_info=True)

@@ -31,9 +31,11 @@ def workout_minutes(health: HealthRepository, day: date) -> float | None:
     return sum(w.value for w in workouts) if workouts else None
 
 
-def describe_session(w: WorkoutSession) -> str:
+def describe_session(w: WorkoutSession, today: date | None = None) -> str:
     start = w.start_time.astimezone(IST) if w.start_time.tzinfo else w.start_time
-    bits = [f"{start:%b} {start.day} {start:%H:%M} {w.label}, {w.minutes:.0f} min"]
+    # The gap leads, so it is never confused with the session's minutes.
+    ago = f" ({(today - start.date()).days} days ago)" if today is not None else ""
+    bits = [f"{start:%b} {start.day}{ago} {start:%H:%M} {w.label}, {w.minutes:.0f} min"]
     if w.energy_kcal is not None:
         bits.append(f"{w.energy_kcal:.0f} kcal active")
     if w.avg_hr is not None:
@@ -55,6 +57,7 @@ class WorkoutSummary:
     sessions_prev_7: int
     # False until the phone has sent a workouts export: absence is then unknown.
     workouts_synced: bool
+    today: date
 
 
 def workout_summary(health: HealthRepository, today: date) -> WorkoutSummary:
@@ -79,6 +82,7 @@ def workout_summary(health: HealthRepository, today: date) -> WorkoutSummary:
             1 for s in recent if today - timedelta(days=13) <= workout_day(s) <= today - timedelta(days=7)
         ),
         workouts_synced=health.workout_export_seen_at() is not None,
+        today=today,
     )
 
 
@@ -89,19 +93,16 @@ def workout_statement(s: WorkoutSummary) -> str:
         listed = s.recent[-_MAX_LISTED:]
         parts.append(
             f"Workouts in the last 28 days ({len(s.recent)}): "
-            + "; ".join(describe_session(w) for w in listed) + "."
+            + "; ".join(describe_session(w, s.today) for w in listed) + "."
         )
         if len(s.recent) > len(listed):
             parts.append(f"{len(s.recent) - len(listed)} earlier sessions in that window are not listed.")
         if s.before_window is not None:
-            parts.append(
-                f"Latest workout before that window: {describe_session(s.before_window)}, "
-                f"{s.days_since_before_window} days ago."
-            )
+            parts.append(f"Latest workout before that window: {describe_session(s.before_window, s.today)}.")
     else:
         parts.append("No workouts in the last 28 days.")
         if s.last is not None:
-            parts.append(f"Last workout: {describe_session(s.last)}, {s.days_since_last} days ago.")
+            parts.append(f"Last workout: {describe_session(s.last, s.today)}.")
         else:
             parts.append("No workout has ever been recorded.")
     parts.append(f"Workouts in the 28 days before that: {s.sessions_prev_28}.")

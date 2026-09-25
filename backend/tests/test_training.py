@@ -58,7 +58,8 @@ def test_insights_and_weekly_recap_see_workouts_with_details(client):
 
     fact = next(f for f in life_evidence._life_signal_facts(db, today) if f.id == "health:workouts")
     assert "No workouts in the last 28 days." in fact.statement
-    assert "Traditional Strength Training, 50 min, 367 kcal active, 58 days ago" in fact.statement
+    assert "(58 days ago)" in fact.statement
+    assert "Traditional Strength Training, 50 min, 367 kcal active" in fact.statement
 
     recap = next(f for f in weekly_recap.compute_weekly_facts(db, today) if f.id == "workouts")
     assert recap.statement.startswith("Workouts this week: 0 (last week: 0)")
@@ -79,4 +80,5 @@ def test_a_recent_walk_does_not_hide_the_last_real_session(client):
     db.close()
     assert "Workouts in the last 28 days (1):" in statement and "Outdoor Walk, 19 min" in statement
     assert "Latest workout before that window:" in statement
-    assert "Traditional Strength Training, 50 min, 367 kcal active, 58 days ago" in statement
+    assert "(58 days ago)" in statement and "(21 days ago)" in statement
+    assert "Traditional Strength Training, 50 min, 367 kcal active" in statement
