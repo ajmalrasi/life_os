@@ -45,6 +45,14 @@ from xml.etree import ElementTree as ET
 # canonical unit. `_id` passes the value through unchanged.
 # --------------------------------------------------------------------------
 
+def workout_label(raw: str | None) -> str:
+    """"HKWorkoutActivityTypeTraditionalStrengthTraining" -> "Traditional Strength Training"."""
+    name = (raw or "").strip().removeprefix("HKWorkoutActivityType")
+    if name and " " not in name:
+        name = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name)
+    return (name or "Workout")[:64]
+
+
 def _id(v: float, unit: str) -> float:
     return v
 
@@ -277,6 +285,7 @@ class Importer:
             "unit": "min",
             "start_time": start.isoformat(),
             "end_time": end.isoformat(),
+            "label": workout_label(elem.get("workoutActivityType")),
         })
 
     def _feed_sleep(self, elem: ET.Element) -> None:

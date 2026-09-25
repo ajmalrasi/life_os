@@ -14,6 +14,8 @@ class HealthRecordIn(BaseModel):
     unit: str = Field(..., max_length=32)
     start_time: datetime
     end_time: datetime
+    # A workout's activity, e.g. "Functional Strength Training"; None for metrics.
+    label: str | None = Field(None, max_length=64)
 
 
 class HealthBatchIn(BaseModel):
@@ -32,6 +34,7 @@ class HealthRecordOut(BaseModel):
     unit: str
     start_time: datetime
     end_time: datetime
+    label: str | None = None
 
 
 class IngestResult(BaseModel):

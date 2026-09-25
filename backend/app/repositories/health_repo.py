@@ -7,6 +7,7 @@ from sqlalchemy import case, func, literal, select
 from sqlalchemy.orm import Session
 
 from app.models.health import HealthRecord, HealthRecordType
+from app.models.sync_state import CollectorState
 from app.database import utcnow
 from app.schemas.health import HealthRecordIn
 
@@ -58,6 +59,10 @@ def _latest_revisions(rows: list[HealthRecord]) -> list[HealthRecord]:
     return sorted(kept + list(latest.values()), key=lambda r: r.start_time)
 
 
+# Collector-state key touched whenever Health Auto Export sends a workouts export.
+WORKOUT_EXPORT_KEY = "hae:workouts"
+
+
 class HealthRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -93,6 +98,7 @@ class HealthRepository:
                     unit=r.unit,
                     start_time=r.start_time,
                     end_time=r.end_time,
+                    label=r.label,
                 )
             )
         self.db.add_all(to_add)
@@ -124,15 +130,17 @@ class HealthRepository:
             if row is None:
                 self.db.add(HealthRecord(
                     source_id=sid, type=r.type, value=r.value, unit=r.unit,
-                    start_time=r.start_time, end_time=r.end_time,
+                    start_time=r.start_time, end_time=r.end_time, label=r.label,
                 ))
                 inserted += 1
             elif (
                 row.value != r.value
                 or not _same_time(row.start_time, r.start_time)
                 or not _same_time(row.end_time, r.end_time)
+                or (r.label is not None and row.label != r.label)
             ):
                 row.value, row.unit = r.value, r.unit
+                row.label = r.label if r.label is not None else row.label
                 row.start_time, row.end_time = r.start_time, r.end_time
                 row.created_at = utcnow()
                 updated += 1
@@ -209,6 +217,46 @@ class HealthRepository:
             start=min(span[0] for span, _ in chosen),
             end=max(span[1] for span, _ in chosen),
         )
+
+    def workouts_between(self, start: date, end: date) -> list[HealthRecord]:
+        """Workouts starting on days ``[start, end]`` (inclusive), oldest first."""
+        stmt = (
+            select(HealthRecord)
+            .where(
+                HealthRecord.type == HealthRecordType.WORKOUT,
+                HealthRecord.start_time >= datetime.combine(start, time.min),
+                HealthRecord.start_time < datetime.combine(end + timedelta(days=1), time.min),
+            )
+            .order_by(HealthRecord.start_time)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def latest_workout(self, before: date) -> HealthRecord | None:
+        """The most recent workout starting before the end of ``before``."""
+        stmt = (
+            select(HealthRecord)
+            .where(
+                HealthRecord.type == HealthRecordType.WORKOUT,
+                HealthRecord.start_time < datetime.combine(before + timedelta(days=1), time.min),
+            )
+            .order_by(HealthRecord.start_time.desc())
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def mark_workout_export(self) -> None:
+        """Note that Health Auto Export sent a workouts export (even an empty one)."""
+        mark = self.db.get(CollectorState, WORKOUT_EXPORT_KEY)
+        if mark is None:
+            self.db.add(CollectorState(key=WORKOUT_EXPORT_KEY, cursor_epoch=0))
+        else:
+            mark.updated_at = utcnow()
+        self.db.commit()
+
+    def workout_export_seen_at(self) -> datetime | None:
+        """When a workouts export last arrived; None if the phone never sent one."""
+        mark = self.db.get(CollectorState, WORKOUT_EXPORT_KEY)
+        return mark.updated_at if mark is not None else None
 
     def last_received_at(self) -> datetime | None:
         """When the live Health Auto Export push last delivered a new or changed value."""

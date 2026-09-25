@@ -41,6 +41,10 @@ def ingest_auto_export(
     records = parse_export(payload.model_dump())
     repo = HealthRepository(db)
     inserted, updated = repo.upsert_records(records)
+    if "workouts" in payload.data.model_fields_set:
+        # A workouts export arrived, even an empty one: from here on, no
+        # workout on a day means none was recorded, not that none was sent.
+        repo.mark_workout_export()
 
     if inserted or updated:
         analytics = AnalyticsService(db)

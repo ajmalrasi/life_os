@@ -21,6 +21,7 @@ Payload shape (https://github.com/Lybron/health-auto-export/wiki/API-Export---JS
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime
 from typing import Any
 
@@ -129,6 +130,18 @@ def _sleep_records(p: dict[str, Any], units: str) -> list[HealthRecordIn]:
     return out
 
 
+def workout_label(raw: str | None) -> str:
+    """A readable activity name from either export.
+
+    Health Auto Export sends "Traditional Strength Training"; the Apple Health
+    XML sends "HKWorkoutActivityTypeTraditionalStrengthTraining".
+    """
+    name = (raw or "").strip().removeprefix("HKWorkoutActivityType")
+    if name and " " not in name:
+        name = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name)
+    return (name or "Workout")[:64]
+
+
 def _workout_record(w: dict[str, Any]) -> HealthRecordIn | None:
     start = _parse_date(w.get("start") or w.get("startDate"))
     end = _parse_date(w.get("end") or w.get("endDate"))
@@ -139,6 +152,7 @@ def _workout_record(w: dict[str, Any]) -> HealthRecordIn | None:
     return HealthRecordIn(
         source_id=_sid("workout", w.get("start") or str(start), name),
         type="workout", value=minutes, unit="min", start_time=start, end_time=end,
+        label=workout_label(name),
     )
 
 

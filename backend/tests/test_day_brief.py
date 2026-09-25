@@ -186,3 +186,85 @@ def test_facts_state_the_direction_of_a_comparison():
     assert day_brief._versus(55, 64, "lower") == "below your usual, which is better"
     assert day_brief._versus(31, 40, "higher") == "below your usual, which is worse"
     assert day_brief._versus(41, 40, "higher") == "about your usual"
+
+
+def _workout(name: str, start: datetime, minutes: int) -> dict:
+    fmt = "%Y-%m-%d %H:%M:%S +0530"
+    return {"name": name, "start": start.strftime(fmt), "end": (start + timedelta(minutes=minutes)).strftime(fmt)}
+
+
+def _workout_fact(day: date) -> str:
+    db = SessionLocal()
+    fact = next(f for f in day_brief.compute_day_facts(db, day) if f.id == "workouts")
+    db.close()
+    return fact.statement
+
+
+def test_workout_type_is_kept_and_both_strength_sessions_are_told_apart(client):
+    today = date.today()
+    day = today - timedelta(days=3)
+    payload = {"data": {"workouts": [
+        _workout("Traditional Strength Training", _at(day, 19), 40),
+        _workout("Functional Strength Training", _at(day, 19, 45), 20),
+    ]}}
+    assert client.post("/health/auto-export", json=payload).json()["inserted"] == 2
+
+    db = SessionLocal()
+    rows = HealthRepository(db).workouts_between(day, day)
+    assert [(r.label, round(r.value)) for r in rows] == [
+        ("Traditional Strength Training", 40),
+        ("Functional Strength Training", 20),
+    ]
+    db.close()
+
+    fact = _workout_fact(today)
+    assert "Workouts in the last 28 days: 2, 60 min in total" in fact
+    assert "Traditional Strength Training, Functional Strength Training" in fact
+    assert "Most recent recorded workout: Functional Strength Training, 20 min" in fact
+    assert "3 days ago" in fact
+    assert "unknown" not in fact
+
+
+def test_workouts_are_unknown_until_the_phone_sends_a_workouts_export(client):
+    today = date.today()
+    db = SessionLocal()
+    HealthRepository(db).bulk_insert([HealthRecordIn(
+        source_id="apple-w1", type="workout", value=52, unit="min",
+        start_time=_at(today - timedelta(days=90), 20), end_time=_at(today - timedelta(days=90), 21),
+        label="Traditional Strength Training",
+    )])
+    db.close()
+    fact = _workout_fact(today)
+    assert "90 days ago" in fact and "unknown, not zero" in fact
+
+    # An empty workouts export means "none recorded", not "not sent".
+    client.post("/health/auto-export", json={"data": {"workouts": []}})
+    fact = _workout_fact(today)
+    assert "unknown" not in fact
+    assert "No workouts in the last 28 days." in fact
+
+    # A health-metrics export alone never claims anything about workouts.
+    db = SessionLocal()
+    assert HealthRepository(db).workout_export_seen_at() is not None
+    db.close()
+
+
+def test_resending_a_workout_fills_in_a_missing_type(client):
+    day = date.today() - timedelta(days=1)
+    start = _at(day, 7)
+    record = parse_export({"data": {"workouts": [_workout("Functional Strength Training", start, 30)]}})[0]
+    db = SessionLocal()
+    repo = HealthRepository(db)
+    repo.upsert_records([record.model_copy(update={"label": None})])
+    assert repo.workouts_between(day, day)[0].label is None
+    assert repo.upsert_records([record]) == (0, 1)
+    assert repo.workouts_between(day, day)[0].label == "Functional Strength Training"
+    db.close()
+
+
+def test_apple_xml_activity_names_become_readable():
+    from app.services.apple_ingest import workout_label
+
+    assert workout_label("HKWorkoutActivityTypeTraditionalStrengthTraining") == "Traditional Strength Training"
+    assert workout_label("Functional Strength Training") == "Functional Strength Training"
+    assert workout_label(None) == "Workout"

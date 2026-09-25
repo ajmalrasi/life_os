@@ -77,6 +77,9 @@ class HealthRecord(Base):
     type: Mapped[str] = mapped_column(String(64))
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32))
+    # What kind of record this is beyond its type, e.g. a workout's activity
+    # ("Traditional Strength Training"). Null for plain metric readings.
+    label: Mapped[str | None] = mapped_column(String(64), nullable=True)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -38,6 +38,7 @@ settings = get_settings()
 IST = ZoneInfo("Asia/Kolkata")
 _TIMEOUT_SECONDS = 45.0
 _USUAL_WINDOW = 14
+_WORKOUT_WINDOW = 28
 _CONFIDENCE = {"low": 0.33, "medium": 0.66, "high": 1.0}
 
 _SYSTEM_PROMPT = (
@@ -55,6 +56,7 @@ _SYSTEM_PROMPT = (
     "Rules:\n"
     "- Use the current time. Few steps or commits early in the day are normal, not avoidance.\n"
     "- Missing data is not zero. If last night's sleep or today's vitals have not arrived, say so.\n"
+    "- A workout is deliberate training logged on the watch. Walking shows up only as steps; never call it a workout.\n"
     "- Use only numbers that appear in the facts. Do not calculate new ones.\n"
     "- The facts already say whether a reading is better or worse than usual. Repeat that; never reverse it.\n"
     "- Describe what the numbers show. Do not claim one thing caused another.\n"
@@ -111,6 +113,34 @@ def _time_of_day(now: datetime) -> str:
     if now.hour < 17:
         return "afternoon"
     return "evening"
+
+
+def _workout_fact(health: HealthRepository, day: date) -> str:
+    """Recent training, told apart from walking, and honest about missing exports."""
+    recent = health.workouts_between(day - timedelta(days=_WORKOUT_WINDOW - 1), day)
+    last = health.latest_workout(day)
+    parts: list[str] = []
+    if recent:
+        minutes = sum(w.value for w in recent)
+        kinds = ", ".join(dict.fromkeys(w.label or "Workout" for w in recent))
+        parts.append(
+            f"Workouts in the last {_WORKOUT_WINDOW} days: {len(recent)}, {minutes:.0f} min in total ({kinds})."
+        )
+    if last is not None:
+        d = _local(last.start_time).date()
+        ago = (day - d).days
+        when = _when(d, day) if ago <= 1 else f"{_when(d, day)}, {ago} days ago"
+        parts.append(f"Most recent recorded workout: {last.label or 'Workout'}, {last.value:.0f} min ({when}).")
+    else:
+        parts.append("No workout has ever been recorded.")
+    if health.workout_export_seen_at() is None:
+        parts.append(
+            "The phone does not send workouts yet, so workouts after the Apple Health history "
+            "import are unknown, not zero."
+        )
+    elif not recent:
+        parts.append(f"No workouts in the last {_WORKOUT_WINDOW} days.")
+    return " ".join(parts)
 
 
 def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> list[EvidenceFact]:
@@ -191,6 +221,9 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
             "steps_usual",
             f"Usual full-day steps: {usual_steps:,.0f} (today's count is partial until the day ends).",
         ))
+
+    # --- training: workouts, as opposed to walking ---
+    facts.append(EvidenceFact("workouts", _workout_fact(health, day)))
 
     # --- work output ---
     github = GithubRepository(db)
