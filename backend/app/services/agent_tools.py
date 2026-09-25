@@ -240,17 +240,20 @@ TOOL_SCHEMAS: list[dict] = [
                 "per-day sleep hours and stages, resting heart rate, HRV, steps, active "
                 "energy and exercise minutes, plus every workout with its type (e.g. "
                 "Traditional Strength Training) and the last training workout. Walks logged "
-                "as workouts are marked as walking, not training. Includes when data last "
-                "arrived, so recent days may be incomplete."
+                "as workouts are marked as walking, not training. Counts and minutes are "
+                "computed for the exact window; report them instead of counting yourself. "
+                "Pass start_date and end_date for a calendar period such as a month."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "days": {
                         "type": "integer",
-                        "description": "How many trailing days to cover (1-90).",
+                        "description": "Trailing days to cover (1-90) when no dates are given.",
                         "default": 14,
-                    }
+                    },
+                    "start_date": {"type": "string", "description": "ISO date, e.g. 2026-07-01."},
+                    "end_date": {"type": "string", "description": "ISO date, inclusive, e.g. 2026-07-31."},
                 },
             },
         },
@@ -315,6 +318,10 @@ class AgentTools:
                     tool=args.get("tool", ""),
                     arguments=args.get("arguments"),
                 )
+            if name == "health_records":
+                return self.health_records(
+                    _clamp_days(args.get("days", 14)), args.get("start_date"), args.get("end_date"),
+                )
             if name == "query_money":
                 return query_money(self.db, **args)
             days = _clamp_days(args.get("days", 14))
@@ -322,7 +329,6 @@ class AgentTools:
                 "git_log": self.git_log,
                 "github_events": self.github_events,
                 "health_summary": self.health_summary,
-                "health_records": self.health_records,
             }[name]
             return handler(days)
         except Exception as exc:  # tools must degrade, never crash the chat
@@ -404,11 +410,22 @@ class AgentTools:
             return {"error": f"github-mcp-server unreachable or tool '{tool}' failed"}
         return {"tool": tool, "result": result}
 
-    def health_records(self, days: int) -> dict:
+    def health_records(self, days: int = 14, start_date: str | None = None, end_date: str | None = None) -> dict:
         """Synced Apple Health readings and workouts; never contacts the phone."""
         from app.services.day_brief import is_walk_workout
 
         start, end = _window(days)
+        if start_date or end_date:
+            try:
+                start = date.fromisoformat(start_date) if start_date else start
+                end = date.fromisoformat(end_date) if end_date else end
+            except ValueError:
+                return {"error": "start_date and end_date must be ISO dates like 2026-07-01"}
+            if end < start:
+                return {"error": "end_date is before start_date"}
+            end = min(end, datetime.now(ZoneInfo("Asia/Kolkata")).date())
+            start = max(start, end - timedelta(days=_MAX_DAYS - 1))
+            days = (end - start).days + 1
         health = HealthRepository(self.db)
 
         def total(d: date, t) -> float | None:
@@ -462,7 +479,12 @@ class AgentTools:
                 "note": "Data arrives when the iPhone syncs; today and last night may be incomplete.",
             },
             "workouts": in_window,
-            "training_workouts_in_window": sum(1 for w in in_window if w["kind"] == "training"),
+            "window_totals": {
+                "training_workouts": sum(1 for w in in_window if w["kind"] == "training"),
+                "training_minutes": round(sum(w["minutes"] for w in in_window if w["kind"] == "training"), 1),
+                "walking_workouts": sum(1 for w in in_window if w["kind"] == "walking"),
+                "training_days": len({w["day"] for w in in_window if w["kind"] == "training"}),
+            },
             "last_training_workout": workout(training[-1]) if training else None,
             "daily": daily,
         }

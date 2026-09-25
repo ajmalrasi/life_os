@@ -462,6 +462,30 @@ def test_health_records_reads_synced_data_and_separates_walks(client):
     assert [(w["type"], w["kind"]) for w in result["workouts"]] == [
         ("Outdoor Walk", "walking"), ("Traditional Strength Training", "training"),
     ]
-    assert result["training_workouts_in_window"] == 1
+    assert result["window_totals"]["training_workouts"] == 1
+    assert result["window_totals"]["walking_workouts"] == 1
     assert result["last_training_workout"]["type"] == "Traditional Strength Training"
     assert "not set up" in result["freshness"]["workouts_sync"]
+
+
+def test_health_records_counts_an_exact_calendar_month(client):
+    from datetime import date, datetime
+    from app.repositories.health_repo import HealthRepository
+    from app.schemas.health import HealthRecordIn
+
+    def lift(sid, d, minutes):
+        start = datetime.combine(d, datetime.min.time()).replace(hour=21)
+        return HealthRecordIn(source_id=sid, type="workout", value=minutes, unit="min",
+                              start_time=start, end_time=start, label="Traditional Strength Training")
+
+    year = date.today().year - 1  # a complete past month, well inside any window
+    with SessionLocal() as db:
+        HealthRepository(db).bulk_insert([
+            lift("hae-a", date(year, 6, 29), 61), lift("hae-b", date(year, 7, 1), 91),
+            lift("hae-c", date(year, 7, 29), 50), lift("hae-d", date(year, 8, 2), 30),
+        ])
+        result = AgentTools(db).run("health_records", {"start_date": f"{year}-07-01", "end_date": f"{year}-07-31"})
+    assert result["window"]["start"] == f"{year}-07-01" and result["window"]["end"] == f"{year}-07-31"
+    assert result["window_totals"] == {
+        "training_workouts": 2, "training_minutes": 141.0, "walking_workouts": 0, "training_days": 2,
+    }
