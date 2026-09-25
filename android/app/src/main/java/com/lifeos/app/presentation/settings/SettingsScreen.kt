@@ -140,7 +140,7 @@ fun SettingsScreen(
                 ) {
                     Text("Sync LifeOS", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Checks Priority mail, bank alerts, and card statements, then refreshes Pulse, Apple Health scores, execution, and insights.",
+                        "Checks Priority mail, bank alerts, and card statements, then refreshes check-ins, Apple Health scores, execution, and insights.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.OnSurfaceMuted,
                     )

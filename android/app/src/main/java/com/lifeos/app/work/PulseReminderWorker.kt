@@ -17,7 +17,7 @@ import java.time.LocalDate
  *
  * Fires daily (scheduled for the user's configured hour, default 9 PM). If no
  * Pulse check-in exists for today and reminders are enabled, posts a local
- * notification that deep-links into the Pulse tab. Lightweight by design, it
+ * notification that deep-links into Today's Pulse check-in. Lightweight by design, it
  * never nags if you've already logged.
  */
 @HiltWorker
@@ -39,8 +39,8 @@ class PulseReminderWorker @AssistedInject constructor(
                 channelId = AppNotifications.CHANNEL_PULSE,
                 notificationId = NOTIFICATION_ID,
                 title = "How was today?",
-                body = "Take a few seconds to log your Pulse: mood, energy, focus, and stress.",
-                openTab = "mood",
+                body = "One tap on Today logs how it went.",
+                openTab = "dashboard",
             )
         }
         return Result.success()

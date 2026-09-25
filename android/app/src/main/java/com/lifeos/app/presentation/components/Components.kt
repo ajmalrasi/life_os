@@ -45,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lifeos.app.domain.model.DailyScore
-import com.lifeos.app.domain.model.DayPulse
 import com.lifeos.app.domain.model.Insight
 import com.lifeos.app.domain.model.SynthesizedInsight
 import com.lifeos.app.presentation.theme.LifeOsColors
@@ -70,13 +69,6 @@ fun scoreColor(score: Double?): Color = when {
     score >= 50 -> LifeOsColors.ScoreMid
     score >= 25 -> LifeOsColors.Warning
     else -> LifeOsColors.ScoreLow
-}
-
-private fun DayPulse.tint(): Pair<Color, Color> = when (this) {
-    DayPulse.ROUGH -> LifeOsColors.PrimarySoft to LifeOsColors.ScoreLow
-    DayPulse.MEH -> LifeOsColors.SurfaceMuted to LifeOsColors.OnSurfaceMuted
-    DayPulse.GOOD -> LifeOsColors.SecondarySoft to LifeOsColors.Secondary
-    DayPulse.FLOW -> LifeOsColors.PrimarySoft to LifeOsColors.Primary
 }
 
 @Composable
@@ -270,7 +262,7 @@ private fun metricBlurb(name: String): String = when (name) {
     "Sleep" -> "How well you slept: duration, deep/REM balance, and how fragmented the night was."
     "Recovery" -> "Overnight physiological recovery from resting heart rate, HRV, and blood oxygen."
     "Execution" -> "What you got done: coding activity, commits, and follow-through on the day."
-    "Wellness" -> "Your own check-ins: mood, energy, focus, and stress logged in the Pulse tab."
+    "Wellness" -> "Your own check-ins: mood, energy, focus, and stress from the Pulse card on Today."
     "Fitness" -> "Movement and cardio load: steps, workouts, calories, and VO₂ max."
     else -> ""
 }
@@ -287,8 +279,9 @@ private fun metricBlurb(name: String): String = when (name) {
 @Composable
 fun VitalsCard(
     history: List<DailyScore>,
-    onCheckIn: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens a check-in; null when one is already on screen (Today's Pulse card). */
+    onCheckIn: (() -> Unit)? = null,
 ) {
     var detail by remember { mutableStateOf<String?>(null) }
     val today = LocalDate.now()
@@ -301,7 +294,13 @@ fun VitalsCard(
                 val value = latest?.metricValue(name)
                 val day = latest?.day
                 if (name == "Wellness" && day != today) {
-                    VitalRow(name, value = null, caption = "No check-in today", action = "Check in", onClick = onCheckIn)
+                    VitalRow(
+                        name,
+                        value = null,
+                        caption = "No check-in today",
+                        action = if (onCheckIn != null) "Check in" else null,
+                        onClick = onCheckIn ?: { detail = name },
+                    )
                 } else {
                     VitalRow(
                         name,
@@ -549,75 +548,6 @@ fun WeeklyTrendCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun QuickCheckInCard(
-    selected: DayPulse?,
-    savedLabel: String?,
-    enabled: Boolean,
-    onSelect: (DayPulse) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    LifeOsCard(modifier = modifier) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("How was today?", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Skip anytime. Sleep and execution still teach LifeOS.",
-                style = MaterialTheme.typography.bodySmall,
-                color = LifeOsColors.OnSurfaceMuted,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                DayPulse.entries.forEach { pulse ->
-                    PulseButton(
-                        pulse = pulse,
-                        selected = selected == pulse,
-                        enabled = enabled,
-                        onClick = { onSelect(pulse) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            if (savedLabel != null) {
-                Text(savedLabel, style = MaterialTheme.typography.labelMedium, color = LifeOsColors.Positive)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PulseButton(
-    pulse: DayPulse,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val (soft, accent) = pulse.tint()
-    val shape = RoundedCornerShape(16.dp)
-    val bg = if (selected) soft else LifeOsColors.Background
-    val border = if (selected) accent else LifeOsColors.SurfaceBorder
-    Column(
-        modifier = modifier
-            .clip(shape)
-            .background(bg)
-            .border(if (selected) 2.dp else 1.dp, border, shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(pulse.emoji, fontSize = 28.sp)
-        Text(
-            pulse.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) accent else LifeOsColors.OnSurfaceMuted,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        )
     }
 }
 

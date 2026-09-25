@@ -40,7 +40,7 @@ class BackNavigationUiTest {
 
     @Test
     fun every_area_puts_the_menu_in_the_same_header() {
-        listOf("Money", "Today", "Pulse", "Priority", "Insights", "Ask", "Trips", "Settings").forEach { area ->
+        listOf("Money", "Today", "Priority", "Insights", "Ask", "Trips", "Settings").forEach { area ->
             openArea(area)
             compose.onNodeWithContentDescription("Open navigation drawer").assertIsDisplayed()
             compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
@@ -49,7 +49,7 @@ class BackNavigationUiTest {
 
     @Test
     fun drawer_areas_have_no_back_bar_and_system_back_returns_to_today() {
-        openArea("Pulse")
+        openArea("Insights")
         compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()
         openArea("Money")
         compose.onNodeWithText("Back to", substring = true).assertDoesNotExist()

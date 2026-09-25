@@ -76,6 +76,12 @@ Income and recurring charges are fetched online; a failed fetch just omits
 them. Device tests pick drawer entries by `Role.Tab`, because Today's cards
 also mention area names.
 
+The separate **Pulse page and drawer entry are gone**: the check-in is a
+`PulseCheckInCard` on Today (top of Your vitals). One tap saves or changes
+today's pulse; the optional note has its own Save/Cancel (no more re-tapping a
+face). The evening reminder deep-links to `dashboard`; a saved last-used tab of
+`mood` falls back to the default. The Wellness vitals row no longer links out.
+
 ## Trips update (2026-09-17)
 
 Trips is now a phone-first Android feature under the navigation drawer. It uses a

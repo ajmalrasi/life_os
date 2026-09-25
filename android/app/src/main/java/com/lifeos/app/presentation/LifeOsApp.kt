@@ -22,7 +22,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Tune
@@ -68,7 +67,6 @@ import com.lifeos.app.presentation.insights.InsightsScreen
 import com.lifeos.app.presentation.money.CurrentCycleDetailsScreen
 import com.lifeos.app.presentation.money.MoneyScreen
 import com.lifeos.app.presentation.money.StatementDetailsScreen
-import com.lifeos.app.presentation.mood.MoodScreen
 import com.lifeos.app.presentation.priority.PriorityDetailsScreen
 import com.lifeos.app.presentation.priority.PriorityScreen
 import com.lifeos.app.presentation.settings.MoneySettingsScreen
@@ -81,7 +79,6 @@ import kotlinx.coroutines.launch
 
 enum class Destination(val route: String, val label: String, val icon: ImageVector) {
     DASHBOARD("dashboard", "Today", Icons.Rounded.WbSunny),
-    MOOD("mood", "Pulse", Icons.Rounded.Favorite),
     MONEY("money", "Money", Icons.Rounded.AccountBalanceWallet),
     PRIORITY("priority", "Priority", Icons.Rounded.Mail),
     INSIGHTS("insights", "Insights", Icons.Rounded.Insights),
@@ -94,7 +91,6 @@ internal val navigationDestinations = listOf(
     Destination.DASHBOARD,
     Destination.MONEY,
     Destination.PRIORITY,
-    Destination.MOOD,
     Destination.INSIGHTS,
     Destination.CHAT,
     Destination.TRIPS,
@@ -219,14 +215,12 @@ fun LifeOsApp(
                 }
                 composable(Destination.DASHBOARD.route) {
                     DashboardScreen(
-                        onOpenPulse = { openFromPage(Destination.MOOD) },
                         onOpenMoney = { openFromPage(Destination.MONEY) },
                         onOpenCards = { openFromPage(Destination.MONEY) },
                         onOpenStatement = { id -> navController.navigate("statement/$id") },
                         onOpenTrip = { id -> navController.navigate("trip/$id") },
                     )
                 }
-                composable(Destination.MOOD.route) { MoodScreen() }
                 composable(Destination.PRIORITY.route) {
                     PriorityScreen(onOpenItem = { id -> navController.navigate("priority/$id") })
                 }
@@ -332,7 +326,6 @@ internal fun topLevelDestinationFor(route: String?): Destination? = when {
     route == Destination.TRIPS.route || route.startsWith("trip/") -> Destination.TRIPS
     route == Destination.PRIORITY.route || route.startsWith("priority/") -> Destination.PRIORITY
     route == Destination.DASHBOARD.route -> Destination.DASHBOARD
-    route == Destination.MOOD.route -> Destination.MOOD
     route == Destination.INSIGHTS.route -> Destination.INSIGHTS
     route == Destination.CHAT.route -> Destination.CHAT
     route == Destination.SETTINGS.route || route == SETTINGS_MONEY_ROUTE || route == SETTINGS_TRIPS_ROUTE -> Destination.SETTINGS
@@ -410,8 +403,7 @@ internal fun LifeOsNavigationDrawer(
 }
 
 private fun destinationSupportingText(destination: Destination): String = when (destination) {
-    Destination.DASHBOARD -> "Daily scores"
-    Destination.MOOD -> "Mood check-in"
+    Destination.DASHBOARD -> "Your day at a glance"
     Destination.INSIGHTS -> "Your mentor's take"
     Destination.CHAT -> "Grounded answers"
     Destination.SETTINGS -> "Sync and preferences"

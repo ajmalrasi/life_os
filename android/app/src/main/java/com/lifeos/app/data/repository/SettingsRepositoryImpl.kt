@@ -43,7 +43,6 @@ class SettingsRepositoryImpl @Inject constructor(
     private val validStartupDestinations = setOf(
         "money",
         "dashboard",
-        "mood",
         "priority",
         "insights",
         "chat",

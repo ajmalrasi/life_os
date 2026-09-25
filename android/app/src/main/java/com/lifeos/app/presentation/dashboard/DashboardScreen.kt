@@ -36,7 +36,6 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun DashboardScreen(
-    onOpenPulse: () -> Unit = {},
     onOpenMoney: () -> Unit = {},
     onOpenCards: () -> Unit = {},
     onOpenStatement: (Int) -> Unit = {},
@@ -90,7 +89,20 @@ fun DashboardScreen(
 
             // Put the actionable daily readings ahead of the longer history.
             item { SectionHeader("Your vitals") }
-            item { VitalsCard(history = state.scoreHistory, onCheckIn = onOpenPulse) }
+            item {
+                PulseCheckInCard(
+                    selected = state.todayPulse,
+                    note = state.pulseNote,
+                    noteDirty = state.pulseNoteDirty,
+                    message = state.pulseSavedMessage,
+                    submitting = state.pulseSubmitting,
+                    onSelect = viewModel::submitPulse,
+                    onNoteChange = viewModel::setPulseNote,
+                    onSaveNote = viewModel::savePulseNote,
+                    onDiscardNote = viewModel::discardPulseNote,
+                )
+            }
+            item { VitalsCard(history = state.scoreHistory) }
             item { TrendChart(history = state.scoreHistory) }
 
             if (overview != null && overview.upcoming.isNotEmpty()) {

@@ -41,6 +41,10 @@ data class DashboardUiState(
     val todayPulse: DayPulse? = null,
     val pulseSavedMessage: String? = null,
     val pulseSubmitting: Boolean = false,
+    /** Today's check-in note: the draft being typed, else what was saved. */
+    val pulseNote: String = "",
+    /** True when the note field differs from what is saved. */
+    val pulseNoteDirty: Boolean = false,
     val notifications: List<AppNotification> = emptyList(),
     val message: String? = null,
     val usingDemoData: Boolean = false,
@@ -113,8 +117,10 @@ class DashboardViewModel @Inject constructor(
         val useDemo = DemoMode.active && scores.isEmpty()
         val displayScores = if (useDemo) DemoData.scores else scores
         val displayNotifications = if (useDemo && t.notifications.isEmpty()) DemoData.notifications else t.notifications
-        val todayPulse = moods.firstOrNull { it.day == LocalDate.now() }?.let { DayPulse.fromCheckin(it) }
+        val todayCheckin = moods.firstOrNull { it.day == LocalDate.now() }
+        val todayPulse = todayCheckin?.let { DayPulse.fromCheckin(it) }
             ?: if (useDemo) DemoData.todayPulse else null
+        val savedNote = todayCheckin?.note.orEmpty()
         DashboardUiState(
             latestScore = displayScores.firstOrNull(),
             scoreHistory = displayScores,
@@ -122,6 +128,8 @@ class DashboardViewModel @Inject constructor(
             todayPulse = t.pulseSelected ?: todayPulse,
             pulseSavedMessage = t.pulseSavedMessage,
             pulseSubmitting = t.pulseSubmitting,
+            pulseNote = t.pulseNoteDraft ?: savedNote,
+            pulseNoteDirty = t.pulseNoteDraft != null && t.pulseNoteDraft.trim() != savedNote,
             notifications = displayNotifications,
             message = t.message,
             usingDemoData = useDemo,
@@ -178,17 +186,41 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /** One tap logs (or changes) today's check-in, keeping any note. */
     fun submitPulse(pulse: DayPulse) {
+        savePulse(pulse, note = currentNote(), message = "Logged ${pulse.label.lowercase()} for today")
+    }
+
+    fun setPulseNote(note: String) {
+        transient.value = transient.value.copy(pulseNoteDraft = note, pulseSavedMessage = null)
+    }
+
+    fun discardPulseNote() {
+        transient.value = transient.value.copy(pulseNoteDraft = null)
+    }
+
+    /** A note is saved with today's pulse; without a pulse there is nothing to attach it to. */
+    fun savePulseNote() {
+        val pulse = uiState.value.todayPulse ?: return
+        savePulse(pulse, note = currentNote(), message = "Note saved")
+    }
+
+    private fun currentNote(): String? =
+        (transient.value.pulseNoteDraft ?: uiState.value.pulseNote).trim().ifEmpty { null }
+
+    private fun savePulse(pulse: DayPulse, note: String?, message: String) {
         viewModelScope.launch {
             transient.value = transient.value.copy(pulseSelected = pulse, pulseSubmitting = true, pulseSavedMessage = null)
-            runCatching {
-                moodRepository.submit(pulse.toCheckin())
-                analyticsRepository.recompute(60)
-            }
+            // Saved locally first (offline-first); the backend push and the
+            // score recompute are best-effort and catch up on the next sync.
+            val saved = runCatching { moodRepository.submit(pulse.toCheckin(note)) }.isSuccess
             transient.value = transient.value.copy(
+                pulseSelected = if (saved) pulse else null,
                 pulseSubmitting = false,
-                pulseSavedMessage = "${pulse.emoji} Logged: ${pulse.label}",
+                pulseNoteDraft = if (saved) null else transient.value.pulseNoteDraft,
+                pulseSavedMessage = if (saved) message else "Couldn't save. Try again.",
             )
+            if (saved) runCatching { analyticsRepository.recompute(60) }
         }
     }
 
@@ -220,6 +252,8 @@ class DashboardViewModel @Inject constructor(
         val pulseSelected: DayPulse? = null,
         val pulseSavedMessage: String? = null,
         val pulseSubmitting: Boolean = false,
+        /** Non-null while the user is editing the note. */
+        val pulseNoteDraft: String? = null,
         val notifications: List<AppNotification> = emptyList(),
         val message: String? = null,
         val today: TodaySummary? = null,
