@@ -28,6 +28,7 @@ from app.services.github_mcp_client import GitHubMcpClient
 from app.services.money_query import query_money
 from app.models.health import HealthRecordType
 from app.repositories.health_repo import HealthRepository
+from app.services.training import is_walk_workout
 from app.models.trip import TripBackup
 
 _MAX_DAYS = 90
@@ -412,8 +413,6 @@ class AgentTools:
 
     def health_records(self, days: int = 14, start_date: str | None = None, end_date: str | None = None) -> dict:
         """Synced Apple Health readings and workouts; never contacts the phone."""
-        from app.services.day_brief import is_walk_workout
-
         start, end = _window(days)
         if start_date or end_date:
             try:

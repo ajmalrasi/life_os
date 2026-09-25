@@ -16,6 +16,8 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.repositories.health_repo import HealthRepository
+from app.services.training import training_summary
 from app.api.routes.statements import build_categorizer
 from app.config import get_settings
 from app.repositories.analytics_repo import ScoreRepository
@@ -97,6 +99,19 @@ def compute_weekly_facts(db: Session, today: date | None = None) -> list[Evidenc
             direction = "more" if delta >= 0 else "less"
             detail += f" (Rs {abs(delta):,.0f} {direction} than last week's Rs {last_week_spend:,.0f})"
         facts.append(EvidenceFact(id="spend", statement=detail))
+
+    try:
+        summary = training_summary(HealthRepository(db), end)
+        if summary.last is not None or summary.workouts_synced:
+            detail = (
+                f"Training workouts this week: {summary.sessions_last_7} "
+                f"(last week: {summary.sessions_prev_7})"
+            )
+            if summary.sessions_last_7 == 0 and summary.days_since_last is not None:
+                detail += f"; the last one was {summary.days_since_last} days ago ({summary.last_label})"
+            facts.append(EvidenceFact(id="training", statement=detail))
+    except Exception:  # training is a nicety in the recap, never a blocker
+        logger.debug("weekly recap training summary failed", exc_info=True)
 
     try:
         categorize = build_categorizer(db)

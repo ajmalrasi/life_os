@@ -22,6 +22,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
+from app.services.training import training_statement, training_summary
 from app.api.routes.statements import build_categorizer
 from app.models.card_statement import CardStatement
 from app.models.money_profile import MoneyProfile
@@ -530,14 +531,18 @@ def _life_signal_facts(db: Session, today: date) -> list[EvidenceFact]:
     days_with_steps = sum(1 for v in steps if v is not None)
     if days_with_steps >= 3:
         avg_steps = _avg(steps)
-        workout_minutes = [sum(health.daily_values(d, HealthRecordType.WORKOUT)) or 0 for d in _days(start, end)]
-        avg_workout = _avg([v if v else None for v in workout_minutes]) or 0
         facts.append(
             EvidenceFact(
                 id="health:activity",
-                statement=f"Average {round(avg_steps):,} steps/day and {avg_workout:.0f} workout minutes/day this week.",
+                statement=f"Average {round(avg_steps):,} steps/day this week (walking and daily movement).",
             )
         )
+
+    # Training is judged on its own, over weeks: a long gap matters more than a
+    # day's HRV, and walks never count as training.
+    summary = training_summary(health, today)
+    if summary.last is not None or summary.workouts_synced:
+        facts.append(EvidenceFact(id="health:training", statement=training_statement(summary, today)))
 
     moods = MoodRepository(db)
     this_week_moods = moods.range(start, end)

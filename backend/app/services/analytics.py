@@ -17,6 +17,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.services.training import training_minutes
 from app.config import get_settings
 from app.models.health import HealthRecordType
 from app.repositories.analytics_repo import (
@@ -122,7 +123,8 @@ class AnalyticsService:
         # --- fitness (physical activity from Health Connect) ---
         fitness = scoring.fitness_score(
             scoring.FitnessInputs(
-                workout_minutes=self._sum(day, HealthRecordType.WORKOUT),
+                # Training only: a walk logged as a workout already counts in steps.
+                workout_minutes=training_minutes(self.health, day),
                 active_calories=self._sum(day, HealthRecordType.CALORIES),
                 steps=self._sum(day, HealthRecordType.STEPS),
             )

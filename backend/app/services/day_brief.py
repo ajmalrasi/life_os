@@ -30,6 +30,7 @@ from app.repositories.github_repo import GithubRepository
 from app.repositories.health_repo import HealthRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.insight_synthesizer import EvidenceFact
+from app.services.training import is_walk_workout
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.day_brief")
@@ -113,11 +114,6 @@ def _time_of_day(now: datetime) -> str:
     if now.hour < 17:
         return "afternoon"
     return "evening"
-
-
-def is_walk_workout(label: str | None) -> bool:
-    """A walk or hike logged as a workout is still walking, not training."""
-    return bool(label) and any(word in label.lower() for word in ("walk", "hik"))
 
 
 def _workout_fact(health: HealthRepository, day: date) -> str:
