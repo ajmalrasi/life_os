@@ -3,7 +3,7 @@
 This is the live counterpart to ``scripts/import_apple_health.py``: instead of a
 one-time XML file, the iPhone pushes recent Apple Health data (including Apple
 Watch sleep) on a schedule. We map it onto the same ``HealthRecord`` schema and
-ingest idempotently by ``source_id`` — so Health Connect being unable to carry
+ingest by ``source_id``, where a re-sent reading replaces the stored one — so Health Connect being unable to carry
 Apple Watch sleep no longer matters.
 
 Payload shape (https://github.com/Lybron/health-auto-export/wiki/API-Export---JSON-Format):
@@ -173,8 +173,11 @@ def parse_export(payload: dict[str, Any]) -> list[HealthRecordIn]:
             if value is None:
                 continue
             value, unit = _value_and_unit(rec_type, value, units)
+            # Keyed by metric + timestamp only: HAE re-sends a day's aggregate
+            # with a corrected value, and that must replace the reading, not
+            # sit beside it (a value-keyed id stored both and summed them).
             out.append(HealthRecordIn(
-                source_id=_sid(rec_type, p.get("date"), value),
+                source_id=_sid(rec_type, p.get("date")),
                 type=rec_type, value=value, unit=unit, start_time=dt, end_time=dt,
             ))
 

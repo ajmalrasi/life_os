@@ -501,12 +501,12 @@ def _life_signal_facts(db: Session, today: date) -> list[EvidenceFact]:
         this_sleep = _avg([s.sleep_score for s in this_week_scores])
         prev_sleep = _avg([s.sleep_score for s in prev_week_scores])
         health = HealthRepository(db)
-        this_hours = _avg(
-            [sum(health.daily_values(d, HealthRecordType.SLEEP_DURATION)) or None for d in _days(start, end)]
-        )
-        prev_hours = _avg(
-            [sum(health.daily_values(d, HealthRecordType.SLEEP_DURATION)) or None for d in _days(prev_start, prev_end)]
-        )
+        def _hours(d: date) -> float | None:
+            night = health.sleep_for_day(d)
+            return night.total_hours if night is not None else None
+
+        this_hours = _avg([_hours(d) for d in _days(start, end)])
+        prev_hours = _avg([_hours(d) for d in _days(prev_start, prev_end)])
         statement = f"Sleep score averaged {this_sleep:.0f} this week"
         if prev_sleep is not None:
             statement += f" (last week: {prev_sleep:.0f})"

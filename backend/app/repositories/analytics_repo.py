@@ -5,6 +5,9 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.database import utcnow
+
+from app.models.daily_brief import DailyBrief
 from app.models.daily_score import DailyScore
 from app.models.daily_state import DailyState, LifeState
 from app.models.insight import Insight
@@ -175,3 +178,25 @@ class WeeklyRecapRepository:
     def latest(self) -> WeeklyRecap | None:
         stmt = select(WeeklyRecap).order_by(WeeklyRecap.week_start.desc()).limit(1)
         return self.db.execute(stmt).scalar_one_or_none()
+
+
+class DailyBriefRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get(self, day: date) -> DailyBrief | None:
+        return self.db.execute(
+            select(DailyBrief).where(DailyBrief.day == day)
+        ).scalar_one_or_none()
+
+    def upsert(self, day: date, **fields) -> DailyBrief:
+        obj = self.get(day)
+        if obj is None:
+            obj = DailyBrief(day=day)
+            self.db.add(obj)
+        for key, value in fields.items():
+            setattr(obj, key, value)
+        obj.generated_at = utcnow()
+        self.db.commit()
+        self.db.refresh(obj)
+        return obj

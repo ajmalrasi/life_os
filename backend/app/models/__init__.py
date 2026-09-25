@@ -5,6 +5,7 @@ Importing this package ensures every model is registered on the shared
 """
 
 from app.models.budget import Budget
+from app.models.daily_brief import DailyBrief
 from app.models.daily_score import DailyScore
 from app.models.daily_state import DailyState
 from app.models.device import DeviceToken
@@ -37,6 +38,7 @@ __all__ = [
     "Budget",
     "CardStatement",
     "CardStatementItem",
+    "DailyBrief",
     "HealthRecord",
     "HealthRecordType",
     "MoodCheckin",

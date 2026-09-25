@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.daily_state import LifeState
 
@@ -27,6 +28,38 @@ class DailyStateOut(BaseModel):
     state: LifeState
     confidence: float
     rationale: str | None
+
+
+class TodayBriefOut(BaseModel):
+    state: LifeState
+    confidence: str
+    headline: str
+    summary: str
+    suggestion: str
+    generated_at: datetime
+
+    @field_validator("generated_at")
+    @classmethod
+    def _to_utc(cls, value: datetime) -> datetime:
+        # Session tz is Asia/Kolkata; Android's Instant.parse() needs 'Z'.
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+class TodayOut(BaseModel):
+    day: date
+    brief: TodayBriefOut | None
+    # ready: brief matches the current data. refreshing: data changed and a new
+    # brief is being written (the previous one, if any, is still returned).
+    # unavailable: the model is switched off.
+    brief_status: Literal["ready", "refreshing", "unavailable"]
+    health_last_received_at: datetime | None
+
+    @field_validator("health_last_received_at")
+    @classmethod
+    def _to_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 class InsightOut(BaseModel):

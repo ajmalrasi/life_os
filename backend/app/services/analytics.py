@@ -3,7 +3,7 @@
 Stitches the repositories and the pure engines (scoring, state, correlation)
 into the two operations the system needs:
 
-* ``recompute_day``  — derive scores + state for a single day from raw data.
+* ``recompute_day``  — derive scores for a single day from raw data.
 * ``run_nightly``    — recompute a window of days, then discover correlations.
 
 This is the only service that touches multiple repositories, keeping the
@@ -22,7 +22,6 @@ from app.models.health import HealthRecordType
 from app.repositories.analytics_repo import (
     InsightRepository,
     ScoreRepository,
-    StateRepository,
     SynthesizedInsightRepository,
 )
 from app.repositories.expense_repo import ExpenseRepository
@@ -31,7 +30,6 @@ from app.repositories.health_repo import HealthRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services import correlation as corr
 from app.services import scoring
-from app.services import state_engine
 from app.services import insight_narrator
 from app.services import insight_synthesizer
 from app.services.insight_narrator import InsightFact
@@ -52,7 +50,6 @@ class AnalyticsService:
         self.mood = MoodRepository(db)
         self.github = GithubRepository(db)
         self.scores = ScoreRepository(db)
-        self.states = StateRepository(db)
         self.insights = InsightRepository(db)
         self.synth = SynthesizedInsightRepository(db)
         self.expenses = ExpenseRepository(db)
@@ -75,14 +72,16 @@ class AnalyticsService:
         return self.health.baseline_mean(start, day, t)
 
     def recompute_day(self, day: date) -> None:
-        # --- sleep ---
-        sleep_inputs = scoring.SleepInputs(
-            total_hours=self._sum(day, HealthRecordType.SLEEP_DURATION),
-            deep_hours=self._sum(day, HealthRecordType.SLEEP_DEEP),
-            rem_hours=self._sum(day, HealthRecordType.SLEEP_REM),
-            awake_hours=self._sum(day, HealthRecordType.SLEEP_AWAKE),
-        )
-        sleep = scoring.sleep_score(sleep_inputs)
+        # --- sleep (the night that ended this morning, revisions merged) ---
+        night = self.health.sleep_for_day(day)
+        sleep = scoring.sleep_score(
+            scoring.SleepInputs(
+                total_hours=night.total_hours,
+                deep_hours=night.deep_hours,
+                rem_hours=night.rem_hours,
+                awake_hours=night.awake_hours,
+            )
+        ) if night is not None else None
 
         # --- recovery ---
         recovery = scoring.recovery_score(
@@ -146,22 +145,7 @@ class AnalyticsService:
             consistency_score=consistency,
             burnout_risk=burnout,
         )
-
-        # --- state ---
-        result = state_engine.classify(
-            state_engine.StateInputs(
-                sleep_score=sleep,
-                recovery_score=recovery,
-                execution_score=execution,
-                consistency_score=consistency,
-                burnout_risk=burnout,
-                fitness_score=fitness,
-                mood=mood.mood if mood else None,
-                focus=mood.focus if mood else None,
-                stress=mood.stress if mood else None,
-            )
-        )
-        self.states.upsert(day, result.state, result.confidence, result.rationale)
+        # The day's state is judged by the model in day_brief.py, not here.
 
     def _trailing_execution(self, day: date, window: int) -> list[float]:
         out: list[float] = []
@@ -192,7 +176,7 @@ class AnalyticsService:
         for day in days:
             self.recompute_day(day)
         insights = self.discover(start, end)
-        return len(days), len(days), insights
+        return len(days), 0, insights
 
     def discover(self, start: date, end: date) -> int:
         """Discover lagged correlations between drivers and outcomes; upsert insights."""

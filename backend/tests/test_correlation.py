@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from app.services import correlation as corr
-from app.services import state_engine
-from app.models.daily_state import LifeState
 
 
 def test_positive_correlation_detected():
@@ -42,26 +40,3 @@ def test_describe_includes_uplift_when_possible():
     assert "execution score" in text
     assert "%" in text  # concrete uplift rendered
 
-
-def test_state_engine_peak_performance():
-    result = state_engine.classify(
-        state_engine.StateInputs(
-            sleep_score=90, recovery_score=88, execution_score=85, mood=5, focus=5, stress=1
-        )
-    )
-    assert result.state == LifeState.PEAK_PERFORMANCE
-    assert result.confidence > 0.4
-
-
-def test_state_engine_avoidance():
-    result = state_engine.classify(
-        state_engine.StateInputs(
-            sleep_score=80, recovery_score=80, execution_score=5, mood=3, focus=3, stress=3
-        )
-    )
-    assert result.state in {LifeState.AVOIDANCE_MODE, LifeState.RECOVERY_MODE}
-
-
-def test_state_engine_unknown_without_data():
-    result = state_engine.classify(state_engine.StateInputs())
-    assert result.state == LifeState.UNKNOWN

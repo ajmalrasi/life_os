@@ -96,11 +96,13 @@ def test_recompute_produces_scores_and_insights(client):
 
 
 def test_state_endpoint(client):
+    # Recompute no longer classifies states (day_brief.py does, via the model),
+    # so the history endpoint simply stays available.
     _seed(client, n_days=15)
     client.post("/analytics/recompute?days=20")
-    states = client.get("/analytics/state?days=20").json()
-    assert len(states) >= 1
-    assert "state" in states[0]
+    res = client.get("/analytics/state?days=20")
+    assert res.status_code == 200
+    assert res.json() == []
 
 
 def test_chat_explicit_error_when_model_down(client, monkeypatch):

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_token
+from app.api.routes.analytics import refresh_day_brief_bg
 from app.database import get_db
 from app.repositories.health_repo import HealthRepository
 from app.schemas.health import AutoExportIn, HealthBatchIn, IngestResult
@@ -25,31 +26,41 @@ def ingest_health(payload: HealthBatchIn, db: Session = Depends(get_db)) -> Inge
 
 
 @router.post("/auto-export", response_model=IngestResult)
-def ingest_auto_export(payload: AutoExportIn, db: Session = Depends(get_db)) -> IngestResult:
+def ingest_auto_export(
+    payload: AutoExportIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> IngestResult:
     """Live ingest of Apple Health data pushed by the iOS app *Health Auto Export*.
 
     This is how Apple Watch sleep (and other vitals) reach LifeOS, since they
-    never make it into Android Health Connect. Idempotent by source_id, and it
-    recomputes scores for just the days the payload touched so the dashboard
-    reflects new sleep right away.
+    never make it into Android Health Connect. A re-sent reading replaces the
+    stored one (same source_id). Scores are recomputed for just the days the
+    payload touched, and today's brief is refreshed in the background.
     """
     records = parse_export(payload.model_dump())
     repo = HealthRepository(db)
-    inserted = repo.bulk_insert(records)
+    inserted, updated = repo.upsert_records(records)
 
-    if inserted:
+    if inserted or updated:
         analytics = AnalyticsService(db)
-        # Recompute each touched day plus the day before, so a record near the
-        # local/UTC midnight boundary (day-aggregation uses UTC bounds) is never
-        # missed. The nightly worker still recomputes the full window regardless.
+        # Sleep is filed under its wake-up day (end_time); everything else
+        # under its start day. Include the day before as well, so a reading
+        # near midnight is never missed. The nightly worker recomputes the
+        # full window regardless.
         days: set[date] = set()
         for r in records:
             d = r.start_time.date()
-            days.add(d)
-            days.add(d - timedelta(days=1))
+            days.update({d, d - timedelta(days=1), r.end_time.date()})
         for day in sorted(days):
             analytics.recompute_day(day)
         db.commit()
+        background_tasks.add_task(refresh_day_brief_bg)
 
     received = len(records)
-    return IngestResult(received=received, inserted=inserted, skipped=received - inserted)
+    return IngestResult(
+        received=received,
+        inserted=inserted,
+        updated=updated,
+        skipped=received - inserted - updated,
+    )

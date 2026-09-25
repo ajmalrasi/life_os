@@ -38,6 +38,7 @@ class IngestResult(BaseModel):
     received: int
     inserted: int
     skipped: int
+    updated: int = 0
 
 
 class AutoExportData(BaseModel):

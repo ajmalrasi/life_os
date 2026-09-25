@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.repositories.analytics_repo import (
+    DailyBriefRepository,
     InsightRepository,
     ScoreRepository,
     StateRepository,
@@ -22,15 +23,18 @@ from app.schemas.analytics import (
     InsightOut,
     RecomputeResult,
     SynthesizedInsightOut,
+    TodayBriefOut,
+    TodayOut,
     WeeklyRecapOut,
 )
 from app.config import get_settings
 from app.repositories.device_repo import DeviceRepository
-from app.services import insight_synthesizer
+from app.services import day_brief, insight_synthesizer
+from app.repositories.health_repo import HealthRepository
 from app.services.analytics import AnalyticsService
 from app.services.execution_sync import run_execution_sync
 from app.services.fcm import FcmService
-from app.services.job_guard import INSIGHTS_JOB, WEEKLY_RECAP_JOB, try_job_lock
+from app.services.job_guard import DAY_BRIEF_JOB, INSIGHTS_JOB, WEEKLY_RECAP_JOB, try_job_lock
 from app.services.life_evidence import build_life_evidence
 from app.services.notifications import Notification, NotificationService
 from app.services.weekly_recap import week_bounds, build_recap
@@ -65,6 +69,7 @@ def recompute(
     _maybe_push(db, settings)
 
     background_tasks.add_task(_sync_execution_bg, EXECUTION_SYNC_DAYS)
+    background_tasks.add_task(refresh_day_brief_bg)
 
     return RecomputeResult(
         days_scored=scored,
@@ -95,6 +100,24 @@ def _sync_execution_bg(days: int) -> None:
         logger.exception("background execution sync failed")
     finally:
         db.close()
+
+
+def refresh_day_brief_bg() -> None:
+    """Rewrite today's brief if its facts changed. Off the request path, one at a
+    time; a refresh already running covers this one."""
+    db = SessionLocal()
+    try:
+        with try_job_lock(db.get_bind(), DAY_BRIEF_JOB) as acquired:
+            if acquired:
+                day_brief.generate_brief(db, _today_ist())
+    except Exception:
+        logger.exception("day brief refresh failed")
+    finally:
+        db.close()
+
+
+def _today_ist() -> date:
+    return datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 
 def _maybe_push(db: Session, settings) -> None:
@@ -131,6 +154,38 @@ def get_states(days: int = 30, db: Session = Depends(get_db)) -> list[DailyState
     start = end - timedelta(days=days - 1)
     rows = StateRepository(db).range(start, end)
     return [DailyStateOut.model_validate(r) for r in rows]
+
+
+@router.get("/today", response_model=TodayOut)
+def get_today(background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> TodayOut:
+    """Today's model-written brief plus when health data last arrived.
+
+    Never waits on the model. If the facts changed since the stored brief was
+    written, the previous brief is returned as ``refreshing`` and a rewrite
+    starts in the background; poll again in ~20 s.
+    """
+    day = _today_ist()
+    brief = DailyBriefRepository(db).get(day)
+    if not get_settings().insight_synthesis_enabled:
+        status = "unavailable"
+    elif day_brief.is_current(db, day, brief):
+        status = "ready"
+    else:
+        status = "refreshing"
+        background_tasks.add_task(refresh_day_brief_bg)
+    return TodayOut(
+        day=day,
+        brief=TodayBriefOut(
+            state=brief.state,
+            confidence=brief.confidence,
+            headline=brief.headline,
+            summary=brief.summary,
+            suggestion=brief.suggestion,
+            generated_at=brief.generated_at,
+        ) if brief is not None else None,
+        brief_status=status,
+        health_last_received_at=HealthRepository(db).last_received_at(),
+    )
 
 
 @router.get("/insights", response_model=list[InsightOut])
