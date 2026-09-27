@@ -278,7 +278,10 @@ def test_lapse_claim_dropped_when_no_gap_is_open():
                    domain="health", cites=["health:workouts"])
     restart = _item(title="Workouts are restarting", verdict="6 sessions in the past 7 days after a 37 days gap.",
                     domain="health", cites=["health:workouts"])
-    out = synthesize(active, client=_FakeClient(f"[{lapsed},{restart}]"))
+    wrong_age = _item(title="Workout routine has a 13-day open gap",
+                      verdict="The most recent workout was 13 days ago, which breaks your routine.",
+                      domain="health", cites=["health:workouts"])
+    out = synthesize(active, client=_FakeClient(f"[{lapsed},{wrong_age},{restart}]"))
     assert [i["title"] for i in out] == ["Workouts are restarting"]
 
     idle = _evidence() + [EvidenceFact(

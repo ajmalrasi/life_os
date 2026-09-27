@@ -109,9 +109,12 @@ def _schema(fact_ids: list[str]) -> dict:
 # Words that call the workout routine lapsed or stopped. Only true while the
 # workouts fact states an open gap; a gap that has ended is history.
 _LAPSE_CLAIM = re.compile(
-    r"\b(laps\w*|broken|broke|stopped|stalled|abandon\w*|inactiv\w*|no (recent )?workouts?)\b",
+    r"\b(laps\w*|brok\w*|break\w*|stopped|stalled|abandon\w*|inactiv\w*|"
+    r"(open|current|ongoing) gap|no (recent )?workouts?)\b",
     re.IGNORECASE,
 )
+_DAYS_AGO = re.compile(r"(\d+)[ -]days? ago", re.IGNORECASE)
+_LAST_WORKOUT = re.compile(r"most recent workout was (\d+) days? ago")
 
 
 @dataclass
@@ -168,6 +171,8 @@ def synthesize(
     items = reply.get("insights") if isinstance(reply, dict) else None
     workouts_fact = next((f.statement for f in evidence if f.id == "health:workouts"), "")
     open_gap = OPEN_GAP_MARKER in workouts_fact
+    last = _LAST_WORKOUT.search(workouts_fact)
+    days_since_last = last.group(1) if last else None
 
     valid_ids = {f.id for f in evidence}
     known_numbers: set[str] = set()
@@ -195,9 +200,16 @@ def synthesize(
             logger.info("insight dropped: numbers not in evidence %s", sorted(invented))
             continue
 
-        if "health:workouts" in cites and not open_gap and _LAPSE_CLAIM.search(title + " " + body):
-            logger.info("insight dropped: calls workouts lapsed without an open gap")
-            continue
+        if "health:workouts" in cites:
+            if not open_gap and _LAPSE_CLAIM.search(title + " " + body):
+                logger.info("insight dropped: calls workouts lapsed without an open gap")
+                continue
+            # "N days ago" must be the last workout's real age (it once took 13
+            # from "the last 13 weeks" when the last workout was yesterday).
+            ages = set(_DAYS_AGO.findall(title + " " + body))
+            if days_since_last is not None and ages - {days_since_last}:
+                logger.info("insight dropped: last workout age %s, fact says %s", sorted(ages), days_since_last)
+                continue
 
         action = item.get("action")
         domain = str(item.get("domain") or "life").strip().lower()
