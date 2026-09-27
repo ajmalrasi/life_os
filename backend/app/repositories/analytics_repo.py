@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import utcnow
@@ -22,8 +23,14 @@ class ScoreRepository:
     def upsert(self, day: date, **scores: float | None) -> DailyScore:
         obj = self.get(day)
         if obj is None:
-            obj = DailyScore(day=day)
-            self.db.add(obj)
+            # Another request (a second push, the nightly job) may create the
+            # day's row at the same moment; then update that row instead.
+            try:
+                with self.db.begin_nested():
+                    obj = DailyScore(day=day)
+                    self.db.add(obj)
+            except IntegrityError:
+                obj = self.get(day)
         for key, value in scores.items():
             setattr(obj, key, value)
         self.db.commit()
