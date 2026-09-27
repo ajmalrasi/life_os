@@ -290,3 +290,13 @@ def test_lapse_claim_dropped_when_no_gap_is_open():
     )]
     still = _item(title="Workouts lapsed", verdict="No workout for 21 days.", domain="health", cites=["health:workouts"])
     assert len(synthesize(idle, client=_FakeClient(f"[{still}]"))) == 1
+
+
+def test_rounding_a_stated_decimal_is_not_an_invented_number():
+    evidence = _evidence() + [EvidenceFact("cat:travel", "Travel: ₹89,411 this month. That is 148.2x the usual.")]
+    rounded = _item(title="Travel is 148x usual", verdict="Travel is ₹89,411, 148 times your usual.",
+                    cites=["cat:travel"])
+    invented = _item(title="Travel is 150x usual", verdict="Travel is ₹89,411, 150 times your usual.",
+                     cites=["cat:travel"])
+    out = synthesize(evidence, client=_FakeClient(f"[{rounded},{invented}]"))
+    assert [i["title"] for i in out] == ["Travel is 148x usual"]

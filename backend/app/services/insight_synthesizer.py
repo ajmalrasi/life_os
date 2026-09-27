@@ -46,13 +46,13 @@ _SYSTEM_PROMPT = (
     "given EVIDENCE: facts already computed from ONE user's own data (money, "
     "budgets, card bills, recurring charges, trips, sleep, activity, mood, work). "
     "Each fact has an \"id\". Money is Indian rupees.\n\n"
-    "Pick the 3 to 5 things that matter MOST right now and write one insight for "
-    "each. Prioritise: money problems first (overspending against income or "
+    "Pick the 5 things that matter MOST right now and write one insight for "
+    "each, most important first; cover more than one area when a non-money fact "
+    "is notable. Prioritise: money problems first (overspending against income or "
     "budget, a category far above its usual level, a big purchase, a costly "
     "comparison between categories, bills due soon), then trips, then health, mood "
     "and work. " + WORKOUT_JUDGEMENT_RULE + " If workouts "
-    "have a current open gap, say plainly for how long and push a restart. Skip anything that is normal or minor. Fewer, sharper insights beat "
-    "more.\n\n"
+    "have a current open gap, say plainly for how long and push a restart. Skip anything that is normal or minor.\n\n"
     "For each insight:\n"
     "- Give a clear judgement. Say plainly when something is too much, a bad "
     "decision, or a habit to fix, and say so when something is going well.\n"
@@ -100,7 +100,11 @@ def _schema(fact_ids: list[str]) -> dict:
     }
     return {
         "type": "object",
-        "properties": {"insights": {"type": "array", "items": item, "maxItems": _MAX_INSIGHTS}},
+        # Always 5 candidates: a card that fails a check below is dropped, and
+        # asking for fewer once left only 2 on the page.
+        "properties": {"insights": {
+            "type": "array", "items": item, "minItems": _MAX_INSIGHTS, "maxItems": _MAX_INSIGHTS,
+        }},
         "required": ["insights"],
         "additionalProperties": False,
     }
@@ -177,7 +181,7 @@ def synthesize(
     valid_ids = {f.id for f in evidence}
     known_numbers: set[str] = set()
     for f in evidence:
-        known_numbers |= _numbers(f.statement)
+        known_numbers |= _numbers(f.statement, rounded=True)
     drafts: list[dict] = []
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
@@ -237,5 +241,14 @@ def synthesize(
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
-def _numbers(text: str) -> set[str]:
-    return {m.group().replace(",", "").rstrip(".") for m in _NUMBER.finditer(text)}
+def _numbers(text: str, rounded: bool = False) -> set[str]:
+    """Numbers in the text; with ``rounded``, a decimal also counts as its whole
+    number rounded or cut ("148.2x" allows "148x"), which is not a new number."""
+    out: set[str] = set()
+    for m in _NUMBER.finditer(text):
+        n = m.group().replace(",", "").rstrip(".")
+        out.add(n)
+        if rounded and "." in n:
+            value = float(n)
+            out |= {str(int(value)), str(round(value))}
+    return out
