@@ -55,8 +55,13 @@ _SYSTEM_PROMPT = (
     "- exploration_mode: varied, unstructured activity\n"
     "- unknown: not enough data yet to judge\n\n"
     "Rules:\n"
-    "- Use the current time. Few steps or commits early in the day are normal, not avoidance.\n"
-    "- Missing data is not zero. If last night's sleep or today's vitals have not arrived, say so.\n"
+    "- Use the current time. Few steps or commits early in the day are normal, not avoidance. "
+    "In the morning, pick an output state (peak_performance, execution_mode, avoidance_mode, "
+    "learning_mode, exploration_mode) only if today's output is already substantial; otherwise "
+    "judge by recovery, or say unknown.\n"
+    "- Missing data is not zero. If last night's sleep or today's vitals have not arrived, say so. "
+    "Without last night's sleep, never say the user is rested or slept well; HRV and resting "
+    "heart rate can still be described.\n"
     "- " + WORKOUT_JUDGEMENT_RULE + "\n"
     "- Workouts belong only in workout_note; keep them out of the headline and summary, which "
     "are about today.\n"
@@ -119,7 +124,23 @@ def _versus(value: float, usual: float, good_when: str) -> str:
     return f"{side} your usual, which is {'better' if better else 'worse'}"
 
 
+# Before 05:00 the user is usually still up from the evening before (they
+# fall asleep after midnight), so today's output cannot be judged yet.
+_NIGHT_END_HOUR = 5
+# States that judge today's output; at night only recovery and strain can be judged.
+_OUTPUT_STATES = {
+    LifeState.PEAK_PERFORMANCE, LifeState.EXECUTION_MODE, LifeState.AVOIDANCE_MODE,
+    LifeState.LEARNING_MODE, LifeState.EXPLORATION_MODE,
+}
+
+
+def _is_night(now: datetime) -> bool:
+    return now.hour < _NIGHT_END_HOUR
+
+
 def _time_of_day(now: datetime) -> str:
+    if _is_night(now):
+        return "night (today has barely begun, so today's output cannot be judged yet)"
     if now.hour < 12:
         return "morning"
     if now.hour < 17:
@@ -270,11 +291,17 @@ def facts_hash(facts: list[EvidenceFact]) -> str:
     return hashlib.sha256("\n".join(material).encode()).hexdigest()
 
 
-def _schema(fact_ids: list[str]) -> dict:
+def _allowed_states(night: bool) -> list[str]:
+    return [s.value for s in LifeState if not (night and s in _OUTPUT_STATES)]
+
+
+def _schema(fact_ids: list[str], night: bool = False) -> dict:
     return {
         "type": "object",
         "properties": {
-            "state": {"type": "string", "enum": [s.value for s in LifeState]},
+            # At night the output states are left out of the schema itself, so
+            # guided decoding cannot return them.
+            "state": {"type": "string", "enum": _allowed_states(night)},
             "confidence": {"type": "string", "enum": list(_CONFIDENCE)},
             "headline": {"type": "string"},
             "summary": {"type": "string"},
@@ -306,6 +333,13 @@ _GAP_TALK = re.compile(
     re.IGNORECASE,
 )
 
+# "Well-rested" when last night's sleep has not arrived (the 2026-09-28 brief).
+_RESTED = re.compile(
+    r"\b(well[- ]?rested|rested|slept (well|enough|soundly)|good (night'?s )?sleep|restful night|refreshed)\b",
+    re.IGNORECASE,
+)
+_SLEEP_MISSING = "No sleep has been recorded for last night"
+
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
@@ -315,6 +349,11 @@ def _numbers(text: str) -> set[str]:
 
 def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
     """Keep a reply only if it is complete, cites real facts, and invents no numbers."""
+    return check_brief(reply, facts)[0]
+
+
+def check_brief(reply: dict, facts: list[EvidenceFact]) -> tuple[dict | None, str | None]:
+    """The kept brief, or None with the reason it was rejected (told to the model on a retry)."""
     ids = {f.id for f in facts}
     try:
         state = LifeState(reply["state"])
@@ -326,14 +365,21 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
         workout_attention = bool(reply.get("workout_attention")) and bool(workout_note)
         cites = [str(c) for c in reply["cites"]]
     except (KeyError, TypeError, ValueError):
-        return None
+        return None, "The reply was incomplete."
     if confidence not in _CONFIDENCE or not (headline and summary and suggestion):
-        return None
+        return None, "Headline, summary and suggestion must all be written."
     if not cites or not set(cites) <= ids:
-        return None
+        return None, "cites must list the ids of the facts you used."
     if _STOP_WORK.search(suggestion + " " + summary):
         logger.info("day brief rejected: tells the user to stop working")
-        return None
+        return None, "Never tell the user to stop, pause or quit work."
+    now_fact = next((f.statement for f in facts if f.id == "now"), "")
+    if "night (" in now_fact and state in _OUTPUT_STATES:
+        return None, "It is night; today's output cannot be judged yet, so pick a recovery state or unknown."
+    sleep_missing = any(f.id == "sleep_last_night" and f.statement.startswith(_SLEEP_MISSING) for f in facts)
+    if sleep_missing and _RESTED.search(" ".join((headline, summary, suggestion, workout_note))):
+        logger.info("day brief rejected: calls the user rested without last night's sleep")
+        return None, "Last night's sleep has not arrived, so do not say the user is rested or slept well."
     workouts = next((f.statement for f in facts if f.id == "workouts"), "")
     # A real lapse: an open 7+ day gap, or no workouts at all in the window
     # (only when workouts are synced; otherwise their absence is unknown).
@@ -343,7 +389,7 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
     if not lapsed:
         if _GAP_TALK.search(headline + " " + summary):
             logger.info("day brief rejected: counts rest days as a workout gap")
-            return None
+            return None, "Keep workouts out of the headline and summary, and never count rest days as a gap."
         if _GAP_TALK.search(workout_note):
             logger.info("day brief workout note dropped: counts rest days as a gap")
             workout_note = ""
@@ -355,7 +401,7 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
     invented = _numbers(headline + " " + summary + " " + workout_note) - known
     if invented:
         logger.info("day brief rejected: numbers not in facts %s", sorted(invented))
-        return None
+        return None, f"These numbers are not in the facts: {', '.join(sorted(invented))}. Use only numbers from the facts."
     return {
         "state": state.value,
         "confidence": confidence,
@@ -365,7 +411,7 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
         "workout_note": workout_note[:200] or None,
         "workout_attention": workout_attention,
         "cites": ",".join(dict.fromkeys(cites))[:500],
-    }
+    }, None
 
 
 def generate_brief(
@@ -395,18 +441,26 @@ def generate_brief(
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": "FACTS (JSON):\n" + json.dumps(payload, indent=2)},
     ]
-    try:
-        reply = client.chat_json(
-            messages, _schema([f.id for f in facts]), "today_brief", max_tokens=400, temperature=0.3,
-        )
-    except OpenClawUnavailable as exc:
-        logger.info("day brief skipped (model unavailable): %s", exc)
-        return current
-    except Exception:
-        logger.warning("day brief generation failed", exc_info=True)
-        return current
-
-    brief = validate_brief(reply, facts)
+    schema = _schema([f.id for f in facts], night=_is_night(_local(now or datetime.now(IST))))
+    brief = None
+    # One retry, told why the first reply was rejected; after that the last
+    # good brief stays.
+    for _attempt in range(2):
+        try:
+            reply = client.chat_json(messages, schema, "today_brief", max_tokens=400, temperature=0.3)
+        except OpenClawUnavailable as exc:
+            logger.info("day brief skipped (model unavailable): %s", exc)
+            return current
+        except Exception:
+            logger.warning("day brief generation failed", exc_info=True)
+            return current
+        brief, reason = check_brief(reply, facts)
+        if brief is not None:
+            break
+        messages = messages + [
+            {"role": "assistant", "content": json.dumps(reply) if isinstance(reply, dict) else str(reply)},
+            {"role": "user", "content": f"That reply was rejected: {reason} Write it again from the same facts."},
+        ]
     if brief is None:
         return current
     row = repo.upsert(day, facts=json.dumps(payload), facts_hash=digest, **brief)

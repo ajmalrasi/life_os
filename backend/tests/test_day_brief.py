@@ -353,7 +353,7 @@ def test_rest_days_are_not_a_workout_gap(client):
         _workout("Traditional Strength Training", _at(today - timedelta(days=2), 21), 35, kj=1060),
     ]}})
     db = SessionLocal()
-    facts = day_brief.compute_day_facts(db, today)
+    facts = day_brief.compute_day_facts(db, today, now=_at(today, 10))
     db.close()
     workouts = next(f.statement for f in facts if f.id == "workouts")
     # Workout days, not the watch's sessions, and no list of old gaps.
@@ -369,3 +369,70 @@ def test_rest_days_are_not_a_workout_gap(client):
     # ...and in the summary rejects the brief, so the last good one stays.
     counted = "Good recovery; the most recent workout was 2 days ago."
     assert day_brief.validate_brief(_brief(summary=counted), facts) is None
+
+
+def test_night_cannot_be_judged_on_output(client):
+    """00:52 was called 'morning' and the day 'peak performance' on one commit."""
+    today = date.today()
+    db = SessionLocal()
+    facts = day_brief.compute_day_facts(db, today, now=_at(today, 0, 52))
+    db.close()
+    assert "night (today has barely begun" in next(f.statement for f in facts if f.id == "now")
+    # The schema itself leaves the output states out at night...
+    night_states = day_brief._schema(["now"], night=True)["properties"]["state"]["enum"]
+    assert "peak_performance" not in night_states and "execution_mode" not in night_states
+    assert "recovery_mode" in night_states and "unknown" in night_states
+    assert "peak_performance" in day_brief._schema(["now"])["properties"]["state"]["enum"]
+    # ...and a reply that names one anyway is rejected with a reason.
+    kept, reason = day_brief.check_brief(_brief(state="peak_performance", workout_note=""), facts)
+    assert kept is None and "night" in reason
+    assert day_brief.validate_brief(_brief(state="recovery_mode", workout_note=""), facts) is not None
+
+
+def test_not_rested_without_last_nights_sleep(client):
+    today = date.today()
+    db = SessionLocal()
+    facts = day_brief.compute_day_facts(db, today, now=_at(today, 10))
+    db.close()
+    assert any(f.id == "sleep_last_night" and f.statement.startswith("No sleep has been recorded") for f in facts)
+    rested = _brief(summary="You are well-rested and executing strong work.", workout_note="")
+    kept, reason = day_brief.check_brief(rested, facts)
+    assert kept is None and "sleep" in reason
+    # Vitals can still be described.
+    assert day_brief.validate_brief(_brief(workout_note=""), facts) is not None
+
+
+class _Scripted:
+    """Returns the given replies in order and records what it was sent."""
+
+    def __init__(self, *replies):
+        self.replies, self.sent, self.timeout = list(replies), [], 45.0
+
+    def chat_json(self, messages, schema, name, **kwargs):
+        self.sent.append((messages, schema))
+        return self.replies.pop(0)
+
+
+def test_rejected_brief_gets_one_retry_with_the_reason(client, monkeypatch):
+    monkeypatch.setattr(day_brief.settings, "insight_synthesis_enabled", True)
+    today = date.today()
+    bad = _brief(summary="You are well-rested and executing strong work.", workout_note="")
+    good = _brief(workout_note="")
+    db = SessionLocal()
+    model = _Scripted(bad, good)
+    row = day_brief.generate_brief(db, today, client=model, now=_at(today, 10))
+    assert row is not None and row.summary == good["summary"]
+    assert len(model.sent) == 2 and "rested" in model.sent[1][0][-1]["content"]
+    db.close()
+
+
+def test_two_rejected_briefs_store_nothing(client, monkeypatch):
+    monkeypatch.setattr(day_brief.settings, "insight_synthesis_enabled", True)
+    today = date.today()
+    bad = _brief(summary="You are well-rested and executing strong work.", workout_note="")
+    db = SessionLocal()
+    model = _Scripted(bad, bad, _brief(workout_note=""))
+    assert day_brief.generate_brief(db, today, client=model, now=_at(today, 10)) is None
+    # No canned text, and no third call.
+    assert len(model.sent) == 2 and DailyBriefRepository(db).get(today) is None
+    db.close()

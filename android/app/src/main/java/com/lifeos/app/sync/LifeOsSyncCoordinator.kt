@@ -185,7 +185,8 @@ class LifeOsSyncCoordinator @Inject constructor(
         const val RECOMPUTE_DAYS = 60
         // Matches the backend's own background scan window.
         const val EXECUTION_DAYS = 7
-        const val BRIEF_POLLS = 20
+        // Up to two model calls of 45 s each (a rejected reply gets one retry).
+        const val BRIEF_POLLS = 35
         const val BRIEF_POLL_MS = 3_000L
     }
 }

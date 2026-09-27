@@ -13,6 +13,13 @@ weeks while synced) gap talk drops the note or rejects the brief, and
 `workout_attention` is forced false. The shared `WORKOUT_JUDGEMENT_RULE` also
 says rest days are never a gap.
 
+Same day: 00:00-04:59 is now "night" in the `now` fact, and at night the output
+states (peak/execution/avoidance/learning/exploration) are removed from the
+brief's json_schema enum (a 00:52 brief had said peak_performance on one
+commit). Without last night's sleep the brief may not call the user rested
+(`_RESTED`). `check_brief` returns a reason; a rejected reply gets one retry
+told that reason, then the last good brief stays.
+
 ## Sync everything update (2026-09-28)
 
 Settings' **Sync everything** now runs every source LifeOS can pull and waits
@@ -20,7 +27,7 @@ for all of it: bank mail + card statements, Priority mail, Pulse, a backup of
 every trip (regardless of the auto-backup setting), the GitHub scan
 (`/collectors/execution/sync`, awaited), `/analytics/recompute?scan_execution=false`
 (skips the backend's duplicate background scan), then polls `/analytics/today`
-until the brief is no longer `refreshing` (60 s cap; otherwise it reports
+until the brief is no longer `refreshing` (~105 s cap, room for one retry; otherwise it reports
 "Today's brief" as not refreshed). Health can't be pulled, so the result says
 when the iPhone last pushed. It runs as `SyncAllWorker`, a foreground
 WorkManager job (`dataSync` type, unique `sync_all`, KEEP, needs network), so

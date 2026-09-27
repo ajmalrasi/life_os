@@ -442,8 +442,10 @@ def test_health_records_reads_synced_data_with_workout_effort(client):
     from datetime import date, datetime, timedelta
     from app.repositories.health_repo import HealthRepository
     from app.schemas.health import HealthRecordIn
+    from zoneinfo import ZoneInfo
 
-    today = date.today()
+    # The tool's days are IST days; a UTC date.today() is a day behind from 00:00 to 05:30 IST.
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     at = lambda d, h: datetime.combine(d, datetime.min.time()).replace(hour=h)
     lift_day = today - timedelta(days=3)
     with SessionLocal() as db:
