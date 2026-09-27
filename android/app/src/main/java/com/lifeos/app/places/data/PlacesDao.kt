@@ -22,9 +22,6 @@ interface PlacesDao {
     @Query("SELECT * FROM place_samples WHERE recordedAt >= :start AND recordedAt < :end ORDER BY recordedAt")
     suspend fun samplesBetween(start: Long, end: Long): List<PlaceSampleEntity>
 
-    @Query("DELETE FROM place_samples WHERE recordedAt < :before")
-    suspend fun deleteSamplesBefore(before: Long)
-
     @Query("SELECT * FROM place_stops WHERE departedAt IS NULL ORDER BY arrivedAt DESC LIMIT 1")
     suspend fun openStop(): PlaceStopEntity?
 

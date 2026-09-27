@@ -1,5 +1,6 @@
 package com.lifeos.app.presentation.money
 
+import com.lifeos.app.places.data.PlacesRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.Budget
@@ -94,7 +95,13 @@ data class MoneyUiState(
 class MoneyViewModel @Inject constructor(
     private val repository: MoneyRepository,
     private val settingsRepository: SettingsRepository,
+    private val placesRepository: PlacesRepository,
 ) : ViewModel() {
+
+    /** Where Places recorded the user at the payment's exact time, if anywhere. */
+    suspend fun placeFor(transaction: Transaction): String? =
+        transaction.txnAt?.let { runCatching { placesRepository.placeFor(it.toEpochMilli()) }.getOrNull() }
+
 
     private val _state = MutableStateFlow(MoneyUiState())
     val state: StateFlow<MoneyUiState> = _state.asStateFlow()

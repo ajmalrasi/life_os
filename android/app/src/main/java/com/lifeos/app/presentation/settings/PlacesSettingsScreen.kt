@@ -103,7 +103,7 @@ fun PlacesSettingsScreen(viewModel: PlacesSettingsViewModel = hiltViewModel()) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Note places", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Records where you stop through the day. Your route stays on this phone for 30 days; " +
+                            "Records your route and where you stop through the day. It stays on this phone until you delete it; " +
                                 "a silent notification shows while it runs. A tracked trip shares the same recording.",
                             style = MaterialTheme.typography.bodySmall,
                             color = LifeOsColors.OnSurfaceMuted,

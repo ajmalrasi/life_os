@@ -1,5 +1,6 @@
 package com.lifeos.app.presentation.money
 
+import androidx.compose.runtime.produceState
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.Animatable
@@ -126,7 +127,7 @@ private val CURRENCY_SYMBOLS = mapOf("INR" to "₹", "USD" to "$", "EUR" to "€
  * grouping (₹12,34,567); every other currency uses plain thousands grouping
  * with its symbol where we know one, else the ISO code as a suffix ("23 AED")
  * so a foreign-currency alert never gets mislabeled as rupees. */
-private fun BigDecimal.money(currency: String): String {
+internal fun BigDecimal.money(currency: String): String {
     if (currency == "INR") return rupees()
     val plain = this.setScale(0, RoundingMode.HALF_UP).toPlainString()
     val negative = plain.startsWith("-")
@@ -434,6 +435,7 @@ fun MoneyScreen(
     selectedTransaction?.let { transaction ->
         TransactionDetailDialog(
             transaction = transaction,
+            placeFor = viewModel::placeFor,
             onDismiss = { selectedTransaction = null },
             onEditCategory = {
                 selectedTransaction = null
@@ -2246,7 +2248,10 @@ internal fun TransactionDetailDialog(
     onEditCategory: () -> Unit,
     onMarkAsRepaid: () -> Unit,
     onMarkAsRefunded: () -> Unit,
+    /** Where Places says the user was when paying; null when Places is not available. */
+    placeFor: (suspend (Transaction) -> String?)? = null,
 ) {
+    val place by produceState<String?>(null, transaction.id) { value = placeFor?.invoke(transaction) }
     val whenText = transaction.txnAt
         ?.atZone(ZoneId.systemDefault())
         ?.format(DateTimeFormatter.ofPattern("dd MMM yyyy, h:mm a"))
@@ -2271,6 +2276,9 @@ internal fun TransactionDetailDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = LifeOsColors.OnSurfaceMuted,
                 )
+                place?.let {
+                    Text("Where: $it", style = MaterialTheme.typography.bodyMedium, color = LifeOsColors.OnBackground)
+                }
                 Text(
                     "Category: ${prettyCategory(transaction.spendCategory ?: "excluded")}",
                     style = MaterialTheme.typography.bodyMedium,

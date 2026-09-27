@@ -44,7 +44,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.places.data.NameSource
 import com.lifeos.app.places.data.PlaceStopEntity
 import com.lifeos.app.places.data.SavedPlaceKind
+import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.places.domain.DayMovement
+import com.lifeos.app.places.domain.DayPayments
+import com.lifeos.app.presentation.money.money
+import java.math.BigDecimal
 import com.lifeos.app.places.domain.TimelineEntry
 import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.components.LifeOsCard
@@ -109,7 +113,7 @@ fun PlacesScreen(
             item { DayStepper(state.day, state.isToday, viewModel::previousDay, viewModel::nextDay) }
             val hasData = state.entries.isNotEmpty() || (state.movement?.distanceMeters ?: 0.0) > 0.0
             state.movement?.takeIf { state.enabled || hasData }?.let { movement ->
-                item { SummaryCard(movement, hasHome = state.home != null, tripTitle = state.tripTitle) }
+                item { SummaryCard(movement, state.payments, hasHome = state.home != null, tripTitle = state.tripTitle) }
             }
             if (state.entries.isEmpty() && !state.loading && state.enabled) {
                 item {
@@ -122,9 +126,30 @@ fun PlacesScreen(
             }
             items(state.entries, key = { entryKey(it) }) { entry ->
                 when (entry) {
-                    is TimelineEntry.Stay -> StayRow(entry, onClick = { selected = entry.stop })
-                    is TimelineEntry.Move -> MoveRow(entry)
+                    is TimelineEntry.Stay -> Column {
+                        StayRow(entry, onClick = { selected = entry.stop })
+                        state.payments.byStop[entry.stop.id].orEmpty().forEach { PaymentRow(it) }
+                    }
+                    is TimelineEntry.Move -> Column {
+                        MoveRow(entry)
+                        state.payments.byMove[entry.from].orEmpty().forEach { PaymentRow(it, onTheMove = true) }
+                    }
                 }
+            }
+            if (state.payments.unplaced.isNotEmpty()) {
+                item {
+                    Text(
+                        "Payments without a place",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Text(
+                        "No exact time from the bank, or nothing recorded near that time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                }
+                items(state.payments.unplaced, key = { "unplaced-${it.id}" }) { PaymentRow(it) }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -169,7 +194,7 @@ private fun DayStepper(day: LocalDate, isToday: Boolean, onPrevious: () -> Unit,
 }
 
 @Composable
-private fun SummaryCard(movement: DayMovement, hasHome: Boolean, tripTitle: String?) {
+private fun SummaryCard(movement: DayMovement, payments: DayPayments, hasHome: Boolean, tripTitle: String?) {
     LifeOsCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (tripTitle != null) {
@@ -188,6 +213,10 @@ private fun SummaryCard(movement: DayMovement, hasHome: Boolean, tripTitle: Stri
                     Stat("Out of home", formatDuration(movement.awayMillis ?: 0), Modifier.weight(1f))
                     Stat("Farthest", formatDistance(movement.farthestFromHomeMeters ?: 0.0), Modifier.weight(1f))
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Stat("Spent", payments.total.money("INR"), Modifier.weight(1f))
+                    Stat("Spent while out", (payments.whileOut ?: BigDecimal.ZERO).money("INR"), Modifier.weight(1f))
+                }
                 val late = movement.lateAwayMillis ?: 0
                 if (late > 0) {
                     Text(
@@ -197,8 +226,9 @@ private fun SummaryCard(movement: DayMovement, hasHome: Boolean, tripTitle: Stri
                     )
                 }
             } else {
+                Stat("Spent", payments.total.money("INR"))
                 Text(
-                    "Save Home to see how long and how far you were out.",
+                    "Save Home to see how long and how far you were out, and what you spent while out.",
                     style = MaterialTheme.typography.bodySmall,
                     color = LifeOsColors.OnSurfaceMuted,
                 )
@@ -240,6 +270,29 @@ private fun StayRow(entry: TimelineEntry.Stay, onClick: () -> Unit) {
                 color = LifeOsColors.OnSurfaceMuted,
             )
         }
+    }
+}
+
+@Composable
+private fun PaymentRow(transaction: Transaction, onTheMove: Boolean = false) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 26.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            listOfNotNull(
+                transaction.txnAt?.let { formatTime(it.toEpochMilli()) },
+                transaction.counterparty?.takeIf { it.isNotBlank() } ?: transaction.source,
+                if (onTheMove) "on the move" else null,
+            ).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = LifeOsColors.OnSurfaceMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(transaction.amount.money(transaction.currency), style = MaterialTheme.typography.labelLarge)
     }
 }
 

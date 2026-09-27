@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 import com.lifeos.app.trips.location.LocationFix
 import com.lifeos.app.trips.location.StopSpan
 
-/** A raw position. Stays on the phone and is pruned after [PlacesRepository.SAMPLE_RETENTION_DAYS]. */
+/** A raw position: the route between stops, kept on the phone until the user deletes history, so it can be mapped later. */
 @Entity(tableName = "place_samples", indices = [Index("recordedAt")])
 data class PlaceSampleEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

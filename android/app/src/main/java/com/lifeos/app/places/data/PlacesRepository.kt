@@ -1,5 +1,7 @@
 package com.lifeos.app.places.data
 
+import com.lifeos.app.places.domain.PaymentPlace
+import com.lifeos.app.places.domain.PaymentPlaceMatcher
 import com.lifeos.app.trips.location.StopAction
 import com.lifeos.app.trips.location.StopDetection
 import com.lifeos.app.trips.location.StopNamer
@@ -20,7 +22,6 @@ class PlacesRepository @Inject constructor(
     private val recordLock = Mutex()
     /** Where the user said "Not a stop" while still there (see TripRepository). */
     @Volatile private var dismissedAt: Pair<Double, Double>? = null
-    @Volatile private var lastPruneAt = 0L
 
     fun observeStopsBetween(start: Long, end: Long): Flow<List<PlaceStopEntity>> = dao.observeStopsBetween(start, end)
     fun observeSamplesBetween(start: Long, end: Long): Flow<List<PlaceSampleEntity>> = dao.observeSamplesBetween(start, end)
@@ -51,7 +52,6 @@ class PlacesRepository @Inject constructor(
             is StopAction.Start -> createStop(action.latitude, action.longitude, action.arrivedAt, action.departedAt)
         }
         namePendingStops()
-        pruneOldSamples(sample.recordedAt)
     }
 
     private suspend fun createStop(latitude: Double, longitude: Double, arrivedAt: Long, departedAt: Long?) {
@@ -83,10 +83,18 @@ class PlacesRepository @Inject constructor(
         }
     }
 
-    private suspend fun pruneOldSamples(now: Long) {
-        if (now - lastPruneAt < PRUNE_EVERY_MILLIS) return
-        lastPruneAt = now
-        dao.deleteSamplesBefore(now - SAMPLE_RETENTION_DAYS * DAY_MILLIS)
+    /** Where the user was at [paidAt], for a payment's details; null when Places has nothing near that time. */
+    suspend fun placeFor(paidAt: Long): String? {
+        val window = PaymentPlaceMatcher.NEAREST_SAMPLE_MILLIS
+        val stops = dao.stopsBetween(paidAt - DAY_MILLIS, paidAt + DAY_MILLIS)
+        val samples = dao.samplesBetween(paidAt - window, paidAt + window + 1)
+        return when (val place = PaymentPlaceMatcher.match(paidAt, stops, samples, System.currentTimeMillis())) {
+            is PaymentPlace.AtStop -> place.stop.name
+            is PaymentPlace.OnTheMove -> stopNamer.name(place.sample.latitude, place.sample.longitude)
+                ?.let { "On the move, ${it.replaceFirstChar(Char::lowercase)}" }
+                ?: "On the move"
+            PaymentPlace.Unknown, PaymentPlace.NoTime -> null
+        }
     }
 
     suspend fun renameStop(id: String, name: String) {
@@ -153,12 +161,10 @@ class PlacesRepository @Inject constructor(
 
     companion object {
         const val UNNAMED_STOP = "Unnamed stop"
-        const val SAMPLE_RETENTION_DAYS = 30L
         /** A stop this close to Home or Work is that place. */
         const val SAVED_MATCH_METERS = 150.0
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         private const val RECENT_STOPS_MILLIS = DAY_MILLIS
-        private const val PRUNE_EVERY_MILLIS = 60 * 60 * 1000L
 
         fun savedPlaceNear(latitude: Double, longitude: Double, saved: List<SavedPlaceEntity>): SavedPlaceEntity? =
             saved.filter { it.kind == SavedPlaceKind.HOME || it.kind == SavedPlaceKind.WORK }

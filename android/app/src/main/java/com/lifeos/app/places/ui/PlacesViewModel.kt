@@ -7,7 +7,11 @@ import com.lifeos.app.places.data.PlaceStopEntity
 import com.lifeos.app.places.data.PlacesRepository
 import com.lifeos.app.places.data.SavedPlaceEntity
 import com.lifeos.app.places.data.SavedPlaceKind
+import com.lifeos.app.data.local.TransactionDao
+import com.lifeos.app.data.toDomain
 import com.lifeos.app.places.domain.DayMovement
+import com.lifeos.app.places.domain.DayPayments
+import com.lifeos.app.presentation.money.EMI_SPEND_CATEGORIES
 import com.lifeos.app.places.domain.DaySummary
 import com.lifeos.app.places.domain.HomeInference
 import com.lifeos.app.places.domain.PlacesTimeline
@@ -37,6 +41,7 @@ data class PlacesUiState(
     val entries: List<TimelineEntry> = emptyList(),
     /** Set when this day was part of a recorded trip: its travel was planned. */
     val tripTitle: String? = null,
+    val payments: DayPayments = DayPayments.EMPTY,
 ) {
     val isToday: Boolean get() = day == LocalDate.now()
 }
@@ -46,6 +51,7 @@ data class PlacesUiState(
 class PlacesViewModel @Inject constructor(
     private val repository: PlacesRepository,
     private val tripRepository: TripRepository,
+    private val transactionDao: TransactionDao,
     settingsRepository: SettingsRepository,
 ) : ViewModel() {
     private val zone: ZoneId = ZoneId.systemDefault()
@@ -59,16 +65,25 @@ class PlacesViewModel @Inject constructor(
             repository.observeSamplesBetween(start, end),
             tripRepository.observeStaysBetween(start, end),
             repository.observeSavedPlaces(),
-        ) { stops, samples, tripStays, saved ->
+            transactionDao.observeBetween(date.toString(), date.toString()),
+        ) { stops, samples, tripStays, saved, transactions ->
             val home = saved.firstOrNull { it.kind == SavedPlaceKind.HOME }
             val now = System.currentTimeMillis()
+            val entries = PlacesTimeline.build(stops, samples, tripStays, start, end, now)
+            // Money's default spend: counted debits, EMI excluded (an EMI isn't paid anywhere).
+            val spend = transactions.map { it.toDomain() }
+                .filter { it.spendCategory != null && it.spendCategory !in EMI_SPEND_CATEGORIES }
             DayView(
                 date = date,
                 home = home,
                 saved = saved,
                 movement = DaySummary.of(samples, home?.let { it.latitude to it.longitude }, zone),
-                entries = PlacesTimeline.build(stops, samples, tripStays, start, end, now),
+                entries = entries,
                 tripTitle = tripStays.firstOrNull()?.tripTitle,
+                payments = DayPayments.of(
+                    spend, stops, samples, entries.filterIsInstance<TimelineEntry.Move>(),
+                    home?.let { it.latitude to it.longitude }, now,
+                ),
             )
         }
     }
@@ -100,6 +115,7 @@ class PlacesViewModel @Inject constructor(
             movement = view.movement,
             entries = view.entries,
             tripTitle = view.tripTitle,
+            payments = view.payments,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlacesUiState())
 
@@ -124,5 +140,6 @@ class PlacesViewModel @Inject constructor(
         val movement: DayMovement,
         val entries: List<TimelineEntry>,
         val tripTitle: String?,
+        val payments: DayPayments,
     )
 }
