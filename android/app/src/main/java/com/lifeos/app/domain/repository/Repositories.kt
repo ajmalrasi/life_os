@@ -56,8 +56,12 @@ interface AnalyticsRepository {
     suspend fun refresh(days: Int)
     /** Rebuild evidence and regenerate the mentor insights now (can take up to ~45s). */
     suspend fun refreshInsights()
-    /** Trigger a backend recompute (nightly analysis on demand). */
-    suspend fun recompute(days: Int): ExecutionSyncReport
+    /** Trigger a backend recompute (nightly analysis on demand). With
+     * [scanExecution] false the backend skips its background GitHub scan,
+     * for a caller that already ran [syncExecution]. */
+    suspend fun recompute(days: Int, scanExecution: Boolean = true): ExecutionSyncReport
+    /** Scan GitHub for coding activity now and wait for it (can take a minute). */
+    suspend fun syncExecution(days: Int)
     suspend fun notifications(): List<AppNotification>
     /** Today's model-written brief and when health data last arrived (online only). */
     suspend fun today(): TodaySummary

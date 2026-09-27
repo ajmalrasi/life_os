@@ -143,7 +143,10 @@ interface LifeOsApi {
     suspend fun syncExecution(@Query("days") days: Int): ExecutionSyncResultDto
 
     @POST("analytics/recompute")
-    suspend fun recompute(@Query("days") days: Int): RecomputeResultDto
+    suspend fun recompute(
+        @Query("days") days: Int,
+        @Query("scan_execution") scanExecution: Boolean = true,
+    ): RecomputeResultDto
 
     @GET("analytics/scores")
     suspend fun scores(@Query("days") days: Int): List<DailyScoreDto>

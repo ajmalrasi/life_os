@@ -1,17 +1,23 @@
 package com.lifeos.app.sync
 
+import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.MoneyRepository
 import com.lifeos.app.domain.repository.MoodRepository
 import com.lifeos.app.domain.repository.PriorityRepository
 import com.lifeos.app.domain.repository.SettingsRepository
+import com.lifeos.app.trips.data.TripRepository
 import com.lifeos.app.widget.SpendWidgetUpdater
 import com.lifeos.app.work.WorkScheduler
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,8 +37,13 @@ data class LifeOsSyncResult(
  *
  * App launch only refreshes the phone's caches from the Jetson, which is fast
  * and cannot occupy the local LLM while the user opens Ask. The explicit
- * Settings action additionally checks bank email/card statements and asks the
- * backend to recompute health, execution, correlations, and notifications.
+ * Settings action (Sync everything) runs every source LifeOS can pull and
+ * waits for all of it, including the work the backend would otherwise finish
+ * in the background: bank mail and card statements, Priority mail, the GitHub
+ * scan, trip backups, the recompute (scores, correlations, Insights,
+ * notifications) and Today's brief. Health data is the one source it cannot
+ * pull (LifeOS never contacts the iPhone), so the result says when it last
+ * arrived instead.
  */
 @Singleton
 class LifeOsSyncCoordinator @Inject constructor(
@@ -42,6 +53,7 @@ class LifeOsSyncCoordinator @Inject constructor(
     private val priorityRepository: PriorityRepository,
     private val settingsRepository: SettingsRepository,
     private val spendWidgetUpdater: SpendWidgetUpdater,
+    private val tripRepository: TripRepository,
     private val workScheduler: WorkScheduler,
 ) {
     private val mutex = Mutex()
@@ -65,7 +77,8 @@ class LifeOsSyncCoordinator @Inject constructor(
         finish(failures, unauthorized, "LifeOS refreshed")
     }
 
-    suspend fun syncAll(): LifeOsSyncResult = mutex.withLock {
+    /** [onStep] names each step as it starts (for the progress notification). */
+    suspend fun syncAll(onStep: suspend (String) -> Unit = {}): LifeOsSyncResult = mutex.withLock {
         val failures = mutableListOf<String>()
         var unauthorized = false
         fun <T> Result<T>.track(label: String) = onFailure {
@@ -75,14 +88,54 @@ class LifeOsSyncCoordinator @Inject constructor(
 
         // This checks incremental transaction alerts and statement summaries;
         // ordinary statement line items remain excluded by the backend.
+        onStep("Checking bank mail and card statements")
         runCatching { moneyRepository.syncNow() }.track("money and statements")
+        onStep("Checking Priority mail")
         runCatching { priorityRepository.syncNow() }.track("Priority mail")
         runCatching { spendWidgetUpdater.updateAll() }
         runCatching { moodRepository.refresh(PULSE_HISTORY_DAYS) }.track("Pulse")
-        runCatching { analyticsRepository.recompute(RECOMPUTE_DAYS) }.track("health and insights")
+        onStep("Backing up trips")
+        // Every trip, regardless of the auto-backup setting: this is the
+        // explicit "everything" action. Before the recompute so Insights see it.
+        runCatching {
+            tripRepository.observeTrips().first().forEach { tripRepository.backup(it.id) }
+        }.track("trip backup")
+        // Scan GitHub here and wait for it, so the recompute below scores
+        // today's coding instead of the backend scanning after we return.
+        onStep("Scanning GitHub activity")
+        runCatching { analyticsRepository.syncExecution(EXECUTION_DAYS) }.track("GitHub activity")
+        onStep("Recomputing scores and insights")
+        runCatching { analyticsRepository.recompute(RECOMPUTE_DAYS, scanExecution = false) }
+            .track("health and insights")
+        onStep("Writing Today's brief")
+        val today = waitForTodayBrief()
+        if (today == null) failures += "Today's brief"
         refreshCardDueReminders()
 
-        finish(failures, unauthorized, "Everything is up to date")
+        finish(failures, unauthorized, "Everything is up to date. ${healthLine(today?.healthLastReceivedAt)}")
+    }
+
+    /** The recompute starts a rewrite of Today's brief in the background; wait
+     * for it so "up to date" is true. Null if it never settled (model busy or
+     * down; the previous brief stays). */
+    private suspend fun waitForTodayBrief(): TodaySummary? {
+        repeat(BRIEF_POLLS) { attempt ->
+            if (attempt > 0) delay(BRIEF_POLL_MS)
+            val summary = runCatching { analyticsRepository.today() }.getOrNull() ?: return null
+            if (summary.briefStatus != "refreshing") {
+                // The brief also writes the day's state row.
+                runCatching { analyticsRepository.refresh(RECOMPUTE_DAYS) }
+                return summary
+            }
+        }
+        return null
+    }
+
+    private fun healthLine(receivedAt: Instant?): String {
+        if (receivedAt == null) return "Health data arrives only when the iPhone pushes it."
+        val local = receivedAt.atZone(ZoneId.systemDefault())
+        val pattern = if (local.toLocalDate() == LocalDate.now()) "HH:mm" else "d MMM, HH:mm"
+        return "Health data last arrived from the iPhone ${local.format(DateTimeFormatter.ofPattern(pattern))}."
     }
 
     /** Reschedule (or cancel) card-due reminders from the freshly-refreshed
@@ -130,5 +183,9 @@ class LifeOsSyncCoordinator @Inject constructor(
         const val STATEMENT_HISTORY_MONTHS = 7
         const val PULSE_HISTORY_DAYS = 30
         const val RECOMPUTE_DAYS = 60
+        // Matches the backend's own background scan window.
+        const val EXECUTION_DAYS = 7
+        const val BRIEF_POLLS = 20
+        const val BRIEF_POLL_MS = 3_000L
     }
 }

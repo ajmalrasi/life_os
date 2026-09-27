@@ -25,6 +25,7 @@ object AppNotifications {
     const val CHANNEL_TRIPS = "trip_reminders"
     const val CHANNEL_DATA_HEALTH = "data_health"
     const val CHANNEL_CARD_DUE = "card_due_reminders"
+    const val CHANNEL_SYNC = "sync"
 
     const val EXTRA_OPEN_TAB = "open_tab"
     const val EXTRA_OPEN_ITEM_ID = "priority_item_id"
@@ -66,6 +67,13 @@ object AppNotifications {
                 "Card due reminders",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply { description = "An unpaid card statement is due soon." }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_SYNC,
+                "Sync",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply { description = "Progress and result of Sync everything." }
         )
     }
 

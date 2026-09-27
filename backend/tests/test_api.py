@@ -95,6 +95,19 @@ def test_recompute_produces_scores_and_insights(client):
     assert "sleep_score" in drivers
 
 
+def test_recompute_can_skip_the_background_execution_scan(client, monkeypatch):
+    from app.api.routes import analytics as analytics_routes
+
+    scans: list[int] = []
+    monkeypatch.setattr(analytics_routes, "_sync_execution_bg", lambda days: scans.append(days))
+    monkeypatch.setattr(analytics_routes, "refresh_day_brief_bg", lambda: None)
+
+    client.post("/analytics/recompute?days=3&scan_execution=false")
+    assert scans == []
+    client.post("/analytics/recompute?days=3")
+    assert scans == [analytics_routes.EXECUTION_SYNC_DAYS]
+
+
 def test_state_endpoint(client):
     # Recompute no longer classifies states (day_brief.py does, via the model),
     # so the history endpoint simply stays available.

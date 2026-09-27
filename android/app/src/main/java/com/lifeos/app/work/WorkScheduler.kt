@@ -87,6 +87,19 @@ class WorkScheduler @Inject constructor(
         workManager.cancelUniqueWork(PulseReminderWorker.UNIQUE_NAME)
     }
 
+    /** Start Sync everything in the background (see [SyncAllWorker]). KEEP: a
+     * second tap while one is running or waiting joins it instead of restarting. */
+    fun enqueueSyncAll() {
+        val request = OneTimeWorkRequestBuilder<SyncAllWorker>()
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+            )
+            .build()
+        workManager.enqueueUniqueWork(SyncAllWorker.UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun observeSyncAll() = workManager.getWorkInfosForUniqueWorkFlow(SyncAllWorker.UNIQUE_NAME)
+
     /** Best-effort backup of one trip, 30s after a user edit so rapid successive
      * edits collapse into one upload (REPLACE), only when network is available. */
     fun enqueueTripBackup(tripId: String) {

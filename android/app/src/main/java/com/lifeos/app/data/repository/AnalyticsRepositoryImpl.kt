@@ -63,8 +63,8 @@ class AnalyticsRepositoryImpl @Inject constructor(
         synthesizedInsightDao.upsertAll(synth)
     }
 
-    override suspend fun recompute(days: Int): ExecutionSyncReport {
-        val result = api.recompute(days)
+    override suspend fun recompute(days: Int, scanExecution: Boolean): ExecutionSyncReport {
+        val result = api.recompute(days, scanExecution)
         refresh(days)
         return ExecutionSyncReport(
             daysUpdated = result.executionDaysUpdated,
@@ -74,6 +74,10 @@ class AnalyticsRepositoryImpl @Inject constructor(
             todayCodingMinutes = result.executionTodayCodingMinutes,
             message = result.executionMessage.orEmpty(),
         )
+    }
+
+    override suspend fun syncExecution(days: Int) {
+        api.syncExecution(days)
     }
 
     override suspend fun notifications(): List<AppNotification> =

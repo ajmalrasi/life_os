@@ -51,6 +51,7 @@ EXECUTION_SYNC_DAYS = 7
 def recompute(
     background_tasks: BackgroundTasks,
     days: int = 60,
+    scan_execution: bool = True,
     db: Session = Depends(get_db),
 ) -> RecomputeResult:
     """Recompute scores + states for the trailing window and rediscover patterns.
@@ -60,6 +61,8 @@ def recompute(
     synchronously and returns fast. The GitHub execution scan (44 repos) is slow
     and only affects execution scores, so it runs in the background and refreshes
     execution data for the *next* recompute. FCM push is best-effort.
+    ``scan_execution=false`` skips that scan for a caller (the app's Sync
+    everything) that already ran ``/collectors/execution/sync`` itself.
     """
     settings = get_settings()
     end = date.today()
@@ -68,7 +71,8 @@ def recompute(
 
     _maybe_push(db, settings)
 
-    background_tasks.add_task(_sync_execution_bg, EXECUTION_SYNC_DAYS)
+    if scan_execution:
+        background_tasks.add_task(_sync_execution_bg, EXECUTION_SYNC_DAYS)
     background_tasks.add_task(refresh_day_brief_bg)
 
     return RecomputeResult(

@@ -7,7 +7,8 @@ import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.domain.model.ConnectedMailAccount
 import com.lifeos.app.domain.model.SourceStatus
 import com.lifeos.app.mail.MailConnectionManager
-import com.lifeos.app.sync.LifeOsSyncCoordinator
+import androidx.work.WorkInfo
+import com.lifeos.app.work.SyncAllWorker
 import com.lifeos.app.work.WorkScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,8 @@ data class SettingsUiState(
     val cardDueRemindersEnabled: Boolean = true,
     val reopenLastTab: Boolean = true,
     val syncing: Boolean = false,
+    /** The step Sync everything is on, while it runs. */
+    val syncStep: String? = null,
     val syncMessage: String? = null,
     val syncError: Boolean = false,
     val mailAccounts: List<ConnectedMailAccount> = emptyList(),
@@ -44,7 +47,6 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val workScheduler: WorkScheduler,
-    private val syncCoordinator: LifeOsSyncCoordinator,
     private val mailConnectionManager: MailConnectionManager,
     private val analyticsRepository: AnalyticsRepository,
 ) : ViewModel() {
@@ -85,8 +87,53 @@ class SettingsViewModel @Inject constructor(
                 _state.value = _state.value.copy(reopenLastTab = reopen)
             }
         }
+        viewModelScope.launch { observeSyncAll() }
         refreshMailAccounts()
         refreshSourceStatuses()
+    }
+
+    /** Mirror the background Sync everything job, which outlives this screen
+     * and the app. A result is shown only if it's recent, so an old run's
+     * "up to date" isn't presented as current. */
+    private suspend fun observeSyncAll() {
+        var sawRunning = false
+        workScheduler.observeSyncAll().collect { infos ->
+            val info = infos.lastOrNull() ?: return@collect
+            when (info.state) {
+                WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED -> {
+                    sawRunning = true
+                    val step = info.progress.getString(SyncAllWorker.KEY_STEP)
+                        ?: if (info.state == WorkInfo.State.ENQUEUED) "Waiting for a connection" else null
+                    _state.update { it.copy(syncing = true, syncStep = step, syncMessage = null, syncError = false) }
+                }
+                WorkInfo.State.SUCCEEDED -> {
+                    val out = info.outputData
+                    val finishedAt = out.getLong(SyncAllWorker.KEY_FINISHED_AT, 0L)
+                    val recent = System.currentTimeMillis() - finishedAt < RESULT_SHOWN_FOR_MS
+                    _state.update {
+                        it.copy(
+                            syncing = false,
+                            syncStep = null,
+                            syncMessage = if (sawRunning || recent) out.getString(SyncAllWorker.KEY_MESSAGE) else null,
+                            syncError = !out.getBoolean(SyncAllWorker.KEY_SUCCESSFUL, true),
+                        )
+                    }
+                    if (sawRunning) refreshSourceStatuses()
+                    sawRunning = false
+                }
+                WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                    _state.update {
+                        it.copy(
+                            syncing = false,
+                            syncStep = null,
+                            syncMessage = if (sawRunning) "Sync stopped before it finished. Tap to run it again." else null,
+                            syncError = sawRunning,
+                        )
+                    }
+                    sawRunning = false
+                }
+            }
+        }
     }
 
     fun onUrlChange(url: String) {
@@ -141,21 +188,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Runs in the background (see [SyncAllWorker]); [observeSyncAll] shows it. */
     fun syncAll() {
         if (_state.value.syncing) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(syncing = true, syncMessage = null, syncError = false)
-            val result = syncCoordinator.syncAll()
-            _state.value = _state.value.copy(
-                syncing = false,
-                syncMessage = result.message,
-                syncError = !result.successful,
-                // The coordinator persists this too. Updating the screen state
-                // explicitly makes the completion timestamp immediate even if
-                // the DataStore collector and navigation recreation race.
-                lastSyncAt = if (result.successful) System.currentTimeMillis() else _state.value.lastSyncAt,
-            )
-        }
+        _state.update { it.copy(syncing = true, syncStep = null, syncMessage = null, syncError = false) }
+        workScheduler.enqueueSyncAll()
     }
 
     fun refreshMailAccounts() {
@@ -248,4 +285,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun String.displayName(): String = if (this == "finance") "Money" else "Priority"
+
+    private companion object {
+        const val RESULT_SHOWN_FOR_MS = 10 * 60 * 1000L
+    }
 }

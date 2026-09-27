@@ -140,7 +140,7 @@ fun SettingsScreen(
                 ) {
                     Text("Sync LifeOS", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Checks Priority mail, bank alerts, and card statements, then refreshes check-ins, Apple Health scores, execution, and insights.",
+                        "Checks bank alerts, card statements, Priority mail and GitHub, backs up trips, then recomputes scores and insights and waits for Today's brief. Health data comes only when the iPhone pushes it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.OnSurfaceMuted,
                     )
@@ -170,7 +170,10 @@ fun SettingsScreen(
                         Text(if (state.syncing) "Syncing LifeOS…" else "Sync everything")
                     }
                     Text(
-                        state.syncMessage ?: "Last refreshed ${formatLastSync(state.lastSyncAt)}",
+                        when {
+                            state.syncing -> "${state.syncStep ?: "Starting"}. You can close the app; it keeps going."
+                            else -> state.syncMessage ?: "Last refreshed ${formatLastSync(state.lastSyncAt)}"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = if (state.syncError) LifeOsColors.Warning else LifeOsColors.OnSurfaceMuted,
                     )
