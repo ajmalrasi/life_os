@@ -5,6 +5,7 @@ import com.lifeos.app.trips.data.TripPlaceEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 class StopDetectionTest {
@@ -94,5 +95,66 @@ class StopDetectionTest {
         assertTrue(inTrip(at("2026-10-01T00:00")))
         assertTrue(inTrip(at("2026-10-05T23:59")))
         assertFalse(inTrip(at("2026-10-06T00:00")))
+    }
+
+    private data class Span(
+        override val latitude: Double,
+        override val longitude: Double,
+        override val arrivedAt: Long,
+        override val departedAt: Long?,
+    ) : StopSpan
+
+    private fun span(fromMinute: Int, toMinute: Int?, latOffset: Double = 0.0) =
+        Span(28.6139 + latOffset, 77.2090, fromMinute * 60_000L, toMinute?.let { it * 60_000L })
+
+    private fun act(
+        open: Span? = null,
+        previous: LocationFix? = null,
+        current: LocationFix,
+        suppress: Boolean = false,
+        stops: List<Span> = emptyList(),
+        window: List<LocationFix> = emptyList(),
+    ) = runBlocking { StopDetection.nextStopAction(open, previous, current, suppress, { stops }, { window }) }
+
+    @Test
+    fun movingAwayFromTheOpenStopLeavesIt() {
+        val open = span(0, null)
+        assertEquals(StopAction.Leave(open, 30 * 60_000L), act(open = open, current = sample(30, latOffset = 0.003)))
+    }
+
+    @Test
+    fun stayingNearTheOpenStopChangesNothing() {
+        assertEquals(StopAction.None, act(open = span(0, null), current = sample(30, latOffset = 0.001)))
+    }
+
+    @Test
+    fun aLongSilenceStartsAClosedStopAtThePreviousLocation() {
+        val action = act(previous = sample(0), current = sample(20, latOffset = 0.0005))
+        assertEquals(StopAction.Start(28.6139, 77.2090, 0L, 20 * 60_000L), action)
+    }
+
+    @Test
+    fun aSecondSilenceExtendsTheStopThatEndedThere() {
+        val earlier = span(0, 20)
+        val action = act(previous = sample(20), current = sample(45), stops = listOf(earlier))
+        assertEquals(StopAction.Extend(earlier, 45 * 60_000L), action)
+    }
+
+    @Test
+    fun notAStopSuppressesNewStopsUntilTheUserMoves() {
+        assertEquals(StopAction.None, act(previous = sample(0), current = sample(20), suppress = true))
+    }
+
+    @Test
+    fun tightClusterOverEightMinutesStartsAnOpenStop() {
+        val window = listOf(sample(0), sample(4, 0.0003), sample(9, 0.0001))
+        val action = act(previous = window[1], current = window[2], window = window)
+        assertTrue(action is StopAction.Start && action.departedAt == null && action.arrivedAt == 0L)
+    }
+
+    @Test
+    fun spreadOutWindowIsTravel() {
+        val window = listOf(sample(0), sample(4, 0.003), sample(9, 0.006))
+        assertEquals(StopAction.None, act(previous = window[1], current = window[2], window = window))
     }
 }

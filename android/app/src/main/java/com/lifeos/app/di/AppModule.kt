@@ -17,6 +17,8 @@ import com.lifeos.app.data.local.MoodDao
 import com.lifeos.app.data.local.ScoreDao
 import com.lifeos.app.data.local.StateDao
 import com.lifeos.app.data.local.TransactionDao
+import com.lifeos.app.places.data.PlacesDao
+import com.lifeos.app.places.data.PlacesDatabase
 import com.lifeos.app.trips.data.TripDao
 import com.lifeos.app.trips.data.TripDatabase
 import dagger.Module
@@ -60,6 +62,14 @@ object AppModule {
 
     @Provides
     fun tripDao(db: TripDatabase): TripDao = db.tripDao()
+
+    @Provides
+    @Singleton
+    fun placesDatabase(@ApplicationContext context: Context): PlacesDatabase =
+        Room.databaseBuilder(context, PlacesDatabase::class.java, "lifeos-places.db").build()
+
+    @Provides
+    fun placesDao(db: PlacesDatabase): PlacesDao = db.placesDao()
 
     @Provides
     fun moodDao(db: LifeOsDatabase): MoodDao = db.moodDao()

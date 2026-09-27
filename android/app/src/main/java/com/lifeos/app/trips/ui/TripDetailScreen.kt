@@ -158,7 +158,7 @@ import com.lifeos.app.trips.data.TripActivityEntity
 import com.lifeos.app.trips.data.TripDayEntity
 import com.lifeos.app.trips.data.TripDetail
 import com.lifeos.app.trips.data.TripPlaceEntity
-import com.lifeos.app.trips.location.TripLocationService
+import com.lifeos.app.location.LocationTrackingService
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -301,7 +301,7 @@ fun TripDetailScreen(
                             ) {
                                 if (detail.trip.status == "active") {
                                     AssistChip(onClick = {
-                                        context.startService(Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP))
+                                        LocationTrackingService.pauseTrip(context, viewModel.tripId)
                                         viewModel.setStatus("paused")
                                     }, label = { Text("Pause tracking") }, leadingIcon = { Icon(Icons.Rounded.Pause, null, Modifier.size(18.dp)) })
                                 } else {
@@ -1805,8 +1805,7 @@ private fun openNotificationSettings(context: Context) {
 }
 
 private fun startTracking(context: Context, tripId: String) {
-    val intent = Intent(context, TripLocationService::class.java).putExtra(TripLocationService.EXTRA_TRIP_ID, tripId)
-    ContextCompat.startForegroundService(context, intent)
+    LocationTrackingService.startTrip(context, tripId)
 }
 
 private val markerIconCache = ConcurrentHashMap<String, BitmapDescriptor>()

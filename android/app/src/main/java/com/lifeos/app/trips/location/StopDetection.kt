@@ -1,6 +1,5 @@
 package com.lifeos.app.trips.location
 
-import com.lifeos.app.trips.data.TripLocationSampleEntity
 import com.lifeos.app.trips.data.TripPlaceEntity
 import java.time.Instant
 import java.time.LocalDate
@@ -9,6 +8,34 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+/** A recorded position, from a trip or from Places. */
+interface LocationFix {
+    val latitude: Double
+    val longitude: Double
+    val accuracyMeters: Float
+    val recordedAt: Long
+}
+
+/** A stay somewhere: open while [departedAt] is null. */
+interface StopSpan {
+    val latitude: Double
+    val longitude: Double
+    val arrivedAt: Long
+    val departedAt: Long?
+}
+
+/** What a new location means for the stops recorded so far. */
+sealed interface StopAction<out S : StopSpan> {
+    data object None : StopAction<Nothing>
+    /** The user left the open stop [stop] at [at]. */
+    data class Leave<S : StopSpan>(val stop: S, val at: Long) : StopAction<S>
+    /** A stop that ended at the previous location continues until [until]. */
+    data class Extend<S : StopSpan>(val stop: S, val until: Long) : StopAction<S>
+    /** A new stop; open when [departedAt] is null. */
+    data class Start(val latitude: Double, val longitude: Double, val arrivedAt: Long, val departedAt: Long?) :
+        StopAction<Nothing>
+}
 
 /** Rules for turning recorded locations into stops and naming them from the plan. */
 object StopDetection {
@@ -25,9 +52,57 @@ object StopDetection {
      * an update only after moving 50 m, so standing still produces silence rather
      * than samples: a long gap between two nearby samples is a stay.
      */
-    fun stayedBetween(previous: TripLocationSampleEntity, current: TripLocationSampleEntity): Boolean =
+    fun stayedBetween(previous: LocationFix, current: LocationFix): Boolean =
         current.recordedAt - previous.recordedAt >= MIN_STAY_MILLIS &&
             distanceMeters(previous.latitude, previous.longitude, current.latitude, current.longitude) <= LEAVE_METERS
+
+    /** Readings less precise than this are ignored. */
+    const val MAX_ACCURACY_METERS = 100f
+
+    /**
+     * The one stop rule shared by trips and Places. [open] is the stop still in
+     * progress, [previous] the last kept location before [sample]. [recentStops]
+     * and [window] (locations since [MIN_STAY_MILLIS] before [sample], including
+     * it) are only read when needed. [suppressNew] is true right after the user
+     * said "Not a stop" here, so a new stop is not made until they move away.
+     */
+    suspend fun <S : StopSpan> nextStopAction(
+        open: S?,
+        previous: LocationFix?,
+        sample: LocationFix,
+        suppressNew: Boolean,
+        recentStops: suspend () -> List<S>,
+        window: suspend () -> List<LocationFix>,
+    ): StopAction<S> {
+        if (open != null) {
+            val left = distanceMeters(open.latitude, open.longitude, sample.latitude, sample.longitude) > LEAVE_METERS
+            return if (left) StopAction.Leave(open, sample.recordedAt) else StopAction.None
+        }
+        if (suppressNew) return StopAction.None
+        if (previous != null && stayedBetween(previous, sample)) {
+            // A long stay arrives as several gaps in a row: extend the stop that
+            // ended at the previous location instead of starting another one.
+            val continuing = recentStops().firstOrNull {
+                val departed = it.departedAt
+                departed != null && departed >= previous.recordedAt &&
+                    distanceMeters(it.latitude, it.longitude, previous.latitude, previous.longitude) <= LEAVE_METERS
+            }
+            return when {
+                continuing == null ->
+                    StopAction.Start(previous.latitude, previous.longitude, previous.recordedAt, sample.recordedAt)
+                sample.recordedAt > continuing.departedAt!! -> StopAction.Extend(continuing, sample.recordedAt)
+                else -> StopAction.None
+            }
+        }
+        val recent = window().filter { it.accuracyMeters <= MAX_ACCURACY_METERS }
+        if (recent.size < 3 || recent.last().recordedAt - recent.first().recordedAt < MIN_STAY_MILLIS) return StopAction.None
+        val centerLat = recent.map { it.latitude }.average()
+        val centerLng = recent.map { it.longitude }.average()
+        if (recent.any { distanceMeters(centerLat, centerLng, it.latitude, it.longitude) > STAY_RADIUS_METERS }) {
+            return StopAction.None
+        }
+        return StopAction.Start(centerLat, centerLng, recent.first().recordedAt, departedAt = null)
+    }
 
     /** Locations farther than this from every planned place are not part of the trip (e.g. home). */
     const val TRIP_AREA_METERS = 50_000.0

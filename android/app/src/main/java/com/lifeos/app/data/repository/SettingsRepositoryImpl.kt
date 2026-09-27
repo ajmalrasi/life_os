@@ -35,6 +35,7 @@ class SettingsRepositoryImpl @Inject constructor(
     private val pulseReminderHourKey = intPreferencesKey("pulse_reminder_hour")
     private val cardDueRemindersEnabledKey = booleanPreferencesKey("card_due_reminders_enabled")
     private val tripAutoBackupEnabledKey = booleanPreferencesKey("trip_auto_backup")
+    private val placesEnabledKey = booleanPreferencesKey("places_enabled")
     private val reopenLastTabKey = booleanPreferencesKey("reopen_last_tab")
     private val lastUsedTabKey = stringPreferencesKey("last_used_tab")
     private val defaultBaseUrl = com.lifeos.app.BuildConfig.DEFAULT_API_BASE_URL
@@ -47,6 +48,7 @@ class SettingsRepositoryImpl @Inject constructor(
         "insights",
         "chat",
         "trips",
+        "places",
     )
 
     // Must be declared BEFORE init because init launches a coroutine that reads this Flow.
@@ -117,6 +119,13 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setTripAutoBackupEnabled(enabled: Boolean) {
         dataStore.edit { it[tripAutoBackupEnabledKey] = enabled }
+    }
+
+    override val placesEnabled: Flow<Boolean> =
+        dataStore.data.map { prefs -> prefs[placesEnabledKey] ?: false }
+
+    override suspend fun setPlacesEnabled(enabled: Boolean) {
+        dataStore.edit { it[placesEnabledKey] = enabled }
     }
 
     override val reopenLastTab: Flow<Boolean> =

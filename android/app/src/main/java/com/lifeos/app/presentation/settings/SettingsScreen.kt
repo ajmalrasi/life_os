@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -79,6 +80,7 @@ private data class MailDisconnectPrompt(
 fun SettingsScreen(
     onOpenMoneySettings: () -> Unit = {},
     onOpenTripSettings: () -> Unit = {},
+    onOpenPlacesSettings: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -128,6 +130,13 @@ fun SettingsScreen(
                         title = "Trips",
                         subtitle = "Backup",
                         onClick = onOpenTripSettings,
+                    )
+                    HorizontalDivider(color = LifeOsColors.SurfaceBorder)
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Place,
+                        title = "Places",
+                        subtitle = "Location tracking, home",
+                        onClick = onOpenPlacesSettings,
                     )
                 }
             }

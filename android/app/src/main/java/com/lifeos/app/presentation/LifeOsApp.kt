@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Mail
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.WbSunny
@@ -69,7 +70,9 @@ import com.lifeos.app.presentation.money.MoneyScreen
 import com.lifeos.app.presentation.money.StatementDetailsScreen
 import com.lifeos.app.presentation.priority.PriorityDetailsScreen
 import com.lifeos.app.presentation.priority.PriorityScreen
+import com.lifeos.app.places.ui.PlacesScreen
 import com.lifeos.app.presentation.settings.MoneySettingsScreen
+import com.lifeos.app.presentation.settings.PlacesSettingsScreen
 import com.lifeos.app.presentation.settings.SettingsScreen
 import com.lifeos.app.presentation.settings.TripSettingsScreen
 import com.lifeos.app.presentation.theme.LifeOsColors
@@ -84,6 +87,7 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
     INSIGHTS("insights", "Insights", Icons.Rounded.Insights),
     CHAT("chat", "Ask", Icons.Rounded.AutoAwesome),
     TRIPS("trips", "Trips", Icons.Rounded.TravelExplore),
+    PLACES("places", "Places", Icons.Rounded.Place),
     SETTINGS("settings", "Settings", Icons.Rounded.Tune),
 }
 
@@ -94,6 +98,7 @@ internal val navigationDestinations = listOf(
     Destination.INSIGHTS,
     Destination.CHAT,
     Destination.TRIPS,
+    Destination.PLACES,
     Destination.SETTINGS,
 )
 private const val STATEMENT_DETAILS_ROUTE = "statement/{statementId}"
@@ -102,6 +107,7 @@ private const val PRIORITY_DETAILS_ROUTE = "priority/{itemId}"
 private const val TRIP_DETAILS_ROUTE = "trip/{tripId}"
 internal const val SETTINGS_MONEY_ROUTE = "settings/money"
 internal const val SETTINGS_TRIPS_ROUTE = "settings/trips"
+internal const val SETTINGS_PLACES_ROUTE = "settings/places"
 internal const val DEFAULT_DESTINATION_ROUTE = "dashboard"
 
 @Composable
@@ -234,6 +240,7 @@ fun LifeOsApp(
                     SettingsScreen(
                         onOpenMoneySettings = { navController.navigate(SETTINGS_MONEY_ROUTE) },
                         onOpenTripSettings = { navController.navigate(SETTINGS_TRIPS_ROUTE) },
+                        onOpenPlacesSettings = { navController.navigate(SETTINGS_PLACES_ROUTE) },
                     )
                 }
                 composable(SETTINGS_MONEY_ROUTE) {
@@ -241,6 +248,12 @@ fun LifeOsApp(
                 }
                 composable(SETTINGS_TRIPS_ROUTE) {
                     TripSettingsScreen()
+                }
+                composable(Destination.PLACES.route) {
+                    PlacesScreen(onOpenSettings = { navController.navigate(SETTINGS_PLACES_ROUTE) })
+                }
+                composable(SETTINGS_PLACES_ROUTE) {
+                    PlacesSettingsScreen()
                 }
                 composable(
                     route = STATEMENT_DETAILS_ROUTE,
@@ -329,7 +342,8 @@ internal fun topLevelDestinationFor(route: String?): Destination? = when {
     route == Destination.DASHBOARD.route -> Destination.DASHBOARD
     route == Destination.INSIGHTS.route -> Destination.INSIGHTS
     route == Destination.CHAT.route -> Destination.CHAT
-    route == Destination.SETTINGS.route || route == SETTINGS_MONEY_ROUTE || route == SETTINGS_TRIPS_ROUTE -> Destination.SETTINGS
+    route == Destination.PLACES.route -> Destination.PLACES
+    route == Destination.SETTINGS.route || route.startsWith("settings/") -> Destination.SETTINGS
     else -> null
 }
 
@@ -364,7 +378,7 @@ internal fun LifeOsNavigationDrawer(
                 modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 2.dp, bottom = 18.dp),
             )
             navigationDestinations.forEach { destination ->
-                val isSettingsSubroute = currentRoute == SETTINGS_MONEY_ROUTE || currentRoute == SETTINGS_TRIPS_ROUTE
+                val isSettingsSubroute = currentRoute?.startsWith("settings/") == true
                 NavigationDrawerItem(
                     selected = currentRoute == destination.route ||
                         (destination == Destination.SETTINGS && isSettingsSubroute),
@@ -411,4 +425,5 @@ private fun destinationSupportingText(destination: Destination): String = when (
     Destination.MONEY -> "Spending and cards"
     Destination.PRIORITY -> "Important mail and schedules"
     Destination.TRIPS -> "Plans, places and memories"
+    Destination.PLACES -> "Where your days go"
 }

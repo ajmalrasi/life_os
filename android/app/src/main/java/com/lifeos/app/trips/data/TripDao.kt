@@ -148,6 +148,14 @@ interface TripDao {
     @Query("SELECT * FROM trip_location_samples WHERE tripId = :tripId AND recordedAt >= :since ORDER BY recordedAt")
     suspend fun recentLocations(tripId: String, since: Long): List<TripLocationSampleEntity>
 
+    /** Every trip's stops overlapping [start, end), for showing a trip stay once in Places. */
+    @Query(
+        "SELECT v.name AS name, t.title AS tripTitle, v.latitude AS latitude, v.longitude AS longitude, " +
+            "v.arrivedAt AS arrivedAt, v.departedAt AS departedAt FROM trip_visits v JOIN trips t ON t.id = v.tripId " +
+            "WHERE v.arrivedAt < :end AND (v.departedAt IS NULL OR v.departedAt >= :start)"
+    )
+    fun observeStaysBetween(start: Long, end: Long): Flow<List<com.lifeos.app.places.domain.TripStay>>
+
     @Query("SELECT * FROM trip_visits WHERE tripId = :tripId AND departedAt IS NULL ORDER BY arrivedAt DESC LIMIT 1")
     suspend fun openVisit(tripId: String): TripVisitEntity?
 

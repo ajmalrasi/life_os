@@ -5,6 +5,7 @@ import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.trips.importer.TripImportPreview
+import com.lifeos.app.trips.location.StopAction
 import com.lifeos.app.trips.location.StopDetection
 import com.lifeos.app.trips.location.StopNamer
 import com.lifeos.app.work.WorkScheduler
@@ -59,6 +60,8 @@ class TripRepository @Inject constructor(
         }
     fun observeLocations(id: String): Flow<List<TripLocationSampleEntity>> = dao.observeLocations(id)
     suspend fun activeTrip(): TripEntity? = dao.activeTrip()
+    suspend fun trip(id: String): TripEntity? = dao.tripById(id)
+    fun observeStaysBetween(start: Long, end: Long) = dao.observeStaysBetween(start, end)
     suspend fun activeTrips(): List<TripEntity> = dao.activeTrips()
 
     /** Only one trip can record at a time: the service follows a single trip,
@@ -167,7 +170,7 @@ class TripRepository @Inject constructor(
     }
 
     suspend fun record(sample: TripLocationSampleEntity) {
-        if (sample.accuracyMeters > 100f) return
+        if (sample.accuracyMeters > StopDetection.MAX_ACCURACY_METERS) return
         // Only the trip's days and area are part of the trip: not home, not the journey there.
         val trip = dao.tripById(sample.tripId) ?: return
         if (!belongsToTrip(trip, sample.latitude, sample.longitude, sample.recordedAt, dao.placesForTrip(trip.id))) {
@@ -202,35 +205,21 @@ class TripRepository @Inject constructor(
                 dismissedStop = null
             }
         }
-        val open = dao.openVisit(sample.tripId)
-        if (open != null) {
-            if (distanceMeters(open.latitude, open.longitude, sample.latitude, sample.longitude) > StopDetection.LEAVE_METERS) {
-                dao.upsertVisit(open.copy(departedAt = sample.recordedAt))
-            }
-            return
+        val action = StopDetection.nextStopAction(
+            open = dao.openVisit(sample.tripId),
+            previous = previous,
+            sample = sample,
+            suppressNew = dismissedStop?.tripId == sample.tripId,
+            recentStops = { dao.visitsForTrip(sample.tripId) },
+            window = { dao.recentLocations(sample.tripId, sample.recordedAt - StopDetection.MIN_STAY_MILLIS) },
+        )
+        when (action) {
+            StopAction.None -> Unit
+            is StopAction.Leave -> dao.upsertVisit(action.stop.copy(departedAt = action.at))
+            is StopAction.Extend -> dao.upsertVisit(action.stop.copy(departedAt = action.until))
+            is StopAction.Start ->
+                createVisit(sample.tripId, action.latitude, action.longitude, action.arrivedAt, action.departedAt)
         }
-        if (dismissedStop?.tripId == sample.tripId) return
-        if (previous != null && StopDetection.stayedBetween(previous, sample)) {
-            // A long stay arrives as several gaps in a row: extend the stop that
-            // ended at the previous sample instead of starting another one.
-            val continuing = dao.visitsForTrip(sample.tripId).firstOrNull {
-                it.departedAt != null && it.departedAt >= previous.recordedAt &&
-                    distanceMeters(it.latitude, it.longitude, previous.latitude, previous.longitude) <= StopDetection.LEAVE_METERS
-            }
-            if (continuing != null) {
-                if (sample.recordedAt > continuing.departedAt!!) dao.upsertVisit(continuing.copy(departedAt = sample.recordedAt))
-            } else {
-                createVisit(sample.tripId, previous.latitude, previous.longitude, previous.recordedAt, sample.recordedAt)
-            }
-            return
-        }
-        val window = dao.recentLocations(sample.tripId, sample.recordedAt - StopDetection.MIN_STAY_MILLIS)
-            .filter { it.accuracyMeters <= 100f }
-        if (window.size < 3 || window.last().recordedAt - window.first().recordedAt < StopDetection.MIN_STAY_MILLIS) return
-        val centerLat = window.map { it.latitude }.average()
-        val centerLng = window.map { it.longitude }.average()
-        if (window.any { distanceMeters(centerLat, centerLng, it.latitude, it.longitude) > StopDetection.STAY_RADIUS_METERS }) return
-        createVisit(sample.tripId, centerLat, centerLng, window.first().recordedAt, departedAt = null)
     }
 
     /** A stop at a planned place takes that place's name and counts as confirmed. */

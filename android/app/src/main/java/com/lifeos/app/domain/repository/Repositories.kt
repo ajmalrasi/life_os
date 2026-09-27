@@ -190,6 +190,10 @@ interface SettingsRepository {
     val tripAutoBackupEnabled: Flow<Boolean>
     suspend fun setTripAutoBackupEnabled(enabled: Boolean)
 
+    /** Everyday location tracking (Places). Off until the user turns it on. */
+    val placesEnabled: Flow<Boolean>
+    suspend fun setPlacesEnabled(enabled: Boolean)
+
     /** Navigation and startup screen preferences. */
     val reopenLastTab: Flow<Boolean>
     suspend fun setReopenLastTab(enabled: Boolean)

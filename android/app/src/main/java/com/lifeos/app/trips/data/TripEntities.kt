@@ -1,5 +1,8 @@
 package com.lifeos.app.trips.data
 
+import com.lifeos.app.trips.location.LocationFix
+import com.lifeos.app.trips.location.StopSpan
+
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -102,13 +105,13 @@ data class TripVisitEntity(
     val tripId: String,
     val placeId: String? = null,
     val name: String,
-    val latitude: Double,
-    val longitude: Double,
-    val arrivedAt: Long,
-    val departedAt: Long? = null,
+    override val latitude: Double,
+    override val longitude: Double,
+    override val arrivedAt: Long,
+    override val departedAt: Long? = null,
     val confirmed: Boolean = false,
     val note: String? = null,
-)
+) : StopSpan
 
 @Entity(
     tableName = "trip_location_samples",
@@ -118,12 +121,12 @@ data class TripVisitEntity(
 data class TripLocationSampleEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val tripId: String,
-    val latitude: Double,
-    val longitude: Double,
-    val accuracyMeters: Float,
+    override val latitude: Double,
+    override val longitude: Double,
+    override val accuracyMeters: Float,
     val speedMetersPerSecond: Float?,
-    val recordedAt: Long,
-)
+    override val recordedAt: Long,
+) : LocationFix
 
 @Entity(
     tableName = "trip_expenses",

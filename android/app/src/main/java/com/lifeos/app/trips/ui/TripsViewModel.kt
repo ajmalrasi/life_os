@@ -24,7 +24,7 @@ import com.lifeos.app.trips.importer.TripImportPreview
 import com.lifeos.app.trips.importer.TripImporter
 import com.lifeos.app.work.WorkScheduler
 import android.content.Intent
-import com.lifeos.app.trips.location.TripLocationService
+import com.lifeos.app.location.LocationTrackingService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -193,9 +193,7 @@ class TripDetailViewModel @Inject constructor(
 
     fun delete(onDeleted: () -> Unit = {}) = viewModelScope.launch {
         if (state.value.detail?.trip?.status == "active") {
-            context.startService(
-                Intent(context, TripLocationService::class.java).setAction(TripLocationService.ACTION_STOP)
-            )
+            LocationTrackingService.pauseTrip(context, tripId)
         }
         repository.delete(tripId)
         onDeleted()

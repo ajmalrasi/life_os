@@ -20,7 +20,7 @@ import com.lifeos.app.notifications.AppNotifications
 import com.lifeos.app.presentation.LifeOsApp
 import com.lifeos.app.presentation.theme.LifeOsColors
 import com.lifeos.app.presentation.theme.LifeOsTheme
-import com.lifeos.app.trips.location.TripTrackingReconciler
+import com.lifeos.app.location.TrackingController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,7 +28,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
-    @Inject lateinit var tripTrackingReconciler: TripTrackingReconciler
+    @Inject lateinit var trackingController: TrackingController
 
     private val openRequest = mutableStateOf(OpenRequest(null, null, 0L))
 
@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        lifecycleScope.launch { runCatching { tripTrackingReconciler.reconcile() } }
+        lifecycleScope.launch { runCatching { trackingController.reconcile() } }
     }
 
     override fun onNewIntent(intent: Intent) {
