@@ -93,4 +93,23 @@ def test_one_session_in_a_quiet_stretch_shows_the_gaps_on_both_sides(client):
         x = date.today() - timedelta(days=n)
         return f"{x:%b} {x.day}"
     # Both sides of the lone walk, stated plainly.
-    assert f"{md(82)} to {md(58)} (24 days); {md(58)} to {md(21)} (37 days); {md(21)} to today (21 days so far)." in statement
+    assert f"all ended since (history, not the current state): {md(82)} to {md(58)} (24 days); {md(58)} to {md(21)} (37 days)." in statement
+    assert f"Current gap, still open: {md(21)} to today (21 days so far)." in statement
+    assert statement.startswith("Right now: the most recent workout was 21 days ago, with 0 sessions")
+
+
+def test_ended_gap_is_not_the_current_state(client):
+    """A long gap that ended must not read as a lapse (it was called 'lapsed 37 days')."""
+    from app.services.training import workout_statement
+    today = date.today()
+    db = SessionLocal()
+    repo = HealthRepository(db)
+    repo.bulk_insert(
+        _rows("hae-old", today - timedelta(days=40), 50, "Traditional Strength Training", 367)
+        + _rows("hae-new", today - timedelta(days=1), 35, "Traditional Strength Training", 254)
+    )
+    statement = workout_statement(workout_summary(repo, today))
+    db.close()
+    assert statement.startswith("Right now: the most recent workout was 1 day ago, with 1 session in")
+    assert "(39 days)." in statement and "all ended since" in statement
+    assert "Current gap" not in statement

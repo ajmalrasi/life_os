@@ -98,6 +98,14 @@ def workout_statement(s: WorkoutSummary) -> str:
     """Every session of the last weeks with its effort, and the weekly rhythm."""
     weeks = WINDOW_WEEKS
     parts: list[str] = []
+    if s.last is not None:
+        # The current state leads, so an old gap listed below is never read as now.
+        parts.append(
+            f"Right now: the most recent workout was {s.days_since_last} "
+            f"day{'' if s.days_since_last == 1 else 's'} ago, with {s.sessions_last_7} "
+            f"session{'' if s.sessions_last_7 == 1 else 's'} in the past 7 days "
+            f"({s.sessions_prev_7} the week before)."
+        )
     if s.recent:
         listed = s.recent[-_MAX_LISTED:]
         parts.append(
@@ -115,9 +123,14 @@ def workout_statement(s: WorkoutSummary) -> str:
         "as sessions/minutes: "
         + ", ".join(f"{n}/{m:.0f}" for n, m in zip(s.weekly_counts, s.weekly_minutes)) + "."
     )
-    gaps = _gaps(s)
-    if gaps:
-        parts.append("Gaps of a week or more between workouts: " + "; ".join(gaps) + ".")
+    ended, current = _gaps(s)
+    if ended:
+        parts.append(
+            "Earlier gaps of a week or more, all ended since (history, not the current state): "
+            + "; ".join(ended) + "."
+        )
+    if current:
+        parts.append(f"Current gap, still open: {current}.")
     if s.last is not None:
         parts.append(f"Days since the most recent workout: {s.days_since_last}.")
     if s.before_window is not None:
@@ -129,16 +142,17 @@ def workout_statement(s: WorkoutSummary) -> str:
     return " ".join(parts)
 
 
-def _gaps(s: WorkoutSummary) -> list[str]:
-    """Quiet stretches of 7+ days between workout days, and the open one up to today."""
+def _gaps(s: WorkoutSummary) -> tuple[list[str], str | None]:
+    """Quiet stretches of 7+ days that have ended, and the open one up to today (if any)."""
     days = sorted({workout_day(w) for w in ([s.before_window] if s.before_window else []) + s.recent})
-    out = [
+    ended = [
         f"{a:%b} {a.day} to {b:%b} {b.day} ({(b - a).days} days)"
         for a, b in zip(days, days[1:]) if (b - a).days >= 7
     ]
+    current = None
     if days and (s.today - days[-1]).days >= 7:
-        out.append(f"{days[-1]:%b} {days[-1].day} to today ({(s.today - days[-1]).days} days so far)")
-    return out
+        current = f"{days[-1]:%b} {days[-1].day} to today ({(s.today - days[-1]).days} days so far)"
+    return ended, current
 
 
 # How the model should read workouts. Shared by every prompt that sees them.
@@ -149,6 +163,8 @@ WORKOUT_JUDGEMENT_RULE = (
     "often and how recently: use the weekly counts and the days since the last "
     "workout. Read the week-by-week figures as a trend: is there a routine, is it "
     "building or fading, when did it stop? One good session in several quiet weeks is "
-    "not a routine; say how long the gaps were on both sides of it. Weeks without "
-    "regular workouts matter more than a day's HRV or sleep dip."
+    "not a routine; say how long the gaps were on both sides of it. An ended gap is "
+    "history: never call workouts lapsed, stopped or broken unless there is a current "
+    "open gap; if the last workout was days ago, judge whether the routine is restarting. "
+    "Weeks without regular workouts matter more than a day's HRV or sleep dip."
 )
