@@ -52,6 +52,7 @@ fun PlacesSettingsScreen(viewModel: PlacesSettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val enabled by viewModel.enabled.collectAsStateWithLifecycle()
     val saved by viewModel.savedPlaces.collectAsStateWithLifecycle()
+    val deleteMessage by viewModel.deleteMessage.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
     // Permissions and battery settings change outside the app: re-read on every return.
     var resumes by remember { mutableIntStateOf(0) }
@@ -103,8 +104,9 @@ fun PlacesSettingsScreen(viewModel: PlacesSettingsViewModel = hiltViewModel()) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Note places", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Records your route and where you stop through the day. It stays on this phone until you delete it; " +
-                                "a silent notification shows while it runs. A tracked trip shares the same recording.",
+                            "Records your route and where you stop through the day. The route stays on this phone; daily totals and stops " +
+                                "go to your LifeOS server for Insights and Ask. " +
+                                "A silent notification shows while it runs. A tracked trip shares the same recording.",
                             style = MaterialTheme.typography.bodySmall,
                             color = LifeOsColors.OnSurfaceMuted,
                         )
@@ -171,7 +173,8 @@ fun PlacesSettingsScreen(viewModel: PlacesSettingsViewModel = hiltViewModel()) {
         SettingsGroup {
             StatusRow(
                 title = "Delete location history",
-                detail = "Removes every recorded location, stop and saved place from this phone.",
+                detail = deleteMessage ?: "Removes every recorded location, stop and saved place from this phone, " +
+                    "and the stops and daily summaries sent to your LifeOS server.",
                 ok = true,
                 action = "Delete" to { confirmDelete = true },
             )
@@ -183,7 +186,7 @@ fun PlacesSettingsScreen(viewModel: PlacesSettingsViewModel = hiltViewModel()) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete location history?") },
-            text = { Text("Every recorded location, stop, and saved place on this phone is deleted. This can't be undone.") },
+            text = { Text("Every recorded location, stop and saved place is deleted from this phone and your LifeOS server. This can't be undone.") },
             confirmButton = {
                 TextButton(onClick = { viewModel.deleteHistory(); confirmDelete = false }) {
                     Text("Delete", color = LifeOsColors.Warning)

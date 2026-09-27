@@ -1,5 +1,6 @@
 package com.lifeos.app.sync
 
+import com.lifeos.app.places.data.MovementUploader
 import com.lifeos.app.domain.model.TodaySummary
 import com.lifeos.app.domain.repository.AnalyticsRepository
 import com.lifeos.app.domain.repository.MoneyRepository
@@ -55,6 +56,7 @@ class LifeOsSyncCoordinator @Inject constructor(
     private val spendWidgetUpdater: SpendWidgetUpdater,
     private val tripRepository: TripRepository,
     private val workScheduler: WorkScheduler,
+    private val movementUploader: MovementUploader,
 ) {
     private val mutex = Mutex()
 
@@ -100,6 +102,10 @@ class LifeOsSyncCoordinator @Inject constructor(
         runCatching {
             tripRepository.observeTrips().first().forEach { tripRepository.backup(it.id) }
         }.track("trip backup")
+        if (settingsRepository.placesEnabled.first()) {
+            onStep("Sending places")
+            runCatching { movementUploader.uploadRecent() }.track("places")
+        }
         // Scan GitHub here and wait for it, so the recompute below scores
         // today's coding instead of the backend scanning after we return.
         onStep("Scanning GitHub activity")

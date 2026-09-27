@@ -25,6 +25,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from app.services.movement import MOVEMENT_JUDGEMENT_RULE
 from app.services.training import OPEN_GAP_MARKER, WORKOUT_JUDGEMENT_RULE
 from app.config import get_settings
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
@@ -52,7 +53,8 @@ _SYSTEM_PROMPT = (
     "budget, a category far above its usual level, a big purchase, a costly "
     "comparison between categories, bills due soon), then trips, then health, mood "
     "and work. " + WORKOUT_JUDGEMENT_RULE + " If workouts "
-    "have a current open gap, say plainly for how long and push a restart. Skip anything that is normal or minor.\n\n"
+    "have a current open gap, say plainly for how long and push a restart. " + MOVEMENT_JUDGEMENT_RULE + " "
+    "Skip anything that is normal or minor.\n\n"
     "For each insight:\n"
     "- Give a clear judgement. Say plainly when something is too much, a bad "
     "decision, or a habit to fix, and say so when something is going well.\n"

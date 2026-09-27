@@ -1,5 +1,6 @@
 package com.lifeos.app.work
 
+import com.lifeos.app.places.data.MovementUploader
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -30,12 +31,15 @@ class NightlyRecomputeWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val analyticsRepository: AnalyticsRepository,
     private val settingsRepository: SettingsRepository,
+    private val movementUploader: MovementUploader,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
         return try {
             // Recompute only the recent window: the backend reads 30-day baselines
             // from stored data regardless, and the full history was scored once.
+            // Best-effort, before the recompute so tonight's Insights see today's places.
+            runCatching { movementUploader.uploadIfEnabled() }
             analyticsRepository.recompute(RECOMPUTE_WINDOW_DAYS)
             settingsRepository.setLastSyncDay(LocalDate.now())
             settingsRepository.setLastSyncAt(System.currentTimeMillis())

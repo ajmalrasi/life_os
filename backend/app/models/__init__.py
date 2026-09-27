@@ -22,6 +22,7 @@ from app.models.mail import (
 from app.models.card_statement import CardStatement, CardStatementItem
 from app.models.money_profile import MoneyProfile
 from app.models.mood import MoodCheckin
+from app.models.movement import MovementDay, PlaceStop
 from app.models.payee_label import PayeeLabel
 from app.models.priority import PriorityFeedback, PriorityItem, PriorityItemMessage, PriorityNotification
 from app.models.raw_bank_email import RawBankEmail
@@ -42,6 +43,8 @@ __all__ = [
     "HealthRecord",
     "HealthRecordType",
     "MoodCheckin",
+    "MovementDay",
+    "PlaceStop",
     "GithubActivity",
     "DailyScore",
     "DailyState",

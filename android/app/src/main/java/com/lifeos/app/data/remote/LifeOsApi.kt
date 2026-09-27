@@ -85,6 +85,12 @@ interface LifeOsApi {
     @DELETE("trips/{tripId}")
     suspend fun deleteTripBackup(@Path("tripId") tripId: String): Response<Unit>
 
+    @PUT("movement/days")
+    suspend fun uploadMovement(@Body body: com.lifeos.app.places.data.MovementUploadDto): com.lifeos.app.places.data.MovementUploadResultDto
+
+    @DELETE("movement")
+    suspend fun deleteMovement(): Response<Unit>
+
     @GET("priority")
     suspend fun listPriority(
         @Query("include_done") includeDone: Boolean = false,

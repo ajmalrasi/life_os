@@ -69,6 +69,8 @@ health_records returns synced sleep hours, vitals, steps and workouts by type.
 For a named month or period pass its start_date and end_date, and report the
 tool's window_totals or by_month counts; never count workouts yourself.
 health_summary returns scores, not raw sleep hours.
+get_movement returns where the user went (Places): distance, time out, stops and
+payments made at each stop. Days it did not record are unknown.
 Tool results override any conflicting earlier assistant claims. In comparisons,
 label each amount using its actual query window; do not reverse the periods.
 Describe transaction totals as RECORDED spending, not proof of all real spending.
@@ -82,7 +84,7 @@ ACTIVITIES = {
     "query_money": "Checking transactions", "get_life_context": "Checking your recent data",
     "health_summary": "Checking health scores", "health_records": "Checking health records",
     "git_log": "Checking coding activity", "github_events": "Checking GitHub activity",
-    "github_search": "Looking up GitHub",
+    "github_search": "Looking up GitHub", "get_movement": "Checking places",
 }
 
 def bounded_result(value, rows=20, chars=800):

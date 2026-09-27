@@ -25,6 +25,7 @@ from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.budgets import budget_pace_summary
 from app.services.insight_synthesizer import EvidenceFact
+from app.services.movement import MOVEMENT_JUDGEMENT_RULE, movement_week_facts
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.weekly_recap")
@@ -35,8 +36,8 @@ _RECAP_TIMEOUT_SECONDS = 45.0
 _SYSTEM_PROMPT = (
     "You are LifeOS, a personal-analytics companion. You are given EVIDENCE: a list "
     "of already-computed facts about ONE user's own last 7 days versus the 7 days "
-    "before that — sleep, mood, workouts, spending, budgets. Each fact has an \"id\".\n\n"
-    + WORKOUT_JUDGEMENT_RULE + "\n\n"
+    "before that — sleep, mood, workouts, spending, budgets, places. Each fact has an \"id\".\n\n"
+    + WORKOUT_JUDGEMENT_RULE + "\n\n" + MOVEMENT_JUDGEMENT_RULE + "\n\n"
     "Write a short weekly recap: 2-4 sentences, warm but plain, no markdown, no "
     "emojis. Use ONLY the numbers given — never invent or round differently than "
     "the facts state. Do not claim one fact causes another; just report what "
@@ -124,6 +125,13 @@ def compute_weekly_facts(db: Session, today: date | None = None) -> list[Evidenc
             facts.append(EvidenceFact(id="budgets", statement=detail))
     except Exception:  # budgets are a nicety in the recap, never a blocker
         logger.debug("weekly recap budget pace failed", exc_info=True)
+
+    try:
+        categorize = build_categorizer(db)
+        for fid, text in movement_week_facts(db, categorize, start, end, prev_start, prev_end):
+            facts.append(EvidenceFact(id=fid, statement=text))
+    except Exception:  # places are a nicety in the recap, never a blocker
+        logger.debug("weekly recap places facts failed", exc_info=True)
 
     return facts
 

@@ -22,6 +22,7 @@ from app.api.routes import (
     mail_accounts,
     money_profile,
     mood,
+    movement,
     notifications,
     payee_labels,
     priority,
@@ -93,6 +94,7 @@ app.include_router(chat.router, dependencies=[Depends(require_token)])
 app.include_router(notifications.router, dependencies=[Depends(require_token)])
 app.include_router(device.router, dependencies=[Depends(require_token)])
 app.include_router(trips.router, dependencies=[Depends(require_token)])
+app.include_router(movement.router, dependencies=[Depends(require_token)])
 
 
 @app.get("/", tags=["meta"])

@@ -43,6 +43,21 @@ TOOL_SCHEMAS: list[dict] = [
         }},
     }},
     {"type": "function", "function": {
+        "name": "get_movement",
+        "description": (
+            "Places recorded by the phone: for each recorded day, kilometres travelled "
+            "(and in a vehicle), hours out of home and after 10 PM, farthest distance "
+            "from home, the stops with arrival/leave times, and which payments were made "
+            "at each stop. Use for where the user went, how much they travelled or went "
+            "out, and where money was spent. Days not recorded are unknown. Trip days "
+            "are marked and were planned travel."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "start_date": {"type": "string", "description": "Inclusive ISO date. Defaults to 7 days ago."},
+            "end_date": {"type": "string", "description": "Inclusive ISO date. Defaults to today."},
+        }},
+    }},
+    {"type": "function", "function": {
         "name": "get_life_context",
         "description": "Read a broad overview of scores, Pulse, life state, spending, and discovered insights.",
         "parameters": {"type": "object", "properties": {
@@ -315,6 +330,8 @@ class AgentTools:
                 return ChatService(self.db).build_context(days)
             if name == "get_trip_context":
                 return self.get_trip_context(args.get("trip_id"))
+            if name == "get_movement":
+                return self.get_movement(args.get("start_date"), args.get("end_date"))
             if name == "github_search":
                 return self.github_search(
                     tool=args.get("tool", ""),
@@ -337,6 +354,21 @@ class AgentTools:
             return {"error": f"{name} failed: {exc}"}
 
     # -- tools ---------------------------------------------------------------------------
+
+    def get_movement(self, start_date: str | None = None, end_date: str | None = None) -> dict:
+        from app.api.routes.statements import build_categorizer
+        from app.services.movement import movement_window
+
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        try:
+            end = date.fromisoformat(end_date) if end_date else today
+            start = date.fromisoformat(start_date) if start_date else end - timedelta(days=6)
+        except ValueError:
+            return {"error": "start_date and end_date must be ISO dates like 2026-09-01"}
+        if end < start:
+            return {"error": "end_date is before start_date"}
+        start = max(start, end - timedelta(days=_MAX_DAYS - 1))
+        return {**movement_window(self.db, start, end, build_categorizer(self.db)), "source": "places"}
 
     def get_trip_context(self, trip_id: str | None = None) -> dict:
         query = select(TripBackup).where(TripBackup.deleted_at.is_(None))

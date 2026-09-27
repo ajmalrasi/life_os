@@ -37,6 +37,7 @@ from app.models.transaction import Transaction
 from app.services.budgets import budget_pace_summary
 from app.services.card_cycles import current_card_cycles
 from app.services.insight_synthesizer import EvidenceFact
+from app.services.movement import movement_evidence
 from app.services.recurring import detect_recurring_charges
 from app.services.reconcile import EXCLUDED_FROM_SPEND
 from app.services.weekly_recap import week_bounds
@@ -641,6 +642,7 @@ def build_life_evidence(db: Session, today: date | None = None) -> list[Evidence
         lambda: _fixed_commitment_facts(db, categorize, today, bounds),
         lambda: _card_facts(db, today),
         lambda: _trip_facts(db, categorize, today, bounds),
+        lambda: [EvidenceFact(id=fid, statement=text) for fid, text in movement_evidence(db, categorize, today)],
         lambda: _life_signal_facts(db, today),
     ]
     for builder in builders:
