@@ -25,7 +25,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from app.services.training import WORKOUT_JUDGEMENT_RULE
+from app.services.training import OPEN_GAP_MARKER, WORKOUT_JUDGEMENT_RULE
 from app.config import get_settings
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
@@ -51,7 +51,7 @@ _SYSTEM_PROMPT = (
     "budget, a category far above its usual level, a big purchase, a costly "
     "comparison between categories, bills due soon), then trips, then health, mood "
     "and work. " + WORKOUT_JUDGEMENT_RULE + " If workouts "
-    "have lapsed, say plainly for how long and push a restart. Skip anything that is normal or minor. Fewer, sharper insights beat "
+    "have a current open gap, say plainly for how long and push a restart. Skip anything that is normal or minor. Fewer, sharper insights beat "
     "more.\n\n"
     "For each insight:\n"
     "- Give a clear judgement. Say plainly when something is too much, a bad "
@@ -70,10 +70,47 @@ _SYSTEM_PROMPT = (
     "- If monthly income is missing you may say, once, that setting it in Money "
     "settings would allow judging spending against income.\n"
     "- Plain language, no markdown, no emojis. Talk to the user as \"you\".\n\n"
-    "Return ONLY a JSON array, no prose, no code fences. Each item exactly:\n"
-    "{\"title\": \"<=8 words\", \"verdict\": \"1-2 sentences\", \"action\": \"one sentence\", "
-    "\"domain\": \"money|trip|health|mind|work|life\", \"severity\": \"high|medium|low\", "
-    "\"cites\": [\"id\", ...]}"
+    "Return {\"insights\": [...]} where each item is: title (8 words or fewer), "
+    "verdict (1-2 sentences), action (one sentence), domain, severity, and cites "
+    "(the ids of the facts it uses)."
+)
+
+
+def _schema(fact_ids: list[str]) -> dict:
+    """Guided-decoding schema: bounded lengths so a reply cannot loop to the
+    token limit (it once repeated "then a 1-day gap" until it timed out), and
+    cites limited to the facts actually given."""
+    item = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "maxLength": 80},
+            "verdict": {"type": "string", "maxLength": 320},
+            "action": {"type": "string", "maxLength": 200},
+            "domain": {"type": "string", "enum": sorted(_DOMAINS)},
+            "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+            "cites": {
+                "type": "array",
+                "items": {"type": "string", "enum": fact_ids},
+                "minItems": 1,
+                "maxItems": 4,
+            },
+        },
+        "required": ["title", "verdict", "action", "domain", "severity", "cites"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {"insights": {"type": "array", "items": item, "maxItems": _MAX_INSIGHTS}},
+        "required": ["insights"],
+        "additionalProperties": False,
+    }
+
+
+# Words that call the workout routine lapsed or stopped. Only true while the
+# workouts fact states an open gap; a gap that has ended is history.
+_LAPSE_CLAIM = re.compile(
+    r"\b(laps\w*|broken|broke|stopped|stalled|abandon\w*|inactiv\w*|no (recent )?workouts?)\b",
+    re.IGNORECASE,
 )
 
 
@@ -119,18 +156,27 @@ def synthesize(
         {"role": "user", "content": user_content},
     ]
 
+    fact_ids = [f.id for f in evidence]
     try:
-        raw = client.chat(messages, temperature=0.5, max_tokens=900)
+        reply = client.chat_json(
+            messages, schema=_schema(fact_ids), schema_name="mentor_insights",
+            max_tokens=900, temperature=0.5,
+        )
     except OpenClawUnavailable as exc:
         logger.info("insight synthesis skipped (OpenClaw unavailable): %s", exc)
         return []
+    items = reply.get("insights") if isinstance(reply, dict) else None
+    workouts_fact = next((f.statement for f in evidence if f.id == "health:workouts"), "")
+    open_gap = OPEN_GAP_MARKER in workouts_fact
 
     valid_ids = {f.id for f in evidence}
     known_numbers: set[str] = set()
     for f in evidence:
         known_numbers |= _numbers(f.statement)
     drafts: list[dict] = []
-    for item in _parse(raw):
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
         title = (item.get("title") or "").strip()
         body = (item.get("verdict") or "").strip()
         cites_raw = item.get("cites")
@@ -147,6 +193,10 @@ def synthesize(
         invented = _numbers(title + " " + body) - known_numbers
         if invented:
             logger.info("insight dropped: numbers not in evidence %s", sorted(invented))
+            continue
+
+        if "health:workouts" in cites and not open_gap and _LAPSE_CLAIM.search(title + " " + body):
+            logger.info("insight dropped: calls workouts lapsed without an open gap")
             continue
 
         action = item.get("action")
@@ -177,41 +227,3 @@ _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 def _numbers(text: str) -> set[str]:
     return {m.group().replace(",", "").rstrip(".") for m in _NUMBER.finditer(text)}
-
-
-def _parse(raw: str) -> list[dict]:
-    """Extract a JSON array of insight objects, tolerantly."""
-    if not raw:
-        return []
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        nl = text.find("\n")
-        if nl != -1:
-            text = text[nl + 1 :]
-    start, end = text.find("["), text.rfind("]")
-    first_obj = text.find("{")
-    # Only treat it as an array when the "[" opens before the first object;
-    # otherwise the brackets belong to a nested "cites" list.
-    if start != -1 and end > start and (first_obj == -1 or start < first_obj):
-        try:
-            data = json.loads(text[start : end + 1])
-        except (ValueError, TypeError):
-            data = None
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-    # Qwen sometimes drops the outer brackets and emits a bare
-    # comma-separated run of objects: decode each top-level object in turn.
-    decoder = json.JSONDecoder()
-    items: list[dict] = []
-    pos = text.find("{")
-    while pos != -1:
-        try:
-            obj, consumed = decoder.raw_decode(text, pos)
-        except ValueError:
-            pos = text.find("{", pos + 1)
-            continue
-        if isinstance(obj, dict):
-            items.append(obj)
-        pos = text.find("{", consumed)
-    return items

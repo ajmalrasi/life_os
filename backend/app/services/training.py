@@ -43,6 +43,9 @@ def describe_session(w: WorkoutSession, today: date | None = None) -> str:
     return ", ".join(bits)
 
 
+# Stated in the workouts fact only while a 7+ day gap is still open.
+OPEN_GAP_MARKER = "Current gap, still open"
+
 # How far back the model sees workouts week by week: a quarter, long enough to
 # show a trend (a routine, its decline, a gap) and to make one session in a
 # quiet stretch read as an exception, not a routine.
@@ -130,7 +133,7 @@ def workout_statement(s: WorkoutSummary) -> str:
             + "; ".join(ended) + "."
         )
     if current:
-        parts.append(f"Current gap, still open: {current}.")
+        parts.append(f"{OPEN_GAP_MARKER}: {current}.")
     if s.last is not None:
         parts.append(f"Days since the most recent workout: {s.days_since_last}.")
     if s.before_window is not None:

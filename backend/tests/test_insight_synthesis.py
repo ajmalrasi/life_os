@@ -21,11 +21,18 @@ class _FakeClient:
         self.timeout = 120.0
         self.calls = 0
 
-    def chat(self, messages, temperature=0.2, max_tokens=None) -> str:
+    def chat_json(self, messages, schema, schema_name, max_tokens=512, temperature=0.0, timeout=None) -> dict:
+        # The response is written as the items of the "insights" array.
+        import json
+
         self.calls += 1
+        self.schema = schema
         if self.fail:
             raise OpenClawUnavailable("down")
-        return self.response
+        try:
+            return {"insights": json.loads(self.response)}
+        except ValueError:
+            return {"insights": []}
 
 
 def _evidence() -> list[EvidenceFact]:
@@ -237,19 +244,11 @@ def test_refresh_endpoint_keeps_old_rows_and_flags_stale_when_synthesis_empty(cl
     assert resp.headers.get("X-Insights-Stale") == "1"
 
 
-def test_parse_accepts_objects_without_outer_brackets():
-    from app.services.insight_synthesizer import _parse
-
-    raw = '{"title": "A", "cites": ["x"]}, {"title": "B", "cites": ["y", "z"]}'
-    assert [i["title"] for i in _parse(raw)] == ["A", "B"]
-    assert [i["title"] for i in _parse("[" + raw + "]")] == ["A", "B"]
-    assert _parse("not json") == []
-
-
 def test_synthesize_drops_an_insight_with_a_number_not_in_the_evidence():
     evidence = _evidence() + [EvidenceFact(
         "health:workouts",
-        "No workouts in the last 28 days. Last workout: Jul 29 21:02 Traditional Strength Training, 50 min, 58 days ago.",
+        "Right now: the most recent workout was 58 days ago, with 0 sessions in the past 7 days. "
+        "Current gap, still open: Jul 29 to today (58 days so far).",
     )]
     wrong = _item(title="Workouts have lapsed", verdict="No substantial workout for 45 days.",
                   domain="health", cites=["health:workouts"])
@@ -258,3 +257,33 @@ def test_synthesize_drops_an_insight_with_a_number_not_in_the_evidence():
     assert synthesize(evidence, client=_FakeClient(f"[{wrong}]")) == []
     kept = synthesize(evidence, client=_FakeClient(f"[{right}]"))
     assert [i["body"] for i in kept] == ["No workout for 58 days since Jul 29."]
+
+
+def test_schema_bounds_lengths_and_limits_cites_to_given_facts():
+    client = _FakeClient(f"[{_item()}]")
+    synthesize(_evidence(), client=client)
+    item = client.schema["properties"]["insights"]["items"]["properties"]
+    assert item["verdict"]["maxLength"] <= 400
+    assert item["cites"]["items"]["enum"] == ["cat:shopping", "cat:vehicle", "money:income"]
+
+
+def test_lapse_claim_dropped_when_no_gap_is_open():
+    """It called workouts 'lapsed for 37 days' the day after a workout."""
+    active = _evidence() + [EvidenceFact(
+        "health:workouts",
+        "Right now: the most recent workout was 1 day ago, with 6 sessions in the past 7 days. "
+        "Earlier gaps of a week or more, all ended since: Jul 29 to Sep 4 (37 days).",
+    )]
+    lapsed = _item(title="Workouts lapsed for 37 days", verdict="Your routine broke for 37 days.",
+                   domain="health", cites=["health:workouts"])
+    restart = _item(title="Workouts are restarting", verdict="6 sessions in the past 7 days after a 37 days gap.",
+                    domain="health", cites=["health:workouts"])
+    out = synthesize(active, client=_FakeClient(f"[{lapsed},{restart}]"))
+    assert [i["title"] for i in out] == ["Workouts are restarting"]
+
+    idle = _evidence() + [EvidenceFact(
+        "health:workouts",
+        "Right now: the most recent workout was 21 days ago. Current gap, still open: Sep 4 to today (21 days so far).",
+    )]
+    still = _item(title="Workouts lapsed", verdict="No workout for 21 days.", domain="health", cites=["health:workouts"])
+    assert len(synthesize(idle, client=_FakeClient(f"[{still}]"))) == 1
