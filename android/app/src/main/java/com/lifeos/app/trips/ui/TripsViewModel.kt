@@ -141,6 +141,10 @@ class TripDetailViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
     fun setStatus(status: String) = viewModelScope.launch { repository.setStatus(tripId, status) }
+    fun confirmVisitAs(visitId: String, placeId: String) = viewModelScope.launch { repository.confirmVisitAs(visitId, placeId) }
+    fun renameVisit(visitId: String, name: String) = viewModelScope.launch { repository.renameVisit(visitId, name) }
+    fun addVisitToPlan(visitId: String, name: String) = viewModelScope.launch { repository.addVisitToPlan(visitId, name) }
+    fun removeVisit(visitId: String) = viewModelScope.launch { repository.removeVisit(visitId) }
     fun setActivityStatus(id: String, status: String) = viewModelScope.launch {
         repository.setActivityStatus(id, status)
     }

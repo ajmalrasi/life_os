@@ -34,6 +34,15 @@ interface TripDao {
     @Query("SELECT * FROM trips WHERE status = 'active' LIMIT 1")
     suspend fun activeTrip(): TripEntity?
 
+    @Query("SELECT * FROM trips WHERE status = 'active'")
+    suspend fun activeTrips(): List<TripEntity>
+
+    @Query("SELECT * FROM trips WHERE id = :tripId LIMIT 1")
+    suspend fun tripById(tripId: String): TripEntity?
+
+    @Query("DELETE FROM trip_location_samples WHERE id IN (:ids)")
+    suspend fun deleteLocations(ids: List<Long>)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertTrip(value: TripEntity): Long
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertDays(values: List<TripDayEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertPlaces(values: List<TripPlaceEntity>)
@@ -141,6 +150,21 @@ interface TripDao {
 
     @Query("SELECT * FROM trip_visits WHERE tripId = :tripId AND departedAt IS NULL ORDER BY arrivedAt DESC LIMIT 1")
     suspend fun openVisit(tripId: String): TripVisitEntity?
+
+    @Query("SELECT * FROM trip_visits WHERE tripId = :tripId")
+    suspend fun visitsForTrip(tripId: String): List<TripVisitEntity>
+
+    @Query("SELECT * FROM trip_visits WHERE id = :visitId LIMIT 1")
+    suspend fun getVisit(visitId: String): TripVisitEntity?
+
+    @Query("DELETE FROM trip_visits WHERE id = :visitId")
+    suspend fun deleteVisit(visitId: String)
+
+    @Query("SELECT * FROM trip_places WHERE tripId = :tripId")
+    suspend fun placesForTrip(tripId: String): List<TripPlaceEntity>
+
+    @Query("SELECT * FROM trip_location_samples WHERE tripId = :tripId ORDER BY recordedAt DESC LIMIT 1")
+    suspend fun lastLocation(tripId: String): TripLocationSampleEntity?
 
     @Query("DELETE FROM trips WHERE id = :tripId")
     suspend fun deleteTrip(tripId: String)

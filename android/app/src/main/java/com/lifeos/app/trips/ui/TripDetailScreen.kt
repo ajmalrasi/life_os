@@ -10,7 +10,13 @@ import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import com.lifeos.app.trips.location.TripDistanceCalculator
+import androidx.compose.ui.text.style.TextOverflow
+import com.lifeos.app.trips.location.StopDetection
+import com.lifeos.app.trips.data.TripRepository
+import com.lifeos.app.trips.data.TripVisitEntity
 import java.util.concurrent.ConcurrentHashMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
@@ -116,8 +122,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -188,12 +197,22 @@ fun TripDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var permissionMessage by remember { mutableStateOf<String?>(null) }
+    var notificationsOn by remember { mutableStateOf(notificationsAllowed(context)) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
-        if (grants.values.any { it }) startTracking(context, viewModel.tripId)
-        else permissionMessage = "Location permission is needed to record this trip."
+        val locationGranted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (!locationGranted) {
+            permissionMessage = "Location permission is needed to record this trip."
+            return@rememberLauncherForActivityResult
+        }
+        permissionMessage = null
+        notificationsOn = notificationsAllowed(context)
+        startTracking(context, viewModel.tripId)
     }
+    // Re-check on resume so the hint clears after allowing notifications in Settings.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { notificationsOn = notificationsAllowed(context) }
 
     if (detail == null) {
         Column(Modifier.fillMaxSize().background(LifeOsColors.Background).padding(20.dp)) {
@@ -287,7 +306,7 @@ fun TripDetailScreen(
                                     }, label = { Text("Pause tracking") }, leadingIcon = { Icon(Icons.Rounded.Pause, null, Modifier.size(18.dp)) })
                                 } else {
                                     AssistChip(onClick = {
-                                        permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                        permissionLauncher.launch(trackingPermissions())
                                     }, label = { Text("Track trip") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)) })
                                 }
                                 Surface(
@@ -309,6 +328,13 @@ fun TripDetailScreen(
                             }
                         }
                         permissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        if (detail.trip.status == "active" && !notificationsOn) {
+                            Text(
+                                "Tracking is on, but LifeOS notifications are off, so its notification is hidden. Tap to allow notifications.",
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 6.dp).clickable { openNotificationSettings(context) },
+                            )
+                        }
                     }
                 }
                 TabRow(selectedTabIndex = tab) {
@@ -1571,6 +1597,126 @@ private fun TripTab(
 }
 
 @Composable
+private fun VisitCard(visit: TripVisitEntity, detail: TripDetail, viewModel: TripDetailViewModel) {
+    var renaming by remember { mutableStateOf(false) }
+    var addingToPlan by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf(false) }
+    val nearby = remember(visit.latitude, visit.longitude, detail.places) {
+        StopDetection.nearbyPlaces(visit.latitude, visit.longitude, detail.places, StopDetection.SUGGEST_METERS)
+            .filter { it.id != visit.placeId }
+            .take(3)
+    }
+    LifeOsCard {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.LocationOn, null, tint = LifeOsColors.Primary)
+                Column {
+                    Text(visit.name, style = MaterialTheme.typography.titleMedium)
+                    Text(visitTimes(visit, detail.trip.timezone), color = LifeOsColors.OnSurfaceMuted)
+                    Text(
+                        when {
+                            visit.placeId != null -> "From your plan"
+                            visit.confirmed -> "Named by you · not in your plan"
+                            visit.name == TripRepository.UNCONFIRMED_STOP -> "Not in your plan · no address yet"
+                            else -> "Not in your plan · name is approximate"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                }
+            }
+            if (!visit.confirmed) nearby.firstOrNull()?.let { place ->
+                OutlinedButton(onClick = { viewModel.confirmVisitAs(visit.id, place.id) }) {
+                    Text("It's ${place.name}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { renaming = true }) { Text(if (visit.confirmed) "Rename" else "Name it") }
+                if (visit.placeId == null) TextButton(onClick = { addingToPlan = true }) { Text("Add to plan") }
+                TextButton(onClick = { removing = true }) { Text("Not a stop") }
+            }
+        }
+    }
+    if (renaming || addingToPlan) {
+        val close = { renaming = false; addingToPlan = false }
+        var name by remember {
+            mutableStateOf(
+                when {
+                    visit.name == TripRepository.UNCONFIRMED_STOP -> ""
+                    visit.confirmed -> visit.name
+                    else -> visit.name.removePrefix("Near ")
+                }
+            )
+        }
+        AlertDialog(
+            onDismissRequest = close,
+            title = { Text(if (addingToPlan) "Add to your plan" else "Name this stop") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (addingToPlan) {
+                        Text(
+                            "Saves this spot as a place in the trip, so it shows on the map.",
+                            color = LifeOsColors.OnSurfaceMuted,
+                        )
+                    }
+                    if (nearby.isNotEmpty() && !addingToPlan) {
+                        Text("Nearby in your plan", style = MaterialTheme.typography.labelLarge, color = LifeOsColors.OnSurfaceMuted)
+                        nearby.forEach { place ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    viewModel.confirmVisitAs(visit.id, place.id)
+                                    close()
+                                },
+                                label = { Text(place.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        if (addingToPlan) viewModel.addVisitToPlan(visit.id, name) else viewModel.renameVisit(visit.id, name)
+                        close()
+                    },
+                ) { Text(if (addingToPlan) "Add" else "Save") }
+            },
+            dismissButton = { TextButton(onClick = close) { Text("Cancel") } },
+        )
+    }
+    if (removing) {
+        AlertDialog(
+            onDismissRequest = { removing = false },
+            title = { Text("Remove this stop?") },
+            text = { Text("It disappears from the journal and map. Your recorded route is kept.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.removeVisit(visit.id)
+                    removing = false
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removing = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+private fun visitTimes(visit: TripVisitEntity, timezone: String): String {
+    val arrived = formatInstant(visit.arrivedAt, timezone)
+    val departed = visit.departedAt ?: return "$arrived · still here"
+    val zone = runCatching { ZoneId.of(timezone) }.getOrDefault(ZoneId.systemDefault())
+    val left = DateTimeFormatter.ofPattern("h:mm a").withZone(zone).format(Instant.ofEpochMilli(departed))
+    return "$arrived to $left"
+}
+
+@Composable
 private fun MemoriesTab(detail: TripDetail, viewModel: TripDetailViewModel) {
     val context = LocalContext.current
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -1603,17 +1749,8 @@ private fun MemoriesTab(detail: TripDetail, viewModel: TripDetailViewModel) {
                 }
             }
         }
-        items(detail.visits, key = { it.id }) { visit ->
-            LifeOsCard {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Rounded.LocationOn, null, tint = LifeOsColors.Primary)
-                    Column {
-                        Text(visit.name, style = MaterialTheme.typography.titleMedium)
-                        Text(formatInstant(visit.arrivedAt, detail.trip.timezone), color = LifeOsColors.OnSurfaceMuted)
-                        Text(if (visit.confirmed) "Confirmed visit" else "Needs confirmation", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
+        items(detail.visits.sortedByDescending { it.arrivedAt }, key = { it.id }) { visit ->
+            VisitCard(visit, detail, viewModel)
         }
         if (detail.attachments.isNotEmpty()) {
             item { Text("Photos and documents", style = MaterialTheme.typography.titleMedium) }
@@ -1646,6 +1783,24 @@ private fun ExpenseDialog(currency: String, onDismiss: () -> Unit, onSave: (Stri
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Location, plus notifications on Android 13+ so the tracking notification (and its Pause) is visible. */
+private fun trackingPermissions(): Array<String> = buildList {
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+}.toTypedArray()
+
+private fun notificationsAllowed(context: Context): Boolean =
+    NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+private fun openNotificationSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     )
 }
 

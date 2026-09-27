@@ -123,6 +123,23 @@ today's pulse; the optional note has its own Save/Cancel (no more re-tapping a
 face). The evening reminder deep-links to `dashboard`; a saved last-used tab of
 `mood` falls back to the default. The Wellness vitals row no longer links out.
 
+## Trip tracking update (2026-09-27)
+
+Track trip also asks for notification permission (Android 13+); a trip page
+line says when the tracking notification is hidden. Saved trip status is kept
+honest: `TripTrackingReconciler` (run from `MainActivity.onResume`) resumes a
+trip marked `active` whose service died (update, force-stop, reboot) or pauses
+it when it can't record; a sticky restart resumes the active trip itself.
+Stops: the fused request only reports after 50 m of movement, so standing still
+is silence. `StopDetection` treats an 8+ minute gap between samples within
+200 m as a stay (consecutive gaps extend it). A stop within 250 m of a planned
+place takes its name (confirmed); others get an approximate "Near <area>, <city>"
+from the Geocoder (retried when offline) and Journal actions It's X / Name it /
+Add to plan / Not a stop. Only the trip's own days (trip time zone) and places
+within 50 km of a located planned place are recorded, route and stops alike;
+older out-of-trip samples/stops are pruned when tracking starts. Before the
+first day the notification says it is waiting.
+
 ## Trips update (2026-09-17)
 
 Trips is now a phone-first Android feature under the navigation drawer. It uses a

@@ -5,6 +5,8 @@ import com.lifeos.app.data.local.TransactionEntity
 import com.lifeos.app.data.remote.LifeOsApi
 import com.lifeos.app.domain.repository.SettingsRepository
 import com.lifeos.app.trips.importer.TripImportPreview
+import com.lifeos.app.trips.location.StopDetection
+import com.lifeos.app.trips.location.StopNamer
 import com.lifeos.app.work.WorkScheduler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -21,10 +23,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
@@ -35,6 +33,7 @@ class TripRepository @Inject constructor(
     private val transactionDao: TransactionDao,
     private val workScheduler: WorkScheduler,
     private val settingsRepository: SettingsRepository,
+    private val stopNamer: StopNamer,
 ) {
     /** Best-effort: enqueue a debounced backup after a user edit, only when the
      * "Back up trips automatically" setting is on. Never blocks the caller. */
@@ -60,6 +59,49 @@ class TripRepository @Inject constructor(
         }
     fun observeLocations(id: String): Flow<List<TripLocationSampleEntity>> = dao.observeLocations(id)
     suspend fun activeTrip(): TripEntity? = dao.activeTrip()
+    suspend fun activeTrips(): List<TripEntity> = dao.activeTrips()
+
+    /** Only one trip can record at a time: the service follows a single trip,
+     * so any other trip still marked active is paused. */
+    suspend fun markTracking(id: String) {
+        dao.activeTrips().filter { it.id != id }.forEach { setStatus(it.id, "paused") }
+        setStatus(id, "active")
+        pruneOutsideTrip(id)
+    }
+
+    private fun belongsToTrip(trip: TripEntity, latitude: Double, longitude: Double, at: Long, places: List<TripPlaceEntity>) =
+        StopDetection.withinTripDates(at, trip.startDate, trip.endDate, trip.timezone) &&
+            StopDetection.withinTripArea(latitude, longitude, places)
+
+    /** Removes locations and stops recorded outside the trip's days or area
+     * (before these rules existed, or after the trip's dates were edited). */
+    private suspend fun pruneOutsideTrip(tripId: String) {
+        val trip = dao.tripById(tripId) ?: return
+        val places = dao.placesForTrip(tripId)
+        val locations = dao.getLocations(tripId)
+            .filterNot { belongsToTrip(trip, it.latitude, it.longitude, it.recordedAt, places) }
+        val visits = dao.visitsForTrip(tripId)
+            .filterNot { belongsToTrip(trip, it.latitude, it.longitude, it.arrivedAt, places) }
+        if (locations.isEmpty() && visits.isEmpty()) return
+        locations.map { it.id }.chunked(500).forEach { dao.deleteLocations(it) }
+        visits.forEach { dao.deleteVisit(it.id) }
+        scheduleAutoBackup(tripId)
+    }
+
+    /** What the tracking notification should say for [tripId] right now. */
+    suspend fun trackingState(tripId: String, now: Long = System.currentTimeMillis()): String? {
+        val trip = dao.tripById(tripId) ?: return null
+        if (StopDetection.withinTripDates(now, trip.startDate, trip.endDate, trip.timezone)) return null
+        val zone = runCatching { java.time.ZoneId.of(trip.timezone) }.getOrDefault(java.time.ZoneId.systemDefault())
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val start = java.time.LocalDate.parse(trip.startDate)
+        return if (today.isBefore(start)) {
+            "Waiting for the trip. Recording starts " +
+                start.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM")) + "."
+        } else {
+            "The trip has ended, so nothing is being recorded. Pause tracking to stop."
+        }
+    }
     suspend fun import(bundle: ImportedTripBundle, replaceExisting: Boolean = false) {
         if (replaceExisting) {
             dao.replaceTripItinerary(bundle)
@@ -126,46 +168,135 @@ class TripRepository @Inject constructor(
 
     suspend fun record(sample: TripLocationSampleEntity) {
         if (sample.accuracyMeters > 100f) return
+        // Only the trip's days and area are part of the trip: not home, not the journey there.
+        val trip = dao.tripById(sample.tripId) ?: return
+        if (!belongsToTrip(trip, sample.latitude, sample.longitude, sample.recordedAt, dao.placesForTrip(trip.id))) {
+            dao.openVisit(sample.tripId)?.let { dao.upsertVisit(it.copy(departedAt = sample.recordedAt)) }
+            return
+        }
+        val previous = dao.lastLocation(sample.tripId)
         dao.insertLocation(sample)
-        updateVisit(sample)
+        updateVisit(sample, previous)
+        nameUnnamedStops(sample.tripId)
     }
 
-    private suspend fun updateVisit(sample: TripLocationSampleEntity) {
+    /** Stops recorded offline keep the placeholder until an address lookup succeeds. */
+    private suspend fun nameUnnamedStops(tripId: String) {
+        dao.visitsForTrip(tripId)
+            .filter { it.placeId == null && !it.confirmed && it.name == UNCONFIRMED_STOP }
+            .forEach { visit ->
+                val name = stopNamer.name(visit.latitude, visit.longitude) ?: return
+                dao.upsertVisit(visit.copy(name = name))
+                scheduleAutoBackup(tripId)
+            }
+    }
+
+    /** Where the user said "Not a stop" while still there; no new stop is made
+     * there until they move away, or it would reappear minutes later. */
+    private data class DismissedStop(val tripId: String, val latitude: Double, val longitude: Double)
+    @Volatile private var dismissedStop: DismissedStop? = null
+
+    private suspend fun updateVisit(sample: TripLocationSampleEntity, previous: TripLocationSampleEntity?) {
+        dismissedStop?.let {
+            if (it.tripId == sample.tripId && distanceMeters(it.latitude, it.longitude, sample.latitude, sample.longitude) > StopDetection.LEAVE_METERS) {
+                dismissedStop = null
+            }
+        }
         val open = dao.openVisit(sample.tripId)
         if (open != null) {
-            if (distanceMeters(open.latitude, open.longitude, sample.latitude, sample.longitude) > 200) {
+            if (distanceMeters(open.latitude, open.longitude, sample.latitude, sample.longitude) > StopDetection.LEAVE_METERS) {
                 dao.upsertVisit(open.copy(departedAt = sample.recordedAt))
             }
             return
         }
-        val window = dao.recentLocations(sample.tripId, sample.recordedAt - EIGHT_MINUTES)
+        if (dismissedStop?.tripId == sample.tripId) return
+        if (previous != null && StopDetection.stayedBetween(previous, sample)) {
+            // A long stay arrives as several gaps in a row: extend the stop that
+            // ended at the previous sample instead of starting another one.
+            val continuing = dao.visitsForTrip(sample.tripId).firstOrNull {
+                it.departedAt != null && it.departedAt >= previous.recordedAt &&
+                    distanceMeters(it.latitude, it.longitude, previous.latitude, previous.longitude) <= StopDetection.LEAVE_METERS
+            }
+            if (continuing != null) {
+                if (sample.recordedAt > continuing.departedAt!!) dao.upsertVisit(continuing.copy(departedAt = sample.recordedAt))
+            } else {
+                createVisit(sample.tripId, previous.latitude, previous.longitude, previous.recordedAt, sample.recordedAt)
+            }
+            return
+        }
+        val window = dao.recentLocations(sample.tripId, sample.recordedAt - StopDetection.MIN_STAY_MILLIS)
             .filter { it.accuracyMeters <= 100f }
-        if (window.size < 3 || window.last().recordedAt - window.first().recordedAt < EIGHT_MINUTES) return
+        if (window.size < 3 || window.last().recordedAt - window.first().recordedAt < StopDetection.MIN_STAY_MILLIS) return
         val centerLat = window.map { it.latitude }.average()
         val centerLng = window.map { it.longitude }.average()
-        if (window.any { distanceMeters(centerLat, centerLng, it.latitude, it.longitude) > 150 }) return
+        if (window.any { distanceMeters(centerLat, centerLng, it.latitude, it.longitude) > StopDetection.STAY_RADIUS_METERS }) return
+        createVisit(sample.tripId, centerLat, centerLng, window.first().recordedAt, departedAt = null)
+    }
+
+    /** A stop at a planned place takes that place's name and counts as confirmed. */
+    private suspend fun createVisit(tripId: String, latitude: Double, longitude: Double, arrivedAt: Long, departedAt: Long?) {
+        val places = dao.placesForTrip(tripId)
+        val place = StopDetection.nearbyPlaces(latitude, longitude, places, StopDetection.AUTO_MATCH_METERS)
+            .firstOrNull()
         dao.upsertVisit(
             TripVisitEntity(
                 id = UUID.randomUUID().toString(),
-                tripId = sample.tripId,
-                name = "Unconfirmed stop",
-                latitude = centerLat,
-                longitude = centerLng,
-                arrivedAt = window.first().recordedAt,
+                tripId = tripId,
+                placeId = place?.id,
+                name = place?.name ?: stopNamer.name(latitude, longitude) ?: UNCONFIRMED_STOP,
+                latitude = latitude,
+                longitude = longitude,
+                arrivedAt = arrivedAt,
+                departedAt = departedAt,
+                confirmed = place != null,
             )
         )
+        scheduleAutoBackup(tripId)
     }
 
-    private fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val earth = 6_371_000.0
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLng = Math.toRadians(lng2 - lng1)
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2) * sin(dLng / 2)
-        return earth * 2 * atan2(sqrt(a), sqrt(1 - a))
+    suspend fun confirmVisitAs(visitId: String, placeId: String) {
+        val visit = dao.getVisit(visitId) ?: return
+        val place = dao.placesForTrip(visit.tripId).firstOrNull { it.id == placeId } ?: return
+        dao.upsertVisit(visit.copy(placeId = place.id, name = place.name, confirmed = true))
+        scheduleAutoBackup(visit.tripId)
     }
 
-    private companion object { const val EIGHT_MINUTES = 8 * 60 * 1000L }
+    suspend fun renameVisit(visitId: String, name: String) {
+        val visit = dao.getVisit(visitId) ?: return
+        val trimmed = name.trim().ifEmpty { return }
+        dao.upsertVisit(visit.copy(placeId = null, name = trimmed, confirmed = true))
+        scheduleAutoBackup(visit.tripId)
+    }
+
+    /** Saves an off-plan stop as a place in the trip and links the stop to it. */
+    suspend fun addVisitToPlan(visitId: String, name: String) {
+        val visit = dao.getVisit(visitId) ?: return
+        val trimmed = name.trim().ifEmpty { return }
+        val place = TripPlaceEntity(
+            id = UUID.randomUUID().toString(),
+            tripId = visit.tripId,
+            name = trimmed,
+            latitude = visit.latitude,
+            longitude = visit.longitude,
+            verification = "supplied",
+        )
+        dao.upsertPlace(place)
+        dao.upsertVisit(visit.copy(placeId = place.id, name = trimmed, confirmed = true))
+        scheduleAutoBackup(visit.tripId)
+    }
+
+    /** Removes an inferred stop; the recorded route is kept. */
+    suspend fun removeVisit(visitId: String) {
+        val visit = dao.getVisit(visitId) ?: return
+        if (visit.departedAt == null) dismissedStop = DismissedStop(visit.tripId, visit.latitude, visit.longitude)
+        dao.deleteVisit(visitId)
+        scheduleAutoBackup(visit.tripId)
+    }
+
+    private fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double =
+        StopDetection.distanceMeters(lat1, lng1, lat2, lng2)
+
+    companion object { const val UNCONFIRMED_STOP = "Unconfirmed stop" }
 }
 
 private fun TripDetail.toBackupJson(locations: List<TripLocationSampleEntity>) = JsonObject(
@@ -210,6 +341,7 @@ private fun TripDetail.toBackupJson(locations: List<TripLocationSampleEntity>) =
             "id" to JsonPrimitive(it.id), "name" to JsonPrimitive(it.name),
             "latitude" to JsonPrimitive(it.latitude), "longitude" to JsonPrimitive(it.longitude),
             "arrived_at" to JsonPrimitive(it.arrivedAt), "departed_at" to (it.departedAt?.let(::JsonPrimitive) ?: JsonNull),
+            "place_id" to (it.placeId?.let(::JsonPrimitive) ?: JsonNull), "confirmed" to JsonPrimitive(it.confirmed),
         )) }),
         "locations" to JsonArray(locations.map { JsonObject(mapOf(
             "latitude" to JsonPrimitive(it.latitude), "longitude" to JsonPrimitive(it.longitude),
