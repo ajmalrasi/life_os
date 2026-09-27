@@ -149,7 +149,7 @@ fun SettingsScreen(
                 ) {
                     Text("Sync LifeOS", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Checks bank alerts, card statements, Priority mail and GitHub, backs up trips, then recomputes scores and insights and waits for Today's brief. Health data comes only when the iPhone pushes it.",
+                        "Checks bank alerts, card statements, Priority mail and GitHub, backs up trips, sends places, then recomputes scores and insights and waits for Today's brief. Health data comes only when the iPhone pushes it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LifeOsColors.OnSurfaceMuted,
                     )

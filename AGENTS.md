@@ -1,5 +1,36 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Places: everyday location tracking (2026-09-28)
+
+Places notes where the user goes each day and ties payments to where they were
+made, so LifeOS can judge unplanned travel and going out (the user overspends on
+food runs and long drives). **One GPS listener serves both Places and Trips:**
+`location/LocationTrackingService` replaced `TripLocationService`; each fix goes
+to `PlacesRepository` (when Places is on) and `TripRepository.record` (when a trip
+is tracked, with its own date/area filters). `TrackingController` (was
+`TripTrackingReconciler`) decides what runs (`TrackingDemand`, `TripChoice`) and
+restarts it from `MainActivity.onResume`, the Places toggle, and `BootReceiver`
+(boot needs "Allow all the time"). One notification, separate Pause trip / Pause
+places actions. Verified on the S24: Places + tracked trip = one GPS client (GMS
+`GoogleLocationManagerService` dump; the app's own uid shows nothing there), pausing
+either leaves the other running, force-stop and APK upgrade restore it on app open.
+The stop rule is shared: `StopDetection.nextStopAction` (trip behaviour unchanged).
+Places lives in its own `lifeos-places.db`; **the raw route is kept on the phone
+until "Delete location history"** (the user wants to map routes later), never
+uploaded. Home is suggested from 3 of the last 7 nights at one place and confirmed
+by the user. A stay a trip also recorded shows once, under the trip's name
+(`PlacesTimeline.sameStay`). Payments: Money's spend (EMI excluded) is matched to
+the stop within ±5 min or the nearest route point within 15 min
+(`PaymentPlaceMatcher`); untimed rows are "without a place", never guessed. Money's
+transaction details show "Where". The phone sends the last 7 days' summaries and
+stops (coords rounded to 3 dp) to `PUT /movement/days` nightly and in Sync
+everything; `DELETE /movement` runs from Delete location history. Backend
+`services/movement.py` feeds `places:*` facts to Insights (`life_evidence`) and the
+weekly recap under `MOVEMENT_JUDGEMENT_RULE` (patterns over weeks, trip days are
+planned travel), and Ask has `get_movement`. Not done: Today's brief has no Places
+fact yet; tapping "Where" doesn't open that day in Places; no map view yet (the
+route is stored for it).
+
 ## Today workout coaching (2026-09-28)
 
 The Today brief counted rest days as gaps ("most recent being 2 days ago"
