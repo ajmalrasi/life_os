@@ -13,7 +13,10 @@ when the iPhone last pushed. It runs as `SyncAllWorker`, a foreground
 WorkManager job (`dataSync` type, unique `sync_all`, KEEP, needs network), so
 closing or swiping away the app no longer cancels it (verified on the S24);
 Settings mirrors its step/result and a result notification is posted when the
-app isn't on screen. Visibility must be `== IMPORTANCE_FOREGROUND`: the job's
+app isn't on screen. Also 2026-09-28: both HAE automations now push to the
+Jetson's Tailscale IP (see §7). In API logs a tailnet request shows as
+`172.18.0.1` (Docker gateway), a home-Wi-Fi one as `192.168.3.212`. A manual
+run with nothing new since the last sync sends no request at all. Visibility must be `== IMPORTANCE_FOREGROUND`: the job's
 own foreground service makes a `<= VISIBLE` check always true.
 
 ## Today update (2026-09-25; supersedes older sleep-binning/state notes below)
@@ -1320,7 +1323,10 @@ ones it understands. `HealthRecordType` is the "known types" list, not a whiteli
   confirmed pushing recent sleep+vitals with a short, non-overlapping window. The
   settings below are the working config (keep as reference if it ever needs
   rebuilding). *Automated Exports → New Automation → REST API*:
-  - **URL** `http://192.168.3.30:8000/health/auto-export` · **POST** (only option)
+  - **URL** `http://100.111.253.18:8000/health/auto-export` (the Jetson's
+    Tailscale IP, since 2026-09-28; the iPhone `iphone183` / `100.98.51.7` is on
+    the tailnet, so pushes land away from home Wi-Fi too; keep Tailscale's
+    VPN On Demand on) · **POST** (only option)
     · **no headers** (endpoint is unauthenticated).
   - **Data Type** = Health Metrics → **Select Health Metrics**: Sleep Analysis +
     vitals only (Heart Rate, Heart Rate Variability, Resting Heart Rate, Blood
