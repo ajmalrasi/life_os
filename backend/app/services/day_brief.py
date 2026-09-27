@@ -30,7 +30,7 @@ from app.repositories.github_repo import GithubRepository
 from app.repositories.health_repo import HealthRepository
 from app.repositories.mood_repo import MoodRepository
 from app.services.insight_synthesizer import EvidenceFact
-from app.services.training import WORKOUT_JUDGEMENT_RULE, workout_statement, workout_summary
+from app.services.training import OPEN_GAP_MARKER, WORKOUT_JUDGEMENT_RULE, workout_statement, workout_summary
 from app.services.openclaw import InferenceWorkload, OpenClawClient, OpenClawUnavailable
 
 logger = logging.getLogger("lifeos.day_brief")
@@ -58,9 +58,13 @@ _SYSTEM_PROMPT = (
     "- Use the current time. Few steps or commits early in the day are normal, not avoidance.\n"
     "- Missing data is not zero. If last night's sleep or today's vitals have not arrived, say so.\n"
     "- " + WORKOUT_JUDGEMENT_RULE + "\n"
-    "- workout_note: one sentence (at most 20 words) judging the recent workouts from the "
-    "workouts fact, as a routine: how often and how recently. workout_attention: true only "
-    "if the routine is a real problem worth acting on, such as long gaps between sessions.\n"
+    "- Workouts belong only in workout_note; keep them out of the headline and summary, which "
+    "are about today.\n"
+    "- workout_note: one sentence (at most 20 words) from a supportive coach about the workout "
+    "routine. When it is going well, say so and suggest what to build on next. Never count the "
+    "days since the last workout and never call rest days a gap. Only when the workouts fact "
+    "states a current open gap, encourage a restart. workout_attention: true only when the "
+    "workouts fact states a current open gap.\n"
     "- Use only numbers that appear in the facts. Do not calculate new ones.\n"
     "- The facts already say whether a reading is better or worse than usual. Repeat that; never reverse it.\n"
     "- Describe what the numbers show. Do not claim one thing caused another.\n"
@@ -201,7 +205,7 @@ def compute_day_facts(db: Session, day: date, now: datetime | None = None) -> li
         ))
 
     # --- training: workouts, as opposed to walking ---
-    facts.append(EvidenceFact("workouts", workout_statement(workout_summary(health, day))))
+    facts.append(EvidenceFact("workouts", workout_statement(workout_summary(health, day), history=False)))
 
     # --- work output ---
     github = GithubRepository(db)
@@ -292,6 +296,14 @@ _STOP_WORK = re.compile(
     r"\b(stop|quit|cease|halt|pause)\b[^.]{0,30}\b(work|working|output|coding|job)\b", re.IGNORECASE
 )
 
+# Counting rest days ("2 days ago", "a two-day gap") is what the brief must not
+# do unless a real gap is open. Checked in code, since the prompt alone didn't hold.
+_GAP_TALK = re.compile(
+    r"\bgaps?\b|\blaps\w*|\b(\d+|one|two|three|four|five|six|a few|several)[\s-]+days?\s+"
+    r"(ago|since|off|without|of rest|break)\b|\bdays? since\b|\bsince (your|the) last (workout|session)\b",
+    re.IGNORECASE,
+)
+
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
@@ -320,6 +332,21 @@ def validate_brief(reply: dict, facts: list[EvidenceFact]) -> dict | None:
     if _STOP_WORK.search(suggestion + " " + summary):
         logger.info("day brief rejected: tells the user to stop working")
         return None
+    workouts = next((f.statement for f in facts if f.id == "workouts"), "")
+    # A real lapse: an open 7+ day gap, or no workouts at all in the window
+    # (only when workouts are synced; otherwise their absence is unknown).
+    lapsed = OPEN_GAP_MARKER in workouts or (
+        "No workouts in the last" in workouts and "not synced" not in workouts
+    )
+    if not lapsed:
+        if _GAP_TALK.search(headline + " " + summary):
+            logger.info("day brief rejected: counts rest days as a workout gap")
+            return None
+        if _GAP_TALK.search(workout_note):
+            logger.info("day brief workout note dropped: counts rest days as a gap")
+            workout_note = ""
+        # Attention is for a real lapse only, never a rest day or two.
+        workout_attention = False
     known = set()
     for f in facts:
         known |= _numbers(f.statement)

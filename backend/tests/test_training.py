@@ -95,7 +95,7 @@ def test_one_session_in_a_quiet_stretch_shows_the_gaps_on_both_sides(client):
     # Both sides of the lone walk, stated plainly.
     assert f"all ended since (history, not the current state): {md(82)} to {md(58)} (24 days); {md(58)} to {md(21)} (37 days)." in statement
     assert f"Current gap, still open: {md(21)} to today (21 days so far)." in statement
-    assert statement.startswith("Right now: the most recent workout was 21 days ago, with 0 sessions")
+    assert statement.startswith("Right now: the most recent workout was 21 days ago. Worked out on 0 of the past 7 days")
 
 
 def test_ended_gap_is_not_the_current_state(client):
@@ -110,6 +110,6 @@ def test_ended_gap_is_not_the_current_state(client):
     )
     statement = workout_statement(workout_summary(repo, today))
     db.close()
-    assert statement.startswith("Right now: the most recent workout was 1 day ago, with 1 session in")
+    assert statement.startswith("Right now: the most recent workout was 1 day ago. Worked out on 1 of the past 7 days (1 session)")
     assert "(39 days)." in statement and "all ended since" in statement
     assert "Current gap" not in statement

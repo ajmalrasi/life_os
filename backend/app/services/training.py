@@ -63,6 +63,10 @@ class WorkoutSummary:
     before_window: WorkoutSession | None
     sessions_last_7: int
     sessions_prev_7: int
+    # Distinct days with a workout. The watch logs one evening's strength,
+    # cycling and walk as three sessions, so days are the honest routine count.
+    days_last_7: int
+    days_prev_7: int
     # False until the phone has sent a workouts export: absence is then unknown.
     workouts_synced: bool
     today: date
@@ -83,6 +87,7 @@ def workout_summary(health: HealthRepository, today: date) -> WorkoutSummary:
         day = workout_day(older)
         before = next((s for s in reversed(health.workout_sessions(day, day))), None)
     last = recent[-1] if recent else before
+    ages = {(today - workout_day(w)).days for w in recent}
     return WorkoutSummary(
         recent=recent,
         weekly_counts=weekly,
@@ -92,22 +97,27 @@ def workout_summary(health: HealthRepository, today: date) -> WorkoutSummary:
         before_window=before,
         sessions_last_7=weekly[-1],
         sessions_prev_7=weekly[-2],
+        days_last_7=sum(1 for a in ages if a < 7),
+        days_prev_7=sum(1 for a in ages if 7 <= a < 14),
         workouts_synced=health.workout_export_seen_at() is not None,
         today=today,
     )
 
 
-def workout_statement(s: WorkoutSummary) -> str:
-    """Every session of the last weeks with its effort, and the weekly rhythm."""
+def workout_statement(s: WorkoutSummary, history: bool = True) -> str:
+    """Every session of the last weeks with its effort, and the weekly rhythm.
+
+    ``history=False`` leaves out the ended gaps: the Today brief coaches the
+    routine as it is now, and a list of old gaps only invites gap-counting."""
     weeks = WINDOW_WEEKS
     parts: list[str] = []
     if s.last is not None:
         # The current state leads, so an old gap listed below is never read as now.
         parts.append(
             f"Right now: the most recent workout was {s.days_since_last} "
-            f"day{'' if s.days_since_last == 1 else 's'} ago, with {s.sessions_last_7} "
-            f"session{'' if s.sessions_last_7 == 1 else 's'} in the past 7 days "
-            f"({s.sessions_prev_7} the week before)."
+            f"day{'' if s.days_since_last == 1 else 's'} ago. Worked out on {s.days_last_7} of the "
+            f"past 7 days ({s.sessions_last_7} session{'' if s.sessions_last_7 == 1 else 's'}), "
+            f"and on {s.days_prev_7} day{'' if s.days_prev_7 == 1 else 's'} the week before."
         )
     if s.recent:
         listed = s.recent[-_MAX_LISTED:]
@@ -127,7 +137,7 @@ def workout_statement(s: WorkoutSummary) -> str:
         + ", ".join(f"{n}/{m:.0f}" for n, m in zip(s.weekly_counts, s.weekly_minutes)) + "."
     )
     ended, current = _gaps(s)
-    if ended:
+    if ended and history:
         parts.append(
             "Earlier gaps of a week or more, all ended since (history, not the current state): "
             + "; ".join(ended) + "."
@@ -165,9 +175,10 @@ WORKOUT_JUDGEMENT_RULE = (
     "real (a few minutes or very little energy is not). What matters most is how "
     "often and how recently: use the weekly counts and the days since the last "
     "workout. Read the week-by-week figures as a trend: is there a routine, is it "
-    "building or fading, when did it stop? One good session in several quiet weeks is "
-    "not a routine; say how long the gaps were on both sides of it. An ended gap is "
-    "history: never call workouts lapsed, stopped or broken unless there is a current "
-    "open gap; if the last workout was days ago, judge whether the routine is restarting. "
+    "building or fading? Count workout days, not sessions: one evening of strength plus "
+    "cycling is one workout day. Rest days between workouts are part of a routine, never "
+    "a gap or a lapse, so do not count them out. One good session in several quiet weeks "
+    "is not yet a routine. An ended gap is history: never call workouts lapsed, stopped "
+    "or broken unless there is a current open gap; then encourage a restart. "
     "Weeks without regular workouts matter more than a day's HRV or sleep dip."
 )

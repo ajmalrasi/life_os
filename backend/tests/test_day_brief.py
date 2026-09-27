@@ -260,6 +260,10 @@ def test_walks_count_as_workouts(client):
 
 def test_brief_keeps_the_models_workout_judgement(client):
     today = date.today()
+    # A real lapse: the last workout was 20 days ago, so attention is allowed.
+    client.post("/health/auto-export", json={"data": {"workouts": [
+        _workout("Traditional Strength Training", _at(today - timedelta(days=20), 19), 45, kj=1200),
+    ]}})
     db = SessionLocal()
     facts = day_brief.compute_day_facts(db, today)
     db.close()
@@ -326,3 +330,42 @@ def test_a_brief_telling_the_user_to_stop_working_is_rejected(client):
     assert day_brief.validate_brief(reply, facts) is None
     ok = {**reply, "suggestion": "Take a 20-minute walk and keep tonight light."}
     assert day_brief.validate_brief(ok, facts) is not None
+
+
+def _brief(**over):
+    reply = {
+        "state": "execution_mode", "confidence": "medium", "headline": "Steady start",
+        "summary": "HRV and resting heart rate are better than usual.",
+        "suggestion": "Take a walk after lunch.", "cites": ["now"],
+        "workout_note": "Two strong evenings of strength work; add a third this week.",
+        "workout_attention": False,
+    }
+    reply.update(over)
+    return reply
+
+
+def test_rest_days_are_not_a_workout_gap(client):
+    """A Sunday off must not read as 'a 2 day gap' (the 2026-09-28 brief did)."""
+    today = date.today()
+    client.post("/health/auto-export", json={"data": {"workouts": [
+        _workout("Functional Strength Training", _at(today - timedelta(days=3), 21), 16, kj=340),
+        _workout("Indoor Cycling", _at(today - timedelta(days=3), 21, 20), 10, kj=340),
+        _workout("Traditional Strength Training", _at(today - timedelta(days=2), 21), 35, kj=1060),
+    ]}})
+    db = SessionLocal()
+    facts = day_brief.compute_day_facts(db, today)
+    db.close()
+    workouts = next(f.statement for f in facts if f.id == "workouts")
+    # Workout days, not the watch's sessions, and no list of old gaps.
+    assert "Worked out on 2 of the past 7 days (3 sessions)" in workouts
+    assert "Earlier gaps" not in workouts
+
+    # Coaching is kept, and never flagged without a real lapse.
+    kept = day_brief.validate_brief(_brief(workout_attention=True), facts)
+    assert kept["workout_note"].startswith("Two strong evenings") and kept["workout_attention"] is False
+    # Counting rest days in the note drops just the note...
+    for note in ("Last session was 2 days ago.", "A two-day gap since your last workout.", "Watch the gaps."):
+        assert day_brief.validate_brief(_brief(workout_note=note), facts)["workout_note"] is None
+    # ...and in the summary rejects the brief, so the last good one stays.
+    counted = "Good recovery; the most recent workout was 2 days ago."
+    assert day_brief.validate_brief(_brief(summary=counted), facts) is None

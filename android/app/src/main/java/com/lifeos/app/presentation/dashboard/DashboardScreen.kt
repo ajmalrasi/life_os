@@ -185,6 +185,15 @@ private fun TodayBriefCard(today: TodaySummary?) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = LifeOsColors.Primary,
                 )
+                // The coach's word on workouts. A flagged note goes to Needs you
+                // instead, so it isn't said twice.
+                brief.workoutNote?.takeIf { it.isNotBlank() && !brief.workoutAttention }?.let { note ->
+                    Text(
+                        "Workouts · $note",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LifeOsColors.OnSurfaceMuted,
+                    )
+                }
             } else {
                 Text(
                     when (today?.briefStatus) {
