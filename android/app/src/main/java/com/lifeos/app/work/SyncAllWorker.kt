@@ -83,7 +83,9 @@ class SyncAllWorker @AssistedInject constructor(
     private fun appIsVisible(): Boolean {
         val info = ActivityManager.RunningAppProcessInfo()
         ActivityManager.getMyMemoryState(info)
-        return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+        // Exactly FOREGROUND: this job's own foreground service ranks as
+        // FOREGROUND_SERVICE, which a <= VISIBLE check would count as on screen.
+        return info.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
     }
 
     companion object {

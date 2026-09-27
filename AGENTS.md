@@ -1,5 +1,21 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Sync everything update (2026-09-28)
+
+Settings' **Sync everything** now runs every source LifeOS can pull and waits
+for all of it: bank mail + card statements, Priority mail, Pulse, a backup of
+every trip (regardless of the auto-backup setting), the GitHub scan
+(`/collectors/execution/sync`, awaited), `/analytics/recompute?scan_execution=false`
+(skips the backend's duplicate background scan), then polls `/analytics/today`
+until the brief is no longer `refreshing` (60 s cap; otherwise it reports
+"Today's brief" as not refreshed). Health can't be pulled, so the result says
+when the iPhone last pushed. It runs as `SyncAllWorker`, a foreground
+WorkManager job (`dataSync` type, unique `sync_all`, KEEP, needs network), so
+closing or swiping away the app no longer cancels it (verified on the S24);
+Settings mirrors its step/result and a result notification is posted when the
+app isn't on screen. Visibility must be `== IMPORTANCE_FOREGROUND`: the job's
+own foreground service makes a `<= VISIBLE` check always true.
+
 ## Today update (2026-09-25; supersedes older sleep-binning/state notes below)
 
 Today is no longer a rule-based state plus an averaged "Life score". Three
