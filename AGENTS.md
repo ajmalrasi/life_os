@@ -1,5 +1,18 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Today workout coaching (2026-09-28)
+
+The Today brief counted rest days as gaps ("most recent being 2 days ago"
+after a Sunday off). The workout note is now a supportive coach's line kept
+out of the headline/summary and shown in the brief card ("Workouts · ...";
+a flagged note goes to Needs you instead). Workouts are counted as workout
+*days* (the watch logs one evening as 3 sessions); the brief's fact drops the
+ended-gap history (`workout_statement(history=False)`). Code guards in
+`validate_brief`: without a real lapse (open 7+ day gap, or no workouts in 13
+weeks while synced) gap talk drops the note or rejects the brief, and
+`workout_attention` is forced false. The shared `WORKOUT_JUDGEMENT_RULE` also
+says rest days are never a gap.
+
 ## Sync everything update (2026-09-28)
 
 Settings' **Sync everything** now runs every source LifeOS can pull and waits
