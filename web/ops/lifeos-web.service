@@ -1,0 +1,16 @@
+[Unit]
+Description=LifeOS private web app
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/lifeos-web
+EnvironmentFile=-%h/.config/lifeos-web.env
+ExecStart=/usr/bin/python3 %h/apps/lifeos-web/server.py --host 0.0.0.0 --port 8090
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

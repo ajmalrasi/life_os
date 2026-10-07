@@ -1,5 +1,69 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## iPhone web client on Raspberry Pi (2026-10-07)
+
+The S24 was wiped and given to the user's dad. iPhone 17 is the main phone;
+iPhone 12 mini is spare. The user has no paid Apple Developer membership and
+requested an essential web app hosted on the Pi at `192.168.3.20`.
+`web/` now contains a mobile HTML/CSS/JS client and Python stdlib same-origin
+proxy. Deployed to `/home/ajmalrasi/apps/lifeos-web` via SSH alias `rpi`
+(`~/.ssh/rpi_key`); `lifeos-web.service` is an enabled user unit with linger
+already on, listening on **8090** (80/8000/8080 serve other existing apps).
+Open **http://192.168.3.20:8090/** on home Wi-Fi and add to Safari's Home Screen.
+The Jetson API/database/model remain in place; no Jetson config was changed.
+
+Includes Today brief with bounded refresh polling, Pulse and optional note,
+everyday INR spend matching Android's `emi`/`emi_fees` exclusions, budgets,
+latest unpaid card statements, current card cycles, Priority full messages,
+streaming Ask/citations/interruption handling, existing Insights/weekly recap,
+read-only backed-up trip plans, and source freshness. There is no location
+tracking, native HealthKit access, offline cache, or web Sync everything.
+Health Auto Export and existing server collectors continue to ingest data.
+Trip backup revision 22 (Delhi Family Trip) was present and verified readable;
+Places raw routes were phone-only and cannot be reconstructed from summaries.
+
+The app follows the existing home-LAN trust model (no separate login).
+It is not published externally. The proxy limits readable routes, enables only
+Pulse/Ask and explicit Money record/settings writes, rejects cross-site requests and unknown Host headers, escapes
+mail/model text, and never caches API responses. If backend auth is enabled,
+put `LIFEOS_API_TOKEN` in the Pi's private `~/.config/lifeos-web.env`, never in
+frontend assets. See `web/README.md` for deployment and capability details.
+Verified at 375px and 402px mobile widths, live page reads, full-mail retrieval,
+trip itinerary, and a sourced Ask answer matching Money's October total.
+One Ask attempt failed with the backend's "Could not count the local model
+input"; retry completed. No canned answer or runtime changes were introduced.
+Accounting/date/bill tests and proxy token/CSRF/allowlist tests pass. Pulse save
+transport was checked against a test upstream; no invented check-in was written
+to production.
+
+Money now provides Overview/Transactions/Cards with all native spending periods,
+custom dates, comparisons, chart drilldowns, multi-category/bank-UPI/currency/EMI
+filters, complete transaction lists/sorts/details, category edits, refunds and
+repayment matching with Undo, full statements/line items/paid status, exact current
+cycles, recurring charges/price changes, budgets, income and savings goals.
+`POST /web/money-sync` starts a guarded Pi job pulling bank mail then statements;
+it survives page closure, but not a service restart. Production reads and mobile
+layout were checked; record edits were tested only against an isolated synthetic
+ledger. No real refunds, repayments, budgets, profile or paid statuses were changed.
+Phone location history and native background bill notifications remain unavailable.
+
+## Offline reboot clock repair (2026-10-07)
+
+During the October 2–6 internet outage, scheduled mail/GitHub pulls kept
+attempting and failed. Money and Priority caught up after connectivity returned
+on October 6. On that day's reboot, the Jetson briefly used a 1970 wall clock
+before NTP synchronized at 12:31:07 IST. This produced 64 health rows with bad
+`created_at` values (measurement start/end dates were correct), plus an empty
+`daily_briefs` and `daily_states` entry for 1970-01-01. Repaired on October 7:
+the boot journal's realtime/monotonic offsets reconstruct the receipt times as
+October 6, 12:30:40–12:30:41 IST (shift: 1,791,269,999,364,909 microseconds);
+only `created_at` was changed, and the two empty 1970 entries were removed.
+The pre-repair rows and reconstruction evidence are backed up privately on
+the Jetson at `/home/ajmalrasi/lifeos-maintenance/2026-10-07-clock-repair-before.json`.
+Do not infer receipt dates from measurement dates or from Docker's displayed
+uptime; check NTP and journal monotonic times after an offline reboot. NTP is
+enabled, but startup currently does not wait for it before accepting pushes.
+
 ## Places: everyday location tracking (2026-09-28)
 
 Places notes where the user goes each day and ties payments to where they were
