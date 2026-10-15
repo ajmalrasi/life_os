@@ -215,6 +215,23 @@ def test_times_are_dropped_unless_quoted_from_the_email():
     assert result.details.event_start.isoformat() == "2026-08-28T09:30:00+00:00"
 
 
+def test_listing_dates_advance_the_cursor(monkeypatch):
+    # gog lists "YYYY-MM-DD HH:MM" in local time; it must not read as epoch 0.
+    monkeypatch.setenv("TZ", "Asia/Kolkata")
+    import time
+
+    time.tzset()
+    try:
+        epoch = PrioritySyncService._meta_epoch({"date": "2026-10-15 19:37"})
+        assert epoch == int(datetime(2026, 10, 15, 14, 7, tzinfo=timezone.utc).timestamp())
+        assert PrioritySyncService._meta_epoch({"date": "Thu, 15 Oct 2026 14:07:00 +0000"}) == epoch
+        assert PrioritySyncService._meta_epoch({"internalDate": "1792073220000"}) == 1792073220
+        assert PrioritySyncService._meta_epoch({"date": "soon"}) == 0
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()
+
+
 def test_unavailable_model_defers_instead_of_guessing():
     with pytest.raises(PriorityModelUnavailable):
         classify(_message(), client=FakeModel(fail=True))

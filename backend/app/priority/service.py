@@ -86,12 +86,20 @@ class PrioritySyncService:
                     return raw // 1000 if raw > 10_000_000_000 else raw
             except (TypeError, ValueError):
                 pass
+        raw_date = str(meta.get("date") or "").strip()
         try:
-            parsed = parsedate_to_datetime(str(meta.get("date") or ""))
+            parsed = parsedate_to_datetime(raw_date)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             return int(parsed.timestamp())
         except (TypeError, ValueError, OverflowError):
+            pass
+        # `gog gmail messages list` gives "YYYY-MM-DD HH:MM" in the process's
+        # local zone (TZ, Asia/Kolkata in the container). Without this the
+        # cursor never advanced and new rows had no received time.
+        try:
+            return int(datetime.strptime(raw_date, "%Y-%m-%d %H:%M").astimezone().timestamp())
+        except (ValueError, OverflowError):
             return 0
 
     def _calendar_invite(self, provider: GmailProvider, message: MailMessage) -> CalendarInvite | None:
