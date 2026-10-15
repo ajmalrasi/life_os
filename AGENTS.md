@@ -1,5 +1,22 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Priority outage repair (2026-10-15)
+
+Priority showed nothing after October 6. Mail kept being fetched hourly (root
+crontab `0 * * * *` on the Jetson; the `lifeos-priority-sync` systemd timer in
+the repo is not installed), but the model was down: after reboots on Oct 7 and
+Oct 13 the TensorRT engine hit CUDA out-of-memory at startup, systemd gave up
+after three starts, and the watchdog skipped inactive units. 384 messages used
+their 5 model attempts and became `failed`. `watch_openclaw_tensorrt.sh` now
+resets and starts a *failed* model unit (at most every 15 min). Separately,
+`gog gmail messages list` returns `date` as `YYYY-MM-DD HH:MM` local time;
+`_meta_epoch` read that as 0, so the Priority cursor was stuck at Sep 24 and
+new rows had no `received_at` until classified. Both fixed in `a778f4b`; the
+failed rows were reset to pending (received_at backfilled from that header in
+IST) and reprocessed. A Priority sync reports success even when every message
+is deferred, so check `mail_messages.processing_state`/`last_error`, not
+`mail_sync_states.last_success_at`.
+
 ## iPhone web client on Raspberry Pi (2026-10-07)
 
 The S24 was wiped and given to the user's dad. iPhone 17 is the main phone;
