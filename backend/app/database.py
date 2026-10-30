@@ -52,6 +52,29 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def get_read_db() -> Generator[Session, None, None]:
+    """A request-scoped database-enforced read-only session for analytical reads."""
+    with engine.connect() as connection:
+        dialect = connection.dialect.name
+        if dialect not in {"postgresql", "sqlite"}:
+            raise RuntimeError("Unsupported read-only database dialect")
+        transaction = connection.begin()
+        try:
+            if dialect == "postgresql":
+                connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+                connection.exec_driver_sql("SET LOCAL statement_timeout = '15000ms'")
+            else:
+                connection.exec_driver_sql("PRAGMA query_only = ON")
+            with Session(bind=connection, autoflush=False) as db:
+                yield db
+        finally:
+            if transaction.is_active:
+                transaction.rollback()
+            if dialect == "sqlite":
+                connection.exec_driver_sql("PRAGMA query_only = OFF")
+                connection.rollback()
+
+
 def init_db() -> None:
     """Create all tables via create_all.
 

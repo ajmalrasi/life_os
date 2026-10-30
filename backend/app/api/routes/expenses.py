@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.statements import build_categorizer
 from app.config import Settings, get_settings
-from app.database import get_db
+from app.database import get_db, get_read_db
+from app.schemas.data_queries import MoneyQuery
+from app.services.money_query import MoneyQueryError, query_money
 from app.repositories.expense_repo import ExpenseRepository
 from app.schemas.expense import (
     ExpenseRebuildResult,
@@ -38,6 +40,19 @@ from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
 from app.services.sync_sources import SOURCE_BANK_MAIL
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
+
+
+@router.post("/query", response_model=dict)
+def query_transactions(
+    payload: MoneyQuery, db: Session = Depends(get_read_db)
+) -> dict:
+    """Read exact money analytics, filters and comparisons. POST carries a structured read;
+    no rows are changed. Uses the same service as Ask, including its EMI-inclusive basis.
+    """
+    try:
+        return query_money(db, **payload.model_dump(mode="json", exclude_none=True))
+    except MoneyQueryError:
+        raise HTTPException(422, "LifeOS rejected the money query") from None
 
 
 def _to_out(rows, db: Session) -> list[TransactionOut]:

@@ -3,16 +3,19 @@ from __future__ import annotations
 import threading
 from datetime import date, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_token
 from app.api.routes.analytics import refresh_day_brief_bg
-from app.database import get_db
+from app.database import get_db, get_read_db
 from app.repositories.health_repo import HealthRepository
 from app.schemas.health import AutoExportIn, HealthBatchIn, HealthRecordIn, IngestResult
 from app.services.analytics import AnalyticsService
 from app.services.apple_ingest import parse_export
+from app.schemas.data_queries import HealthQuery
+from app.services.health_query import read_health_records
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -20,6 +23,32 @@ router = APIRouter(prefix="/health", tags=["health"])
 # they often fire in the same second. Each push upserts records and recomputes
 # the same days, so pushes are handled one at a time.
 _AUTO_EXPORT_LOCK = threading.Lock()
+
+
+def health_read_query(
+    request: Request,
+    days: int = Query(14, ge=1, le=90),
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> HealthQuery:
+    if set(request.query_params) - {"days", "start_date", "end_date"}:
+        raise HTTPException(422, "Unknown health query parameter")
+    try:
+        return HealthQuery(days=days, start_date=start_date, end_date=end_date)
+    except ValidationError:
+        raise HTTPException(422, "Invalid health date window; maximum 90 days") from None
+
+
+@router.get("/records", response_model=dict, dependencies=[Depends(require_token)])
+def get_health_records(
+    query: HealthQuery = Depends(health_read_query),
+    db: Session = Depends(get_read_db),
+) -> dict:
+    """Read synced daily health measurements, workouts and freshness; no model or phone calls."""
+    result = read_health_records(db, **query.model_dump(mode="json", exclude_none=True))
+    if "error" in result:
+        raise HTTPException(422, "LifeOS rejected the health query")
+    return result
 
 
 @router.post("/batch", response_model=IngestResult, dependencies=[Depends(require_token)])

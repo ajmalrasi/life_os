@@ -1,5 +1,18 @@
 # LifeOS — Agent Handoff & Working Guide
 
+## Native health/money read APIs and Git workflow (2026-10-31)
+
+User instruction: always push directly to main; do not create branches or PRs.
+`GET /health/records` and `POST /expenses/query` are native LifeOS routes using
+normal API-token auth and database-enforced read-only transactions. Health reads
+now live in `services/health_query.py`, shared by Ask and the endpoint; money uses
+the existing guarded `money_query.py`. The separate `lifeos-mcp` repo is a thin
+HTTP client with all 40 standard tools; no adapter package, separate adapter token
+or optional-tool switch is needed. No schema or source-collection change. Preserve
+Ask's EMI-inclusive semantics and Money's everyday EMI exclusions. MCP client
+connections and Ask-to-MCP transport migration remain separate work.
+
+
 ## Priority outage repair (2026-10-15)
 
 Priority showed nothing after October 6. Mail kept being fetched hourly (root
