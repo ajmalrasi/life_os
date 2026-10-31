@@ -144,15 +144,23 @@ def _validate_and_normalize(row: dict[str, Any], month: str) -> dict[str, Any]:
 
 
 def _strong_match(candidate: dict[str, Any], existing: dict[str, Any]) -> bool:
-    identity = ("txn_date", "amount", "currency", "direction", "account")
-    exact = all(str(candidate[k]) == str(existing[k]) for k in identity if k != "account")
-    exact = exact and _same_account(candidate["account"], existing["account"])
-    same_message = (candidate["gmail_message_id"] == existing["gmail_message_id"] and
-                    candidate["reference"] == existing["reference"])
+    identity = ("txn_date", "amount", "currency", "direction")
+    exact = all(str(candidate[k]) == str(existing[k]) for k in identity)
+    same_message_reference = (
+        candidate["gmail_message_id"] == existing["gmail_message_id"]
+        and bool(candidate["reference"])
+        and candidate["reference"] == existing["reference"]
+    )
+    same_message_without_reference = (
+        candidate["gmail_message_id"] == existing["gmail_message_id"]
+        and candidate["reference"] is None
+        and existing["reference"] is None
+        and _same_account(candidate["account"], existing["account"])
+    )
     same_reference = (bool(candidate["reference"])
                       and candidate["reference"] == existing["reference"]
                       and _same_card_instrument(candidate["account"], existing["account"]))
-    return exact and (same_message or same_reference)
+    return exact and (same_message_reference or same_message_without_reference or same_reference)
 
 
 def _same_account(left: str | None, right: str | None) -> bool:

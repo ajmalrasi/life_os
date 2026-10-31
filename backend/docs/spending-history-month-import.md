@@ -18,7 +18,10 @@ source hashes and binds each candidate back to its parser result. The plan
 counts proposed rows, strong duplicates, statement overlaps, conflicts, and
 excluded non-INR rows. Account labels are normalized, and statement/live EMI
 overlap suppression requires matching card identity and merchant context.
-Repeated unreferenced purchases remain separate.
+An exact same-message reference can match even when the older row has no account
+label. A same-message match without a reference still needs matching account
+labels, and a reference across different messages requires the same explicit
+instrument. Repeated unreferenced purchases remain separate.
 
 Review the plan, then apply with its exact SHA and a unique run ID:
 
