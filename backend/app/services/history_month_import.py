@@ -29,7 +29,6 @@ from app.services.reconcile import (
 )
 
 PRIMARY_ACCOUNT = "mail2ajmalrasi@gmail.com"
-EXCLUDED_AMBIGUOUS_MESSAGE = "19e24565fd4849bd"
 PLAN_VERSION = 1
 _MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 _CARD_PAYMENT_RECEIPT = re.compile(
@@ -80,9 +79,9 @@ def _all_db_snapshot(db: Session, month: str) -> tuple[str, list[dict[str, Any]]
     rows = db.execute(select(Transaction).order_by(Transaction.id)).scalars().all()
     snapshot = [_row_dict(row) for row in rows]
     first, following = _month_bounds(month)
-    may_rows = [r for r in snapshot if first.isoformat() <= r["txn_date"] < following.isoformat()]
+    month_rows = [r for r in snapshot if first.isoformat() <= r["txn_date"] < following.isoformat()]
     outside = [r for r in snapshot if not first.isoformat() <= r["txn_date"] < following.isoformat()]
-    return _json_hash(snapshot), may_rows, len(outside), _json_hash(outside)
+    return _json_hash(snapshot), month_rows, len(outside), _json_hash(outside)
 
 
 def _validate_and_normalize(row: dict[str, Any], month: str) -> dict[str, Any]:
@@ -125,7 +124,7 @@ def _validate_and_normalize(row: dict[str, Any], month: str) -> dict[str, Any]:
     # Preserve a compact, inspectable provenance pointer without storing the
     # model's full response or any API credential.
     raw_snippet = json.dumps({
-        "history_import": "may-2026-deepseek-reviewed",
+        "history_import": f"{row.get('import_month', '')}-primary-mailbox",
         "source_hash": row.get("source_hash", ""),
         "parser": row.get("parser", ""),
         "review_note": row.get("review_note", ""),
@@ -231,26 +230,21 @@ def _candidate_category(candidate: dict[str, Any], handles: set[str], names: set
     return None
 
 
-def plan_import(db: Session, rows: list[dict[str, Any]], owner_identities: list[str]) -> dict[str, Any]:
+def plan_import(db: Session, rows: list[dict[str, Any]], owner_identities: list[str],
+                month: str = "2026-05") -> dict[str, Any]:
     """Build a JSON-safe dry-run plan; performs no database writes."""
     if not isinstance(rows, list):
         raise ValueError("rows must be a list")
-    # This import is intentionally single-month, so callers cannot broaden it
-    # by mixing dates in one payload.
-    month = "2026-05"
+    _month_bounds(month)
     prepared, excluded, invalid = [], [], []
     for source_row in rows:
-        if source_row.get("message_id") == EXCLUDED_AMBIGUOUS_MESSAGE:
-            excluded.append({"message_id": EXCLUDED_AMBIGUOUS_MESSAGE,
-                             "reason": "ambiguous foreign remittance excluded by reviewed scope"})
-            continue
         if str(source_row.get("currency", "INR")).upper() != "INR":
             excluded.append({"message_id": source_row.get("message_id"),
-                             "reason": "non-INR row excluded from approved May import"})
+                             "reason": "non-INR row excluded from INR import"})
             continue
-        prepared.append(_validate_and_normalize(source_row, month))
+        prepared.append(_validate_and_normalize({**source_row, "import_month": month}, month))
 
-    db_hash, may_snapshot, outside_count, outside_hash = _all_db_snapshot(db, month)
+    db_hash, month_snapshot, outside_count, outside_hash = _all_db_snapshot(db, month)
     existing_rows = db.execute(select(Transaction).order_by(Transaction.id)).scalars().all()
     existing_dicts = [_row_dict(row) for row in existing_rows]
     handles, names = _owner_identities(owner_identities)
@@ -297,7 +291,7 @@ def plan_import(db: Session, rows: list[dict[str, Any]], owner_identities: list[
             continue
         if candidate.get("reference"):
             strong_input_seen.append(candidate)
-        dedup = f"hmay:2026-05:{_json_hash(candidate)[:48]}"
+        dedup = f"history:{month}:{_json_hash(candidate)[:48]}"
         candidate["dedup_key"] = dedup
         same_mail = by_message.get(candidate["gmail_message_id"], [])
         if any(_strong_match(candidate, old) for old in existing_dicts):
@@ -321,7 +315,9 @@ def plan_import(db: Session, rows: list[dict[str, Any]], owner_identities: list[
         "version": PLAN_VERSION, "month": month, "account": PRIMARY_ACCOUNT,
         "owner_identities": list(owner_identities), "source_rows": rows,
         "source_rows_hash": _json_hash(rows), "database_hash": db_hash,
-        "existing_may_rows": may_snapshot,
+        "existing_month_rows": month_snapshot,
+        # Keep the original May key for compatibility with the first pilot.
+        "existing_may_rows": month_snapshot if month == "2026-05" else [],
         "outside_month_count": outside_count, "outside_month_hash": outside_hash,
         "proposed": proposed, "skipped": skipped, "conflicts": conflicts,
         "excluded": excluded, "invalid": invalid,
@@ -353,7 +349,7 @@ def _manifest(runid: str, plan: dict[str, Any], manifest_rows: list[dict[str, An
 def _run_dedup_key(candidate: dict[str, Any], runid: str) -> str:
     run_tag = _json_hash(runid)[:12]
     identity_hash = candidate["dedup_key"].rsplit(":", 1)[-1]
-    return f"hmay:2026-05:{run_tag}:{identity_hash}"
+    return f"history:{candidate['txn_date'][:7]}:{run_tag}:{identity_hash}"
 
 
 def _matches_proposed(row: Transaction, candidate: dict[str, Any], runid: str) -> bool:
@@ -371,8 +367,10 @@ def apply_import(db: Session, plan: dict[str, Any], expected_plan_sha: str, runi
     """Validate the dry-run against the current ledger, then atomically insert."""
     if plan.get("version") != PLAN_VERSION or plan.get("account") != PRIMARY_ACCOUNT:
         raise ValueError("plan version/account is outside approved scope")
-    if plan.get("month") != "2026-05":
-        raise ValueError("only the approved 2026-05 scope can be applied")
+    try:
+        _month_bounds(plan.get("month", ""))
+    except ValueError as exc:
+        raise ValueError("plan month is invalid") from exc
     if not runid or len(runid) > 80:
         raise ValueError("runid must be a non-empty manifest identifier")
     claimed_hash = plan.get("plan_sha256")
@@ -391,7 +389,7 @@ def apply_import(db: Session, plan: dict[str, Any], expected_plan_sha: str, runi
         if any(not _matches_proposed(row, by_key_candidate[row.dedup_key], runid) for row in recovered):
             raise ValueError("run recovery refused: an imported row was modified")
         return _manifest(runid, plan, [_row_dict(recovered_by_key[key]) for key in recovery_keys])
-    fresh = plan_import(db, plan["source_rows"], plan["owner_identities"])
+    fresh = plan_import(db, plan["source_rows"], plan["owner_identities"], plan["month"])
     if fresh["plan_sha256"] != claimed_hash:
         raise ValueError("stale plan: source or ledger changed after dry run")
     manifest_rows = []
@@ -441,8 +439,14 @@ def rollback_import(db: Session, manifest: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("rollback refused: imported rows have linked reconciliations or adjustments")
     for expected in rows:
         current_row = _row_dict(by_id[int(expected["id"])])
-        if not current_row["dedup_key"].startswith("hmay:2026-05:"):
-            raise ValueError("rollback refused: row is outside the May import namespace")
+        month = manifest.get("month", "")
+        prefixes = [f"history:{month}:"]
+        # Preserve rollback support for the original May pilot run, whose
+        # namespaced keys predate the now month-generic helper.
+        if month == "2026-05":
+            prefixes.append("hmay:2026-05:")
+        if not current_row["dedup_key"].startswith(tuple(prefixes)):
+            raise ValueError("rollback refused: row is outside this month import namespace")
         if current_row != expected:
             raise ValueError("rollback refused: an imported row was changed after insertion")
     try:

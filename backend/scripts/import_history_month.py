@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan or explicitly apply the reviewed May 2026 transaction snapshot."""
+"""Plan or explicitly apply one month's reviewed transaction snapshot."""
 from __future__ import annotations
 
 import argparse
@@ -22,15 +22,6 @@ from app.services.history_month_import import (  # noqa: E402
     rollback_import,
 )
 from app.services.history_month_pilot import _hash  # noqa: E402
-
-DEFAULT_INPUT = Path(
-    "/Users/ajmalrasi/lifeos-private/spending-history/2026-10-31-may-pilot/"
-    "deepseek-six-2026-11-01/corrected-transactions.json"
-)
-DEFAULT_SOURCE_DIR = Path(
-    "/Users/ajmalrasi/lifeos-private/spending-history/2026-10-31-may-pilot/data"
-)
-
 
 def _load_reviewed_rows(input_path: Path, source_dir: Path) -> list[dict]:
     rows = json.loads(input_path.read_text(encoding="utf-8"))
@@ -59,6 +50,11 @@ def _load_reviewed_rows(input_path: Path, source_dir: Path) -> list[dict]:
         # strong reference match; absent references require there to be one row.
         matching = [t for t in candidates if row.get("reference") and
                     t.get("reference") == row.get("reference")]
+        if not matching:
+            matching = [t for t in candidates
+                        if str(t.get("txn_date")) == str(row.get("txn_date"))
+                        and str(t.get("amount")) == str(row.get("amount"))
+                        and str(t.get("direction", "")).lower() == str(row.get("direction", "")).lower()]
         if not matching and len(candidates) == 1:
             matching = candidates
         if len(matching) != 1:
@@ -79,8 +75,8 @@ def _private_output(path: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR,
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--source-dir", type=Path, required=True,
                         help="verified private pilot data root containing messages/ and results/ (not the messages/ folder itself)")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--month", required=True)
@@ -94,8 +90,8 @@ def main() -> int:
                         help="required to execute a rollback; otherwise print planned count")
     args = parser.parse_args()
     try:
-        if args.month != "2026-05":
-            raise ValueError("this helper is hard-bound to month 2026-05")
+        if len(args.month) != 7 or args.month[4] != "-":
+            raise ValueError("month must be YYYY-MM")
         if args.account.strip().lower() != PRIMARY_ACCOUNT:
             raise ValueError(f"this helper is restricted to {PRIMARY_ACCOUNT}")
         output = _private_output(args.output_dir)
@@ -137,7 +133,7 @@ def main() -> int:
                                   "plan_sha256": result["plan_sha256"],
                                   "manifest": str(target)}, indent=2))
                 return 0
-            plan = plan_import(db, rows, identities)
+            plan = plan_import(db, rows, identities, args.month)
         plan_path = output / "plan.json"
         plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True), encoding="utf-8")
         os.chmod(plan_path, 0o600)
@@ -146,7 +142,7 @@ def main() -> int:
                           "skipped_count": len(plan["skipped"]),
                           "conflict_count": len(plan["conflicts"]),
                           "excluded_count": len(plan["excluded"]),
-                          "existing_may_count": len(plan["existing_may_rows"]),
+                          "existing_month_count": len(plan["existing_month_rows"]),
                           "outside_month_count": plan["outside_month_count"],
                           "plan": str(plan_path)}, indent=2))
         return 0

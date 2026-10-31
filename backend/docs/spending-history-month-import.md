@@ -1,46 +1,54 @@
-# Reviewed May2026 database import
+# Guarded monthly history import
 
-The explicit importer inserts reviewed primary-mailbox May2026 rows into the
-normal `transactions` table. It does not fetch mail, call a model, migrate the
-schema, replace existing records, or advance collector cursors. Execute only in
-the configured backend runtime, with private input and output paths.
+The explicit importer can plan or apply one `YYYY-MM` period at a time from a
+private, source-bound candidate file. It never fetches mail, calls a model,
+changes existing transactions, or advances normal collector cursors. The Gmail
+pilot remains restricted to `mail2ajmalrasi@gmail.com`.
 
 ```sh
 PYTHONPATH=backend python backend/scripts/import_history_month.py \
-  --month 2026-05 --account mail2ajmalrasi@gmail.com \
-  --input /private/approved-candidates.json \
-  --source-dir /private/may-pilot/data --output-dir /private/import-run
+  --month 2026-04 --account mail2ajmalrasi@gmail.com \
+  --input /private/april/approved-candidates.json \
+  --source-dir /private/april/data --output-dir /private/april/import-run
 ```
 
-Default is a read-only dry run. It validates cached message/result provenance,
-normalizes account labels, checks duplicates against the existing ledger, and
-writes `plan.json` with a SHA256. Review proposed/skipped/conflicting/excluded
-rows. Exact account identity and merchant context are required for statement/live
-EMI overlap suppression; repeated unreferenced purchases remain separate.
+The default is a read-only dry run. The source directory must contain the
+verified pilot `messages/` and `results/` caches; the importer checks their
+source hashes and binds each candidate back to its parser result. The plan
+counts proposed rows, strong duplicates, statement overlaps, conflicts, and
+excluded non-INR rows. Account labels are normalized, and statement/live EMI
+overlap suppression requires matching card identity and merchant context.
+Repeated unreferenced purchases remain separate.
 
-Apply the saved plan by repeating the command with `--apply`,
-`--expected-plan-sha <printed-hash>` and a unique `--runid`. Applying takes a
-short PostgreSQL transaction lock, rechecks the ledger hash, and inserts all new
-rows atomically. A changed ledger or input refuses the stale plan. Existing
-rows, categories and user decisions remain intact. Run-scoped dedup keys and
-postimages in `manifest-<runid>.json` permit recovery after an interrupted client
-and make retries idempotent. Known transfers/card repayments and explicit
-reversal notices are classified on new rows only; no global reconciliation runs.
+Review the plan, then apply with its exact SHA and a unique run ID:
 
-Before applying, privately back up affected tables and collector cursors. Keep
-all source files, plans, manifests and backups outside Git. Source-based field
-repairs are recorded separately from original parser exports. The ambiguous USD
-remittance is excluded; other rows withheld before the approved input must have
-an explicit private held-rows record.
+```sh
+PYTHONPATH=backend python backend/scripts/import_history_month.py \
+  --month 2026-04 --account mail2ajmalrasi@gmail.com \
+  --input /private/april/approved-candidates.json \
+  --source-dir /private/april/data --output-dir /private/april/import-run \
+  --apply --expected-plan-sha <printed-hash> --runid april-2026-primary
+```
 
-To inspect a rollback, pass `--rollback-manifest /private/manifest.json` with
-month/account/output arguments. `--rollback-apply` explicitly executes deletion
-only after every imported postimage still matches and none has adjustment or
-reconciliation links. Later edits cause refusal rather than erasing decisions.
+Applying takes a short PostgreSQL transaction lock, rechecks the complete
+ledger snapshot, then inserts new rows atomically. Existing rows, categories and
+user decisions remain intact. A stale plan is refused. Run-scoped dedup keys
+and exact postimages in the manifest permit recovery after an interrupted
+client and make a repeated month run idempotent. A rollback preview accepts the
+saved manifest; `--rollback-apply` removes only unchanged rows from that run,
+and refuses if a row was edited or linked to an adjustment/reconciliation.
+Original May pilot manifests and rollback keys remain supported.
 
-Actual May2026 import on November1:166 inserted,8 represented/skipped (six live
-alerts and two statement overlaps),three held (one foreign remittance and two
-unclassified lender mandates). Existing12 May rows were preserved, yielding178.
-All688 prior ledger rows and collector cursors were unchanged. Exact-month live
-API reads succeeded; the post-import dry run is used to check no extra rows are
-proposed. Statement attachment parsing remains outside this import.
+Before each apply, privately back up the affected tables and collector cursors.
+Keep source files, plans, manifests and backups outside Git. Record source-based
+corrections and held ambiguous rows separately. Never invent statement rows or
+silently reconcile existing transactions. A month may be imported with a few
+unclear alerts held; statement attachments are not part of this email-body
+workflow.
+
+April 2026 run on November 1: 111 rows inserted, five represented by existing
+alerts/statements, and four source cases held before planning. Ten April rows
+already existed, so the resulting month contains 121 records. The exact-month
+native API and Pi web view both returned all 121. Recorded everyday spend was
+₹174,769.03 under Money's existing EMI/transfer exclusions; source coverage is
+email alerts, not a complete statement audit.
