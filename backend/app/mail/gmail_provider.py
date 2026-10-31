@@ -15,6 +15,10 @@ class MailProviderError(RuntimeError):
     """A mailbox read failed and must not be reported as a successful sync."""
 
 
+class MailRateLimitError(MailProviderError):
+    """A temporary Gmail quota limit; a paced import may retry this read."""
+
+
 class GmailProvider:
     def __init__(
         self,
@@ -41,6 +45,8 @@ class GmailProvider:
             return self.runner.run(args, account=self.account)
         except GogCommandError as exc:
             lowered = exc.stderr.casefold()
+            if "ratelimitexceeded" in lowered or "quota exceeded" in lowered:
+                raise MailRateLimitError("Gmail temporarily limited reads; retry after a pause.") from exc
             if "invalid_grant" in lowered or "insufficientpermissions" in lowered:
                 raise MailProviderError(
                     f"Gmail authorization expired for {self.account} or lacks read access. "
@@ -70,6 +76,34 @@ class GmailProvider:
         if not out:
             return []
         return self._json(out, "listing messages").get("messages", [])
+
+    def search_page(
+        self, query: str, *, page_token: str | None = None, page_size: int = 100
+    ) -> tuple[list[dict], str | None]:
+        """Read one explicit page for audited imports; normal sync stays capped.
+
+        A missing/malformed response is not evidence of an empty mailbox. The
+        caller owns pagination and durable checkpoints, so it can resume the
+        exact query rather than moving an incremental sync cursor.
+        """
+        if not 1 <= page_size <= 500:
+            raise ValueError("page_size must be between 1 and 500")
+        args = ["gmail", "messages", "list", query, "--max", str(page_size),
+                "--timezone", "Asia/Kolkata", "-j"]
+        if page_token:
+            args.extend(["--page", page_token])
+        out = self._run(args)
+        if not out:
+            raise MailProviderError("Gmail returned an empty search response.")
+        data = self._json(out, "listing an inventory page")
+        rows = data.get("messages")
+        token = data.get("nextPageToken")
+        if (not isinstance(rows, list)
+                or any(not isinstance(row, dict) or not isinstance(row.get("id"), str)
+                       or not row["id"] for row in rows)
+                or (token is not None and not isinstance(token, str))):
+            raise MailProviderError("Gmail returned an invalid inventory page.")
+        return rows, token or None
 
     def get_message(self, message_id: str) -> MailMessage | None:
         out = self._run(["gmail", "get", message_id, "-j"])
