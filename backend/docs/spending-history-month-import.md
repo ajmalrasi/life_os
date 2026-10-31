@@ -21,7 +21,8 @@ overlap suppression requires matching card identity and merchant context.
 An exact same-message reference can match even when the older row has no account
 label. A same-message match without a reference still needs matching account
 labels, and a reference across different messages requires the same explicit
-instrument. Repeated unreferenced purchases remain separate.
+instrument. Repeated unreferenced purchases remain separate. Explicit
+account-to-account IMPS debits are tagged as transfers on new rows.
 
 Review the plan, then apply with its exact SHA and a unique run ID:
 

@@ -37,6 +37,9 @@ _CARD_PAYMENT_RECEIPT = re.compile(
 _ISSUER_REVERSAL_CREDIT = re.compile(
     r"\ba transaction reversal of\b[\s\S]{0,200}\bhas been initiated\b", re.I
 )
+_ACCOUNT_TO_ACCOUNT_IMPS = re.compile(
+    r"\bcredited to the account ending\s+[x\d]+\b[\s\S]{0,100}\bvia IMPS\b", re.I
+)
 
 
 def _json_hash(value: Any) -> str:
@@ -229,6 +232,8 @@ def _is_transfer(candidate: dict[str, Any], handles: set[str], names: set[str]) 
 def _candidate_category(candidate: dict[str, Any], handles: set[str], names: set[str]) -> str | None:
     snippet = candidate.get("raw_snippet") or ""
     if _is_transfer(candidate, handles, names):
+        return "transfer"
+    if candidate["direction"] == "debit" and _ACCOUNT_TO_ACCOUNT_IMPS.search(snippet):
         return "transfer"
     if candidate["direction"] == "credit":
         if _CARD_PAYMENT_RECEIPT.search(snippet):
