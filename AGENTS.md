@@ -1,4 +1,198 @@
+## September–July2025 primary-mailbox imports (2026-11-01)
+
+Continued the backward history import with only `mail2ajmalrasi@gmail.com`,
+using the existing parser and guarded monthly importer. September: 491 mailbox
+messages searched, 102 candidates inserted, 4 held; 102 records and
+₹443,399.38 everyday spend. August: 527 messages, 102 inserted, 5 held; 102
+records and ₹67,378.89 everyday spend. July: 666 messages, 186 inserted, 3
+held; 186 records and ₹250,711.49 everyday spend. Holds were unclear lender
+mandates, missing account identity/suffix, or foreign-currency rows. All three
+months passed exact-month database/API count verification; repeat dry runs
+proposed zero rows (102/102/186 skipped). Parser completed on the first
+successful run per month; an initial September launch failed before reading mail
+because a helper script was missing, then the setup was corrected. No rows were
+written by that failed launch. No DeepSeek request or test suite run. These are
+email-alert based Money figures, not complete statement coverage. Total
+transaction rows after July: 2235. Next older month is June 2025. Private data,
+backups, manifests and logs are in Jetson maintenance folders
+`2026-11-01-{sep,aug,jul}-import`; Mac private folder has run helpers.
+
 # LifeOS — Agent Handoff & Working Guide
+
+## December2025–October2025 primary-mailbox imports (2026-11-01)
+
+Continued the low-overhead backward import using only `mail2ajmalrasi@gmail.com`.
+December:585 mailbox messages,182 parser rows,177 inserted,5 held (three foreign-
+currency and two unclear lender mandates);178 total December records and
+₹123,323.08 Money everyday spend. November:582 messages,152 parser rows,145
+inserted,7 held (two unclear lender mandates, four missing account identities,
+one foreign-currency row);145 November records and ₹471,593.91 everyday spend.
+October:573 messages,120 parser rows,117 inserted,3 held (two lender mandates,
+one foreign-currency row);117 October records and ₹217,815.22 everyday spend.
+All exact-month native API counts and Pi proxy counts matched. Repeat dry runs
+proposed zero rows for all three. December needed one resume after temporary
+Gmail DNS failures; the resumed pass completed without retryable errors. A total
+of 34 statement emails remain attachment-pending (13/10/11); this is still an
+email-alert overview, not statement-complete. Money totals follow its existing
+spend/EMI/transfer rules. November's ₹471,593.91 includes ₹387,000 currently
+tagged as investments; excluding those tagged rows gives ₹84,593.91. December
+also includes ₹10,000 tagged investments. Private source caches, reports,
+manifests and pre-import SQL backups are in the Jetson maintenance folders named
+`2026-11-01-{dec,nov,oct}-import`; the Mac folders hold run helpers. Total
+transaction rows after October:1845. Next older month is September2025. External
+DeepSeek was not used; existing local parser only. No test suite run; only
+month import, API, Pi and idempotency checks were run.
+
+## March–January2026 primary-mailbox imports (2026-11-01)
+
+Continued the user's requested backward sequence without row-by-row approval;
+source is only `mail2ajmalrasi@gmail.com`. March:569 mailbox messages,128
+parser rows,122 inserted,4 represented statement rows,2 held;128 March records
+and ₹98,471.21 Money everyday spend. February:545 messages,131 parser rows,127
+inserted,3 represented rows,1 lender mandate held;130 February records and
+₹180,620.43 everyday spend. January:602 messages,192 parser rows,188 inserted,
+1 existing overlap,2 in-month holds,1 Dec31 row excluded;189 January records and
+₹222,807.58 everyday spend. All three exact-month APIs returned HTTP200 and the
+expected row counts; Pi proxy counts matched; repeat dryruns proposed0. The
+January ₹325,400 debit explicitly moved between accounts and is tagged transfer.
+January Money spend still includes a ₹53,000 mutual fund payment; similar broker
+transfers appear in February/March, so report these as Money's recorded spend,
+not pure consumption. 39 statement emails across these months remain
+attachment-pending (14/13/12); no PDFs were parsed. Private run data/manifests/
+pre-import SQL backups reside in Mac and Jetson folders named
+`2026-11-01-march-import`, `2026-11-01-feb-import`, and
+`2026-11-01-jan-import`. Total DB rows after January import:1406. Collector
+cursors were untouched by explicit imports; normal sync added some rows during
+the March processing window. External DeepSeek was not used; existing local
+parser only. Latest history-import commits `cc522c0` and `5838fba` are pushed to
+main. No test suite run this turn; operational exact-month API, Pi count, repeat
+dryrun, and insert verification were performed. The subsequent December–October
+2025 imports are recorded above.
+
+## April2026 production Money import (2026-11-01)
+
+User wants low-overhead month-by-month processing, proceeding backward from
+April2026 then March, February, January; no row-by-row approvals. April ran only
+against `mail2ajmalrasi@gmail.com`: 530 mailbox messages; 120 raw parser rows;
+94 source-grounded field corrections (mostly HDFC suffix/reference/counterparty),
+with four source cases held (two USD, one lender mandate, one missing account).
+The import dry run proposed111, skipped five existing-alert/statement overlaps,
+zero conflicts; after applying April has121 rows (10 pre-existing). Current
+Money everyday spend is ₹174,769.03 (111 debit rows), excluding Money's normal
+transfer/EMI categories. Alert emails only, no statement PDFs, so not complete
+statement coverage. HDFC account7672 and card5473 were separated by explicit
+source wording. Production total is965. Native API returns121 April rows and
+the Pi web client has121; same-input dry run proposes0. Private files/backups,
+including before-money.sql and run manifest, are under
+`2026-11-01-april-import` on Mac `lifeos-private` and Jetson maintenance storage.
+No collector cursor or pre-existing transaction is changed by this insert-only
+importer. No tests were run in this turn.
+
+The explicit history importer now accepts any single `YYYY-MM` period; the
+per-month plan binds source hashes and the full ledger hash, inserts atomically,
+supports per-run rollback, requires explicit input/source/output paths, and
+preserves rollback for the original May key namespace. API runtime was not
+rebuilt. March2026, February2026 and January2026 are now complete; continue with
+December2025 if the user proceeds with the older backfill. Hold only genuinely
+unclear cases and don't reopen prior-month holds unless needed for an aggregate.
+
+## May2026 production Money import (2026-11-01)
+
+User explicitly authorized production import. Added166 reviewed primary-mailbox
+May2026 transactions; existing12 May rows preserved, now178. Eight input overlaps
+skipped (six existingalerts, two statement-EMI overlaps). Three rows held outside
+Money: ambiguous foreign remittance and two lender mandates with unresolved
+purchase/repayment treatment. Thirty-five generic HDFC rule rows had identity,
+reference and counterparty restored from explicit cached wording/existingDiners
+parser before import; raw177 parser exports unchanged. Newrows include4transfer
+and1reversal_credit categories; no globalreconciliation or existingrow updates.
+Current everydayMayINRspend163154.98 underexisting EMI exclusions; alert-based,
+not complete or fullyrefund-netted. Eleven statementemails stillattachmentpending.
+New history_month_import.py / import_history_month.py implementdryrun, fixed
+primary/May scope, exactduplicates/statementoverlap checks, sourcehashes, atomic
+PGapply, runscopedidempotence and guardedrollback. Private maintenancebackupand
+manifest:2026-11-01-may-import (Maclifeos-private /Jetsonlifeos-maintenance).
+Runid may-2026-primary-2026-11-01,166 inserted IDs/postimages inruntime manifest.
+Before-money.sql backupmade. All688 preexistingrows, outsideMaydata and collector
+cursors unchanged. NativeAPIandPiwebproxy return178MayrowsHTTP200. Recheckdryrun
+proposes0 newrows. All114 historytests pass. No APIrebuild, collectorregistrychange,
+or newemail/modelcalls occurred. APIkeynotstored or usedforthisimport.
+
+
+## DeepSeek test on six May parser flags (2026-11-01)
+
+User supplied an Engy API key and explicitly requested DeepSeek on the six
+flagged May2026 emails. Actual provider model is deepseek-v4.1-flash-1017.
+One six-email request corrected all five wrong-year dates and the decimal-comma
+USD amount. All18 exact evidence quotes and source hashes were checked. Reported
+API chargeUSD0.000246, tokens1646input/1640output. This is a small prompted test,
+not a general accuracy benchmark. Remittance is not incoming income; proposed
+outgoing debit remains a beneficiary-credit status confirmation and must stay
+separate from purchase/income totals pending normal accounting. Private output
+`2026-10-31-may-pilot/deepseek-six-2026-11-01/` includes comparison.md,
+validation.json and corrected-transactions.csv/json (177rows, six replacements).
+Original raw177 output unchanged. No DB/import/deploy changes. API key was used
+via hidden interactive input in memory, not stored in code/config/logs; never
+copy its value into AGENTS or Git. Model external endpoint is api.engy.ai only;
+provider.zdr=true requested. Private corrected export is the reviewed replacement
+candidate for the six issues, rather than blindly using the original raw export.
+
+
+## May2026 existing-email-parser pilot (2026-10-31)
+
+User requested a practical one-month pilot before wider backfill. Reusable
+`backend/scripts/parse_history_month.py` calls `history_month_pilot.MonthPilot`;
+main commit819d5f0 pushed (helper, CLI, tests, docs and paged Gmail provider).
+Primary-only exact IST received-month scope; all mailbox metadata paginated,
+financial sender bodies cached privately, existing four rule parsers then local
+LlmBankParser; no collector/SQL/cursor writes. Bounded workers1/2, retries and
+source/parser-fingerprint checkpoints. May:522 messages,310 bank-domain
+candidates,212 unrelated metadata-only;177 transaction candidates (78 rule,
+99 local-model),122 model zero-row outcomes,11 statement emails attachment-pending.
+No PDFs parsed. No retryable errors. Five model dates use2025 despite explicit
+2026 source wording; one decimal-comma foreign remittance amount is misparsed
+and beneficiary-credit is not proof of user's income. Raw results preserved;
+flag six rows before totals, don't call gross debits spending. Private outputs
+Mac `/Users/ajmalrasi/lifeos-private/spending-history/2026-10-31-may-pilot/`;
+Jetson matching maintenance directory. `pilot-results.md` and annotatedCSV
+explain limits. Offline cached replay makes no mailbox/model calls. All100
+history tests pass (15 new). Cloned reader config removed after run. Next use
+this pilot to fix simple template/date/decimal issues or parse statement PDFs,
+not forensic source recovery or full backfill without this pilot's findings.
+
+
+## Spending-history mailbox scope — primary only (2026-10-31)
+
+User explicitly says not to parse or check kpajmalrasi@gmail.com. Use ONLY
+mail2ajmalrasi@gmail.com for further spending-history searches, retrieval,
+parsing, review and reporting. Exclude second-account sources from the spending
+overview and future active matching inputs; existing archived evidence can stay
+private but must not silently contribute. This supersedes the earlier two-mailbox
+inventory/plan scope. Existing inventory totals include both accounts and are not
+counts of eligible primary-mailbox sources. Missing history is September2022
+through May2026; user already has June2026 onward. Aim for an approximate useful
+monthly/yearly overview, tolerate small historical gaps and avoid forensic
+recovery or spending tokens investigating every exception.
+
+
+## Spending-history scope correction — practical overview (2026-10-31)
+
+User explicitly corrected the earlier exhaustive audit approach: the goal is a
+useful overall spending picture from September2022, not forensic accounting.
+Small historical gaps or a few missing transactions are acceptable. Do not spend
+tokens investigating every old exception, chasing exact historical reconciliation,
+or repeatedly asking to proceed through tiny audit milestones. Reuse existing
+extraction and evidence, use inexpensive models where needed, keep basic checks
+against double-counting transfers/repayments and obvious extraction errors, and
+show concise coverage/uncertainty notes. Prioritize approximate monthly/yearly
+spending trends and broad categories across the full history. Closer checking
+matters for the most recent four months, especially this and last month. Preserve
+known source exceptions without chasing old gaps unless material to the overview.
+Do not invent transactions or claim unsupported accuracy. This user instruction
+supersedes earlier exhaustive historical pilot acceptance/recovery requirements;
+old audit plans remain historical context, not a gate to producing the overview.
+Production writes remain a separate scope from historical analysis.
+
 
 ## Native health/money read APIs and Git workflow (2026-10-31)
 
@@ -12,6 +206,136 @@ or optional-tool switch is needed. No schema or source-collection change. Preser
 Ask's EMI-inclusive semantics and Money's everyday EMI exclusions. MCP client
 connections and Ask-to-MCP transport migration remain separate work.
 
+
+## Spending-history supporting-mail recovery (2026-10-31)
+
+Private `recovery/cross-source-2026-10-31/` contains 32 bounded query records,
+20 full Gmail messages and 21 exact source quotes, tied to frozen matching inputs.
+One broad query stopped at page1; its token/stopreason remain recorded, so no
+exhaustive mailbox claim. Flipkart order/refund/cancellation mail strongly
+corroborates the INR499 credit as a cancelled tripod refund within the INR798
+book+tripod order; no order ID is printed on the statement, so this is not a
+shared-reference match. HDFC account7672 alert INR269 to Flipkart on October3
+and the receipt ten seconds later support the September-bill repayment; only
+HDFC prints the UPI ref, and no HDFC statement row exists in pilot staging.
+Ten ICICI Paytm alerts align to wallet funding times within1-6sec and identify
+card suffixes0010/8004, helping distinguish the October6 candidates. Printed
+clock comparisons do not independently prove timezone. Amount differences stay
+explicit and unclassified, not synthesized fees. Bounded cashout reference
+queries found no added evidence. Prior candidates/matching files were not changed;
+financial approval remains false. Root validation checks exact persisted message
+and quote-body hashes, offsets, frozen inputs, pair IDs/amounts/dates/suffixes.
+No production writes or email sends. Findings are corroboration for subsequent
+review decisions, not accepted spending.
+
+## Spending-history matching proposals (2026-10-31)
+
+`history_matching.py` stages cross-source proposals from the three private
+candidate snapshots via `--kind matches`; it does not merge or approve spending.
+Every wallet/Pay Later target retains a match outcome. Graph competition keeps
+repeated purchases and ambiguous links separate. Wallet funding/card-charge
+differences remain explicit, never synthesized fees. Bank transfer suggestions
+need equal currency/amount or an explicit matching reference; same-day generic
+IMPS credits stay weak. Strong proposals require explicit transaction reference
+and separately evidenced counterparty instrument identity, not shared phone
+numbers or the wallet's own suffix. The Pay Later repayment and INR499 credit
+remain unresolved. Private outputs: `matching-candidates.json`,
+`matching-report.md`; no SQL or production change. Input/source/extraction and
+matcher hashes bind the snapshot; changed input fails rather than silently
+reusing prior matches. Full refund/EMI/card-bill reconciliation is still pending.
+
+## Spending-history wallet/Pay Later follow-up (2026-10-31)
+
+The private wallet/Pay Later path now stages 20 Paytm movements and seven
+Flipkart Pay Later rows from three PDFs, plus a non-transaction reminder gap.
+Wallet PDF and CSV are alternate sources, not additive ledgers: INR75,500 each
+way, ten funding entries and ten bank transfers; purchases are not established.
+Pay Later retains four posted charges across September/October, one November1
+fee, one repayment and one unexplained INR499 positive credit. October's INR7,998
+bill is arithmetically compatible with the prior INR269 bill used as an opening
+hypothesis; October does not print that opening. The credit's meaning remains
+unknown. `history_wallet_candidates.py` writes private JSON candidates/report,
+not SQLite or production. CLI supports `--kind wallet-paylater` and includes it
+in `all`. Visual review is a separate snapshot-bound private record; reruns must
+never renew a review automatically. A final parent check caught a truncated
+first-row Pay Later description; edge-row boundaries require complete wrapped
+text and a regression check. That omission is corrected and the new snapshot
+was re-reviewed. All 73 history tests pass. All financial approval remains false. The earlier
+377-card-row comparison by GPT-6 Luna is in private
+`card-review-luna-2026-10-31/`; card summary/source exceptions remain open.
+Next: source recovery and cross-source matching before accepted spending.
+
+## Spending-history bank/UPI pilot and source review (2026-10-30)
+
+The separate explicit history path now stages seven bank PDFs: 121 rows, 104
+explicitly UPI (including credits/transfers/card payments, not 104 purchases).
+`history_bank_candidates.py` uses printed column coordinates for signs, then
+checks running/whole-statement balances and printed totals. Five PDFs pass;
+Axis September is a broken template with no transaction table, and SBI October
+prints an opening balance one paisa below its first-row/prior-closing evidence.
+Both remain flagged; no artificial corrections. All 121 bank rows were compared
+against nine rendered transaction pages, recorded in private
+`bank-visual-review.json`, bound to candidate/source/image hashes. This is an
+agent source comparison, not a human/external audit or financial approval.
+Separate bank version tables share the private pilot SQLite file; query
+`current_bank_candidate_observations`. Both card and bank active selections are
+replaced atomically on rerun, retaining history without stale active sources.
+Three HDFC card itemised closings equal following printed openings, but literal
+summary-formula differences remain unresolved. Thirteen supporting ICICI
+alert/payment messages were archived; they do not reconcile the missing card
+detail and are not counted as accepted spending. See the pilot doc for outputs.
+The 67 history tests pass. No live API rebuild, production write, savings-parser
+enablement or publication occurred. Next: card row review, wallet/Pay Later,
+source recovery and economic matching; all financial approval flags remain false.
+
+## Spending-history pilot archive/card extraction (2026-10-30)
+
+Continued the inventory below: archived all 32 pilot message bodies/metadata and
+30 attachments (26 PDFs, one CSV, three inline images). All PDFs unlocked; page
+evidence spans 81 pages. Six messages have no PDF, including HDFC links and a
+duplicate Pay Later reminder. See `backend/docs/spending-history-pilot.md`.
+Private working corpus: Mac `/Users/ajmalrasi/lifeos-private/spending-history/2026-10-30-pilot`;
+Jetson `/home/ajmalrasi/lifeos-maintenance/spending-history/2026-10-30-inventory/pilot`.
+The isolated SQLite artifact stages 377 card rows from 16 statements, with 299
+inside Sep-Nov 2022 and 78 adjoining-cycle rows retained for complete bill checks.
+Query its `current_candidate_observations` / `current_in_scope_candidate_observations`
+views; base tables retain prior parser versions. All rows remain unverified.
+Eleven statements pass automated controls; four HDFC legacy statements have
+unresolved rounding/summary-equation differences and one ICICI Amazon September
+source shows no itemised transactions despite summary activity. Do not invent
+balancing rows or turn EMI schedules into posted purchases. Five rendered-page
+layout spot-checks are recorded, not full independent row sign-off. Bank-account,
+wallet and Pay Later PDFs have page evidence but unvalidated transaction parsing.
+Parser fixes cover old HDFC date-only/Cr layouts and ICICI NORM/Amazon formats,
+credit balances and chart text prepended to genuine rows. One ICICI PDF can have
+old/current card sections: `StatementTxn.card_last4` preserves per-row identity;
+filename identifies the statement's primary card. Live statement-detail tables
+do not yet persist this row field, so review integration separately. No running
+API rebuild, production SQL import or savings-registry change was made.
+
+## Spending-history source inventory (2026-10-30)
+
+The user wants audited card/UPI history from **2022-09-01**. The accepted plan is
+`backend/docs/spending-history-plan.md`; command documentation is
+`backend/docs/spending-history-inventory.md`. The first read-only inventory ran
+in an isolated temporary container using the existing API image and privately
+copied Gmail reader configuration; the running API was not rebuilt. All 200
+configured monthly searches completed, with 13,328 unique candidate emails and
+770 metadata-inspected statement candidates (311 known-issuer card emails, 230
+bank-statement emails). Counts include possible resends/overlap and are **not
+audited transactions**. Thirty-two pilot candidate emails cover declared
+September-November 2022 periods plus adjoining card cycles. Private reports and
+checkpoints: Jetson `/home/ajmalrasi/lifeos-maintenance/spending-history/2026-10-30-inventory/data`;
+Mac report copies `/Users/ajmalrasi/lifeos-private/spending-history/2026-10-30-inventory`.
+No production SQL changes or transaction imports have occurred. PDF archiving,
+isolated staging, historical parser fixes and independent row audits are pending.
+Normal savings-statement collection remains disabled; use the separate explicit
+history path, not the live collector. Gmail search pages consume metadata-read
+quota too: inventory searches are paced, rate limits trigger shared mailbox
+cooldowns and retries, and failures remain incomplete rather than empty months.
+Focused inventory/expense tests: 71 passed. The broader suite's five failures
+were reproduced with the original Gmail provider (date-sensitive card-cycle,
+two Priority and two statement tests); they are unrelated to the inventory.
 
 ## Priority outage repair (2026-10-15)
 

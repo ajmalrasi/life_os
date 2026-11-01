@@ -56,3 +56,30 @@ already existed, so the resulting month contains 121 records. The exact-month
 native API and Pi web view both returned all 121. Recorded everyday spend was
 ₹174,769.03 under Money's existing EMI/transfer exclusions; source coverage is
 email alerts, not a complete statement audit.
+
+The backward run continued through July 2025 using the same importer:
+
+| Month | Added | Final rows | Money everyday spend | Held aside |
+|---|---:|---:|---:|---:|
+| December 2025 | 177 | 178 | ₹123,323.08 | 5 |
+| November 2025 | 145 | 145 | ₹471,593.91 | 7 |
+| October 2025 | 117 | 117 | ₹217,815.22 | 3 |
+| September 2025 | 102 | 102 | ₹443,399.38 | 4 |
+| August 2025 | 102 | 102 | ₹67,378.89 | 5 |
+| July 2025 | 186 | 186 | ₹250,711.49 | 3 |
+
+For each month, native API and Pi counts agreed and a repeat dry run proposed no
+new rows. Thirty-four statement emails remain attachment-pending across these
+months (13/10/11), so the figures summarize parsed email alerts rather than full
+card/bank statements. November includes ₹387,000 currently tagged as investments;
+excluding those tagged rows gives ₹84,593.91. December also includes ₹10,000
+tagged investments. These amounts remain in the figures above under Money's
+current spend rules, so the totals are not pure consumption. No DeepSeek call or
+test suite run was needed.
+
+
+September–July each passed exact-month database/API count verification. Repeat dry
+runs proposed zero new rows. Twelve candidates remain held across those months
+(four/five/three): unclear lender mandates, missing account identity or suffix,
+and foreign-currency rows. These are still email-alert summaries; no statement
+PDF extraction was included.
