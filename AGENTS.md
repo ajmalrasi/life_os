@@ -1,3 +1,19 @@
+## June–April2025 primary-mailbox imports (2026-11-01)
+
+Continued backward using only `mail2ajmalrasi@gmail.com`, the existing parser,
+and the guarded importer. June: 570 messages searched, 126 inserted, 4 held;
+126 records and ₹123,358.42 everyday spend. May: 555 messages, 97 inserted,
+16 held; 97 records and ₹175,339.79 everyday spend. April: 616 messages, 86
+inserted, 35 held; 86 records and ₹148,366.27 everyday spend. Every month
+passed exact-month database/API count verification, and repeat dry runs proposed
+zero new rows (126/97/86 skipped). Holds total 55, primarily HDFC alerts that
+do not print an unambiguous account/card suffix (43 across May/April), plus
+lender mandates, foreign-currency rows and one missing identity. No source rows
+were guessed. These are email-alert summaries without statement PDFs. Total
+transaction rows after April: 2544. Private run data, backups and manifests are
+in Jetson folders `2026-11-01-{jun,may,apr}-2025-import`; helper copies are in
+the Mac private spending-history folder. Next older month is March 2025.
+
 ## September–July2025 primary-mailbox imports (2026-11-01)
 
 Continued the backward history import with only `mail2ajmalrasi@gmail.com`,

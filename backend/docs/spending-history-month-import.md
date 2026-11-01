@@ -67,6 +67,9 @@ The backward run continued through July 2025 using the same importer:
 | September 2025 | 102 | 102 | ₹443,399.38 | 4 |
 | August 2025 | 102 | 102 | ₹67,378.89 | 5 |
 | July 2025 | 186 | 186 | ₹250,711.49 | 3 |
+| June 2025 | 126 | 126 | ₹123,358.42 | 4 |
+| May 2025 | 97 | 97 | ₹175,339.79 | 16 |
+| April 2025 | 86 | 86 | ₹148,366.27 | 35 |
 
 October–December native API and Pi counts agreed; September–July native API
 and database counts agreed. Repeat dry runs proposed no new rows for all six
@@ -84,3 +87,10 @@ runs proposed zero new rows. Twelve candidates remain held across those months
 (four/five/three): unclear lender mandates, missing account identity or suffix,
 and foreign-currency rows. These are still email-alert summaries; no statement
 PDF extraction was included.
+
+
+June–April 2025 each passed exact-month database/API verification; repeat dry
+runs proposed zero additions. Fifty-five candidates were held aside, including
+43 HDFC alerts across May and April whose source text does not identify the
+account/card suffix clearly. The remainder are lender mandates, foreign-currency
+rows, or a missing account identity. No statement PDFs were included.
