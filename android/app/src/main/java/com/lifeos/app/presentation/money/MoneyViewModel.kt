@@ -482,8 +482,8 @@ class MoneyViewModel @Inject constructor(
     }
 
     private companion object {
-        // Wide enough to cover "This year" and paging back through 6-month views.
-        const val TRANSACTION_WINDOW_DAYS = 400
+        // Keep five years of transactions locally so imported history is visible.
+        const val TRANSACTION_WINDOW_DAYS = 1826
         const val STATEMENT_CACHE_MONTHS = 7
     }
 }

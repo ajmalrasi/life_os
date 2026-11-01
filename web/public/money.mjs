@@ -2,7 +2,7 @@ import {istDay,latestBills} from './logic.mjs';
 import {categories,budgetCategories,categoryName,plusDays,plusMonths,sliceFor,previousSlice,bankAccounts,eligibleRows,inSlice,total,groupCategories,sortRows,chartBuckets} from './money-logic.mjs';
 
 let context, version=0, syncTimer;
-const state={section:'overview',period:'month',anchor:istDay(),custom:null,bank:'',currency:'INR',includeEmi:false,selected:[],sort:'recent',historyDays:400,data:{},errors:{},loadedAt:null,undo:null};
+const state={section:'overview',period:'month',anchor:istDay(),custom:null,bank:'',currency:'INR',includeEmi:false,selected:[],sort:'recent',historyDays:1826,data:{},errors:{},loadedAt:null,undo:null};
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=(value,currency=state.currency)=>new Intl.NumberFormat('en-IN',{style:'currency',currency,maximumFractionDigits:2}).format(Number(value || 0));
 const date=value=>value?new Intl.DateTimeFormat('en-IN',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Kolkata'}).format(new Date(value.length===10?value+'T12:00:00+05:30':value)):'Unknown';

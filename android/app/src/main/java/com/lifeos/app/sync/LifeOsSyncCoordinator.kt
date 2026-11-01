@@ -185,7 +185,7 @@ class LifeOsSyncCoordinator @Inject constructor(
 
     private companion object {
         const val DASHBOARD_HISTORY_DAYS = 365
-        const val MONEY_HISTORY_DAYS = 400
+        const val MONEY_HISTORY_DAYS = 1826
         const val STATEMENT_HISTORY_MONTHS = 7
         const val PULSE_HISTORY_DAYS = 30
         const val RECOMPUTE_DAYS = 60
