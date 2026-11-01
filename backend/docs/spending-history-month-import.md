@@ -109,3 +109,15 @@ mandates, foreign currency, or missing account identity. This remains email-aler
 coverage without statement PDFs. January needed one Gmail retry after a temporary
 IPv6 network failure. The seven model requests used 104,784 tokens; the provider
 response did not include a charge amount.
+
+December–October 2024 were processed next. Each month passed exact-month
+database/native API count checks, and repeat dry runs proposed zero additions.
+These months inserted 43/42/41 rows respectively; Money everyday spend is
+₹50,986.18/₹37,137.30/₹150,356.70. The parser held 189 candidates across the
+three months, including 163 HDFC alerts without a source-printed unambiguous
+card/account suffix, 20 with missing account identity, and six lender mandates
+whose payment-versus-spend treatment is unclear. They were left out without
+DeepSeek review. This remains email-alert coverage; 18 October statement emails
+are attachment-pending and no statement PDFs were parsed. Source and import
+artifacts remain private on the Jetson under
+`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-{dec,nov,oct}-2024-import`.
