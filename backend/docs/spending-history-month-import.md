@@ -156,3 +156,22 @@ without an unambiguous source-printed suffix, 23 with missing account identity,
 and two lender mandates. No DeepSeek review or statement-PDF parsing was done;
 these are email-alert figures. Private artifacts are on the Jetson under
 `/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-{dec,nov,oct}-2023-import`.
+
+HDFC UPI suffix review (November 1): DeepSeek v4.1 Flash reviewed 767 held
+HDFC UPI candidates from the existing staged month caches in 48 requests of
+16 records, with eight requests concurrent. All returned quotes were checked
+against their source messages. The model found an explicit HDFC savings suffix
+7672 in 47; 46 also matched the candidate date, amount, and direction and were
+inserted as `HDFC Savings ..7672`: October 2023 (15), March 2024 (15), April
+2024 (8), and April 2025 (8). Each month’s database count matched the API and
+repeat dry runs proposed zero additions. 721 remain held: 720 lacked an explicit
+instrument identity, and one explicit identity had a date mismatch. January–March
+2025’s 166 candidates were not resent because they had already been reviewed;
+160 were previously imported and six date cases remain held. The four legacy
+HDFC statement summary/rounding differences were not part of this email review
+and remain unresolved pending statement reconciliation. This sweep covers only
+currently staged HDFC UPI holds: the earlier Sep 2022–Sep 2023 months do not yet
+have month-parsed candidate caches, so this is not a complete month-by-month
+HDFC cleanup back to Sep 2022. Private requests, responses, exact-quote checks,
+candidate audit, and backups remain outside Git; the Jetson summary is
+`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-deepseek-hdfc-batch-summary.json`.

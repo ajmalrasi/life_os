@@ -1,3 +1,23 @@
+## HDFC UPI suffix cleanup batch (2026-11-01)
+
+DeepSeek v4.1 Flash reviewed 767 currently staged held HDFC UPI candidates in
+48 requests of 16 with eight concurrent. All returned quotes were checked
+against their original email. It found an explicit HDFC savings suffix 7672 in
+47; 46 also matched date, amount and direction and were inserted as
+`HDFC Savings ..7672`: October 2023 +15, March 2024 +15, April 2024 +8, and
+April 2025 +8. Each month’s native API count matched the database and repeat
+dry runs proposed zero additions. 721 remain held (720 without explicit
+instrument identity; one exact identity candidate had a date mismatch).
+January–March 2025’s prior review is unchanged: 160 imported, six date cases
+held. Four legacy HDFC statement summary/rounding differences remain separate
+and unresolved. This covers staged HDFC UPI candidate months only; Sep 2022–Sep
+2023 still needs month parsing, and must not be described as swept. Private
+DeepSeek inputs/results/audit and backups are under
+`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-deepseek-hdfc-batch*`
+and Mac `/Users/ajmalrasi/lifeos-private/spending-history/2026-11-01-deepseek-hdfc-batch`.
+Use bounded concurrent DeepSeek batches for similar multi-file review; do not
+send one record per request.
+
 ## DeepSeek validation and history window update (2026-11-01)
 
 The user requested DeepSeek v4.1 Flash 1017 validation of Jan–Mar 2025 HDFC
