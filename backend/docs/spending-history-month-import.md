@@ -68,10 +68,11 @@ The backward run continued through July 2025 using the same importer:
 | August 2025 | 102 | 102 | ₹67,378.89 | 5 |
 | July 2025 | 186 | 186 | ₹250,711.49 | 3 |
 
-For each month, native API and Pi counts agreed and a repeat dry run proposed no
-new rows. Thirty-four statement emails remain attachment-pending across these
-months (13/10/11), so the figures summarize parsed email alerts rather than full
-card/bank statements. November includes ₹387,000 currently tagged as investments;
+October–December native API and Pi counts agreed; September–July native API
+and database counts agreed. Repeat dry runs proposed no new rows for all six
+months. Thirty-four statement emails remain attachment-pending across
+October–December (13/10/11), so those figures summarize parsed email alerts
+rather than full card/bank statements. November includes ₹387,000 currently tagged as investments;
 excluding those tagged rows gives ₹84,593.91. December also includes ₹10,000
 tagged investments. These amounts remain in the figures above under Money's
 current spend rules, so the totals are not pure consumption. No DeepSeek call or
