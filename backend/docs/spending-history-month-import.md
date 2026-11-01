@@ -121,3 +121,13 @@ DeepSeek review. This remains email-alert coverage; 18 October statement emails
 are attachment-pending and no statement PDFs were parsed. Source and import
 artifacts remain private on the Jetson under
 `/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-{dec,nov,oct}-2024-import`.
+
+September–July 2024 are also imported and verified. The three months added
+44/43/59 rows, with everyday spend of ₹216,017.99/₹197,806.41/₹101,651.44;
+repeat dry runs proposed zero additions. 168 candidates remain held: 119 HDFC
+alerts without an unambiguous source-printed suffix, 44 with missing account
+identity, four lender mandates, and one foreign-currency transaction. No
+DeepSeek review or statement-PDF parsing was done. These remain email-alert
+figures, not complete statement totals. Private source/import artifacts are on
+the Jetson under
+`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-{sep,aug,jul}-2024-import`.
