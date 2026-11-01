@@ -8,7 +8,12 @@ the rule regardless of transaction date. Do not impose a date cutoff. For an
 import, still require the source to show `from account **7672` (or equivalent
 explicit account wording), INR, and matching source amount/direction. Use the
 transaction date printed in the source; eight parser dates were corrected from
-their email dates. Two staged alerts do not show suffix `7672` and remain held.
+their email dates. Two records in the HDFC candidate batch had no `7672` because
+they were not HDFC/UPI at all: both are Axis Bank NEFT emails to Hiba Hyder.
+The user confirmed they are outgoing bank transfers, so they were added as
+Axis Bank `bank_live` debits for ₹50,000 each on October 28 and 31, 2023. The
+email does not establish whether those payments were personal transfers or
+spending; no spend category was guessed.
 
 Of the 767-candidate batch, 765 showed `7672`: 46 had already been imported,
 and 719 more were inserted as `HDFC Savings ..7672`. Separately, of the 166

@@ -165,8 +165,11 @@ The user clarified that an HDFC UPI alert explicitly showing account suffix
 transaction date. Do not use a date cutoff. For import, require the source to
 show `from account **7672` (or equivalent explicit account wording), INR, and
 matching source amount/direction; use the date printed in the email. Eight
-parser dates were corrected from their source emails. Two staged alerts lack
-the suffix and remain held.
+parser dates were corrected from their source emails. Two records in the HDFC
+candidate batch were actually Axis Bank NEFT emails to Hiba Hyder, not HDFC/UPI.
+The user confirmed they are outgoing bank transfers; they were added as Axis
+Bank `bank_live` debits for ₹50,000 on October 28 and 31, 2023. Their purpose is
+not clear from the email, so no spend category was assigned.
 
 Of the 767-candidate batch, 765 showed `7672`: 46 had already been imported and
 719 more were inserted as `HDFC Savings ..7672`. Separately, the 166 Jan–Mar
