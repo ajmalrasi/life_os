@@ -131,3 +131,12 @@ DeepSeek review or statement-PDF parsing was done. These remain email-alert
 figures, not complete statement totals. Private source/import artifacts are on
 the Jetson under
 `/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-{sep,aug,jul}-2024-import`.
+
+June–April 2024 were added and verified against the native API; repeat dry runs
+proposed zero additions. They inserted 46/46/32 rows, with everyday spend of
+₹47,591.16/₹142,837.87/₹145,663.00. 104 candidates remain held: 98 HDFC alerts
+without an unambiguous source-printed suffix, three with missing account
+identity, two lender mandates, and one foreign-currency transaction. No
+DeepSeek review or statement-PDF parsing was done; these are email-alert
+figures. Private source/import artifacts are on the Jetson under
+`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-{jun,may,apr}-2024-import`.
