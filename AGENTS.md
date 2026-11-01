@@ -1,39 +1,48 @@
-## HDFC UPI suffix cleanup batch (2026-11-01)
+## HDFC UPI account-suffix correction (2026-11-01)
 
-DeepSeek v4.1 Flash reviewed 767 currently staged held HDFC UPI candidates in
-48 requests of 16 with eight concurrent. All returned quotes were checked
-against their original email. It found an explicit HDFC savings suffix 7672 in
-47; 46 also matched date, amount and direction and were inserted as
-`HDFC Savings ..7672`: October 2023 +15, March 2024 +15, April 2024 +8, and
-April 2025 +8. Each month’s native API count matched the database and repeat
-dry runs proposed zero additions. 721 remain held (720 without explicit
-instrument identity; one exact identity candidate had a date mismatch).
-January–March 2025’s prior review is unchanged: 160 imported, six date cases
-held. Four legacy HDFC statement summary/rounding differences remain separate
-and unresolved. This covers staged HDFC UPI candidate months only; Sep 2022–Sep
-2023 still needs month parsing, and must not be described as swept. Private
-DeepSeek inputs/results/audit and backups are under
-`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-deepseek-hdfc-batch*`
-and Mac `/Users/ajmalrasi/lifeos-private/spending-history/2026-11-01-deepseek-hdfc-batch`.
+DeepSeek v4.1 Flash reviewed 767 staged held HDFC UPI candidates in 48 requests
+of 16 with eight concurrent. All response quotes were checked against source
+emails. The user clarified that an HDFC UPI alert explicitly showing account
+suffix `7672` is from the HDFC bank account, not the RuPay credit card; this is
+the rule regardless of transaction date. Do not impose a date cutoff. For an
+import, still require the source to show `from account **7672` (or equivalent
+explicit account wording), INR, and matching source amount/direction. Use the
+transaction date printed in the source; eight parser dates were corrected from
+their email dates. Two staged alerts do not show suffix `7672` and remain held.
+
+Of the 767-candidate batch, 765 showed `7672`: 46 had already been imported,
+and 719 more were inserted as `HDFC Savings ..7672`. Separately, of the 166
+Jan–Mar 2025 source-reviewed candidates, 160 had already been imported; five
+date-discrepant rows were added after using the literal email dates. One held
+message is a credit-card bill payment from the savings account, not a UPI
+purchase, and remains excluded from spending. Thus 930 HDFC savings UPI debits
+or credits with source-explicit suffix `7672` are now present (724 newly
+inserted in this correction; 206 had been imported earlier). Month database
+and API counts matched and repeat dry runs proposed zero rows for every affected
+month. Private source evidence, approvals, and backups are under
+`/home/ajmalrasi/lifeos-maintenance/spending-history/2026-11-01-hdfc-historical-upi-correction*`
+and Mac `/Users/ajmalrasi/lifeos-private/spending-history/2026-11-01-hdfc-historical-upi-correction`.
+
+The four legacy HDFC card-statement summary differences remain separate and
+unresolved. This only covers months with staged HDFC email candidates; older
+Sep 2022–Sep 2023 mail still needs parsing and must not be described as swept.
 Use bounded concurrent DeepSeek batches for similar multi-file review; do not
 send one record per request.
 
 ## DeepSeek validation and history window update (2026-11-01)
 
-The user requested DeepSeek v4.1 Flash 1017 validation of Jan–Mar 2025 HDFC
-UPI candidates held because the parser snippet lacked a clear suffix. The 166
-full source emails were reviewed in seven sequential requests (104,784 total
-tokens; Engy response did not include a charge header). All 166 exact source
-quotes passed local substring checks; the model found the explicit HDFC savings
-account suffix 7672 in every message, and amount/direction matched all parser
-candidates. Dates matched on 160; five differed and one was unclear, so those
-six remain held. The 160 fully aligned rows were imported with new backups and
-source-bound manifests: March 14, February 86, January 60. Final counts/spend:
-March 60 / ₹254,897.23 (5 held); February 145 / ₹181,533.66 (5 held); January
-120 / ₹344,763.80 (6 held). Exact-month DB/API counts matched; repeat plans
-proposed zero rows (60/145/120 skipped). Total database transactions: 2869.
-No PDF statements were parsed. Private model requests/results, source hashes,
-quotes, manifests and backups are on Jetson under
+The initial DeepSeek v4.1 Flash 1017 validation of Jan–Mar 2025 HDFC UPI held
+candidates reviewed 166 full source emails in seven sequential requests
+(104,784 tokens). All 166 exact source quotes passed local checks; amount and
+direction matched. The initial candidate dates matched on 160; five differed
+and one was unclear. The 160 aligned rows were imported first. In the later
+user-confirmed suffix correction, the five date-discrepant UPI rows were added
+using the literal dates in the email. The remaining unclear-date item is a
+credit-card payment from savings, so it remains excluded from spending. Current
+month counts/spend: March 60 / ₹254,897.23; February 148 / ₹182,181.66; January
+122 / ₹344,933.80. Exact-month DB/API counts matched; repeat plans proposed
+zero rows. No PDF statements were parsed. Private model requests/results,
+source hashes, quotes, manifests and backups are on Jetson under
 `2026-11-01-deepseek-hdfc-jan-mar`; the user API key was not saved.
 
 Money screens previously fetched only 400 trailing days, which clipped Sep 2025
