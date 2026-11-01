@@ -1,19 +1,44 @@
+## DeepSeek validation and history window update (2026-11-01)
+
+The user requested DeepSeek v4.1 Flash 1017 validation of Jan–Mar 2025 HDFC
+UPI candidates held because the parser snippet lacked a clear suffix. The 166
+full source emails were reviewed in seven sequential requests (104,784 total
+tokens; Engy response did not include a charge header). All 166 exact source
+quotes passed local substring checks; the model found the explicit HDFC savings
+account suffix 7672 in every message, and amount/direction matched all parser
+candidates. Dates matched on 160; five differed and one was unclear, so those
+six remain held. The 160 fully aligned rows were imported with new backups and
+source-bound manifests: March 14, February 86, January 60. Final counts/spend:
+March 60 / ₹254,897.23 (5 held); February 145 / ₹181,533.66 (5 held); January
+120 / ₹344,763.80 (6 held). Exact-month DB/API counts matched; repeat plans
+proposed zero rows (60/145/120 skipped). Total database transactions: 2869.
+No PDF statements were parsed. Private model requests/results, source hashes,
+quotes, manifests and backups are on Jetson under
+`2026-11-01-deepseek-hdfc-jan-mar`; the user API key was not saved.
+
+Money screens previously fetched only 400 trailing days, which clipped Sep 2025
+to Sep 28–30 (₹25,087.75 from 102 full-month records / ₹443,399.38). Android
+Money and Sync everything now fetch 1826 days; debug APK build succeeded.
+`web/public/money.mjs` also defaults to 1826 days and was deployed to Pi; served
+file SHA matched. Read-only proxy check returned 2869 transactions, oldest
+2025-01-01, including 102 Sep 2025 rows. Code commit `d1331fd` is pushed to
+main. Next older month is December 2024; these totals remain email-alert views,
+not statement-complete. No test suite was run.
+
 ## March–January2025 primary-mailbox imports (2026-11-01)
 
-Continued the backward run from only `mail2ajmalrasi@gmail.com`, using the
-existing parser/importer. March: 583 messages searched, 46 inserted, 19 held;
-₹117,118.94 everyday spend. February: 543 messages, 59 inserted, 91 held;
-₹58,473.24 everyday spend. January: 569 messages, 60 inserted, 66 held;
-₹324,468.37 everyday spend. All exact-month database/API counts matched and
-repeat dry runs proposed zero rows (46/59/60 skipped). A total of 176 records
-were held aside; 166 are HDFC alerts lacking an unambiguous account/card suffix
-(14/90/62 by month), with the rest mainly foreign-currency alerts, two missing
-identities and unclear lender mandates. January's initial Gmail fetch hit an
-IPv6 network error; one resumed pass completed. Total database rows after
-January: 2709. No PDFs or external model used. These are partial email-alert
-views, especially February and January due to the held HDFC rows. Next older
-month is December 2024. Private source runs, backups and manifests are in Jetson
-maintenance folders `2026-11-01-{mar,feb,jan}-2025-import`.
+Initial imports used only `mail2ajmalrasi@gmail.com` and the existing parser.
+After source-quoted DeepSeek review, 160 held HDFC UPI rows were imported; see
+"DeepSeek validation and history window update" above. Final: March 60 records,
+₹254,897.23 spend, 5 held; February 145, ₹181,533.66, 5 held; January 120,
+₹344,763.80, 6 held. Exact-month API/DB counts matched, and repeat dry runs
+proposed zero. Six HDFC rows remain held for date mismatch/uncertainty; the ten
+other holds are unclear lender mandates, foreign currency, or missing identity.
+January's initial Gmail fetch hit an IPv6 network error, then the resumed pass
+completed. Total database rows after these imports: 2869. No PDFs were parsed;
+these remain email-alert summaries. The initial imports and model-validation
+runs, backups and manifests are under `2026-11-01-{mar,feb,jan}-2025-import` and
+`2026-11-01-deepseek-hdfc-jan-mar` on Jetson.
 
 ## June–April2025 primary-mailbox imports (2026-11-01)
 

@@ -70,9 +70,9 @@ The backward run continued through July 2025 using the same importer:
 | June 2025 | 126 | 126 | ₹123,358.42 | 4 |
 | May 2025 | 97 | 97 | ₹175,339.79 | 16 |
 | April 2025 | 86 | 86 | ₹148,366.27 | 35 |
-| March 2025 | 46 | 46 | ₹117,118.94 | 19 |
-| February 2025 | 59 | 59 | ₹58,473.24 | 91 |
-| January 2025 | 60 | 60 | ₹324,468.37 | 66 |
+| March 2025 | 60 | 60 | ₹254,897.23 | 5 |
+| February 2025 | 145 | 145 | ₹181,533.66 | 5 |
+| January 2025 | 120 | 120 | ₹344,763.80 | 6 |
 
 October–December native API and Pi counts agreed; September–July native API
 and database counts agreed. Repeat dry runs proposed no new rows for all six
@@ -99,10 +99,13 @@ account/card suffix clearly. The remainder are lender mandates, foreign-currency
 rows, or a missing account identity. No statement PDFs were included.
 
 
-March–January 2025 also passed exact-month database/API verification and
-zero-addition repeat dry runs. There are 176 held candidates across the three
-months. Of those, 166 are HDFC alerts whose source text does not identify an
-unambiguous account/card suffix (14 in March, 90 in February, 62 in January).
-The reported totals therefore omit many HDFC alert candidates in February and
-January; treat them as partial email-alert summaries. January needed one Gmail
-retry after a temporary IPv6 network failure. No statement PDFs were parsed.
+March–January 2025 passed exact-month database/API verification and repeat
+dry runs proposed zero new rows. DeepSeek v4.1 Flash reviewed the 166 held HDFC
+UPI source emails: all 166 had locally verified exact quotes for savings account
+suffix 7672, and amount/direction matched the parser candidate. Dates aligned on
+160; five differed and one was unclear. The 160 aligned records were imported;
+the six date cases remain held. Ten other candidates remain held for lender
+mandates, foreign currency, or missing account identity. This remains email-alert
+coverage without statement PDFs. January needed one Gmail retry after a temporary
+IPv6 network failure. The seven model requests used 104,784 tokens; the provider
+response did not include a charge amount.
