@@ -32,7 +32,20 @@ from app.models.transaction import Transaction
 from app.models.transaction_reconciliation import TransactionReconciliation
 
 # Categories that must never count as spend.
-EXCLUDED_FROM_SPEND = {"transfer", "lent_returned", "lend_return", "reversed_debit", "reversal_credit"}
+EXCLUDED_FROM_SPEND = {"transfer", "lent_returned", "lend_return", "reversed_debit", "reversal_credit", "investments", "duplicate"}
+
+# Investment contributions are asset movements, not consumption.
+_INVESTMENT_PARTY = re.compile(r"zerodha|\bbroking\b|groww|smallcase|mutual\s*fund", re.I)
+
+
+def is_investment(txn, categorize=None) -> bool:
+    if txn.spend_category_override is not None:
+        return txn.spend_category_override == "investments"
+    if categorize is not None and categorize(txn.counterparty or "") == "investments":
+        return True
+    return bool(_INVESTMENT_PARTY.search(txn.counterparty or "") or
+                _INVESTMENT_PARTY.search(txn.raw_snippet or ""))
+
 
 # Credits matching this are money arriving from yourself (card bill payments,
 # sweep-ins) — never income/spend.

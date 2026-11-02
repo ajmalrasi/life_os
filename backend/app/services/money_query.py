@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.statements import build_categorizer
 from app.models.transaction import Transaction
-from app.services.reconcile import EXCLUDED_FROM_SPEND
+from app.services.reconcile import EXCLUDED_FROM_SPEND, is_investment
 
 _MODES = {"spending", "income", "all"}
 _GROUPS = {
@@ -144,6 +144,8 @@ def query_money(
         (txn, _effective_category(txn, categorize))
         for txn in transactions
     ]
+    if mode == "spending":
+        prepared = [(txn, effective) for txn, effective in prepared if not is_investment(txn, categorize)]
     if category:
         wanted = _text(category).casefold()
         prepared = [

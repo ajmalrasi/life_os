@@ -33,7 +33,7 @@ from app.repositories.sync_status_repo import SyncAttemptRepository
 from app.schemas.recurring import RecurringChargeOut
 from app.services.raw_email_pipeline import fetch_raw_emails, process_raw_emails
 from app.services.recurring import detect_recurring_charges
-from app.services.reconcile import EXCLUDED_FROM_SPEND
+from app.services.reconcile import EXCLUDED_FROM_SPEND, is_investment
 from app.services.repayments import RepaymentError, RepaymentService
 from app.services.refunds import RefundError, RefundService
 from app.services.job_guard import MAIL_SYNC_JOB, try_job_lock
@@ -65,7 +65,7 @@ def _to_out(rows, db: Session) -> list[TransactionOut]:
         dto = TransactionOut.model_validate(r)
         dto.spend_category = (
             None
-            if r.category in EXCLUDED_FROM_SPEND
+            if r.category in EXCLUDED_FROM_SPEND or is_investment(r, categorize)
             else (r.spend_category_override or categorize(r.counterparty or ""))
         )
         out.append(dto)

@@ -44,7 +44,7 @@ def _account_key(account: str | None) -> tuple[str, str]:
 # Debit categories that are NOT real spending: money moved between the user's
 # own accounts, reversed charges, and lent money returned. Excluded from the
 # daily-spend signal so behavioral correlations aren't distorted by shuffling.
-_NON_SPEND_CATEGORIES = ("transfer", "lent_returned", "reversed_debit")
+_NON_SPEND_CATEGORIES = ("transfer", "lent_returned", "reversed_debit", "investments", "duplicate")
 
 
 class ExpenseRepository:
@@ -193,6 +193,9 @@ class ExpenseRepository:
             dedup_key=dedup_key,
             raw_snippet=txn.raw_snippet,
         )
+        from app.services.reconcile import is_investment
+        if obj.category is None and is_investment(obj):
+            obj.category = "investments"
         self.db.add(obj)
         self.db.flush()
         return obj
