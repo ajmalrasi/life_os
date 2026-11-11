@@ -25,6 +25,43 @@ export function previousSlice(period,slice){
 export function bankAccounts(rows){const result=new Map();for(const row of rows){if(row.source?.toLowerCase()!=='upi' || !/\bsavings?\b/i.test(row.account || ''))continue;const id=accountIdentity(row.account);if(id)result.set(id.key,id);}return [...result.values()].sort((a,b)=>a.label.localeCompare(b.label));}
 function accountIdentity(account){const suffix=/\.\.\s*(\d+)\s*$/.exec(account || ''),bank=(account || '').trim().split(' ')[0].toLowerCase();return suffix&&bank?{key:bank+':'+suffix[1],label:bank.toUpperCase()+' ····'+suffix[1]}:null;}
 export function eligibleRows(rows,state){const known=new Set(bankAccounts(rows).map(a=>a.key));return rows.filter(t=>{if(t.direction!=='debit'||t.spend_category==null||t.currency!==state.currency||(!state.includeEmi&&EMI.has(t.spend_category)))return false;if(!state.bank)return true;const key=t.source?.toLowerCase()==='upi'?accountIdentity(t.account)?.key:null;return known.has(key)&&(state.bank==='all-bank'||state.bank===key);});}
+export function groupCardSpending(rows, state, slice) {
+ if (state.bank) return [];
+
+ const savings = new Set(['hdfc:7672']);
+ for (const {account} of rows) {
+  if (!/\bsavings?\b/i.test(account || '')) continue;
+  const identity = accountIdentity(account);
+  if (identity) savings.add(identity.key);
+ }
+
+ const groups = new Map();
+ for (const transaction of inSlice(eligibleRows(rows, state), slice)) {
+  if (state.selected?.length && !state.selected.includes(transaction.spend_category)) continue;
+
+  const account = transaction.account || '';
+  if (/\b(?:savings?|debit card)\b/i.test(account)) continue;
+
+  const source = transaction.source?.toLowerCase();
+  const identity = accountIdentity(account.replace(/\.\.\s*X+(?=\d)/i, '..'));
+  if (identity && savings.has(identity.key) && (source === 'upi' || identity.key.split(':')[1].length > 4)) continue;
+
+  const isCardSource = ['card_live', 'hdfc_card_live', 'credit_card', 'statement_emi'].includes(source);
+  const hasCardLabel = /\b(?:card|cc)\b/i.test(account) || identity?.key === 'icici:0010';
+  if (!isCardSource && !hasCardLabel) continue;
+
+  // This two-digit suffix is a confirmed alias of SBI ..1970.
+  const card = identity?.key === 'sbi:70' ? accountIdentity('SBI Card ..1970') : identity;
+  const key = card?.key || 'unidentified';
+  const label = card?.label || 'Card not identified';
+  const group = groups.get(key) || {key, label, rows: []};
+  group.rows.push(transaction);
+  groups.set(key, group);
+ }
+ return [...groups.values()]
+  .map(group => ({...group, amount: total(group.rows)}))
+  .sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
+}
 export function inSlice(rows,slice){return rows.filter(t=>t.txn_date>=slice.start&&t.txn_date<=slice.end);}
 export function total(rows){return rows.reduce((a,t)=>a+cents(t.amount),0)/100;}
 export function groupCategories(rows){const groups=new Map();for(const t of rows){const key=t.spend_category || 'other';const group=groups.get(key)||{category:key,rows:[],amount:0};group.rows.push(t);group.amount+=cents(t.amount);groups.set(key,group);}return [...groups.values()].map(g=>({...g,amount:g.amount/100})).sort((a,b)=>b.amount-a.amount);}
