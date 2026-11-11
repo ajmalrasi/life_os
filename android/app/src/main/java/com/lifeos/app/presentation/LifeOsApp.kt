@@ -2,6 +2,8 @@ package com.lifeos.app.presentation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,8 +52,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -129,6 +133,9 @@ fun LifeOsApp(
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val imeInsets = WindowInsets.ime
+    val density = LocalDensity.current
+    val drawerClosed = drawerState.isClosed && drawerState.targetValue == DrawerValue.Closed
     val appViewModel: LifeOsAppViewModel = hiltViewModel()
     val hasStaleSources by appViewModel.hasStaleSources.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -138,6 +145,7 @@ fun LifeOsApp(
     }
     var moneyOverviewRequest by remember { mutableStateOf(0L) }
     var tripMapFullscreen by remember { mutableStateOf(false) }
+    var restoreAskKeyboard by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(currentRoute) {
         if (currentRoute != TRIP_DETAILS_ROUTE) tripMapFullscreen = false
@@ -146,18 +154,19 @@ fun LifeOsApp(
         }
     }
 
-    fun dismissAskKeyboard() {
-        if (currentRoute == Destination.CHAT.route) {
-            focusManager.clearFocus()
-            keyboard?.hide()
-        }
+    fun dismissAskKeyboard(rememberVisibility: Boolean) {
+        if (currentRoute != Destination.CHAT.route) return
+        if (rememberVisibility) restoreAskKeyboard = imeInsets.getBottom(density) > 0
+        focusManager.clearFocus()
+        keyboard?.hide()
     }
 
     // Drawer areas are siblings, not a history: switching area clears the
     // stack so the area is the root and shows no Back bar. Only pages opened
     // from within an area (details, Settings sub-pages, in-page links) stack.
     val switchArea: (Destination) -> Unit = { destination ->
-        dismissAskKeyboard()
+        // The menu button already captured visibility before hiding the keyboard.
+        dismissAskKeyboard(rememberVisibility = drawerClosed || imeInsets.getBottom(density) > 0)
         navController.navigate(destination.route) {
             popUpTo(navController.graph.id) { inclusive = true }
             launchSingleTop = true
@@ -171,7 +180,7 @@ fun LifeOsApp(
     }
     val showBackBar = previousRoute != null
     val openDrawer: () -> Unit = {
-        dismissAskKeyboard()
+        dismissAskKeyboard(rememberVisibility = true)
         scope.launch { drawerState.open() }
     }
 
@@ -251,10 +260,16 @@ fun LifeOsApp(
                     PriorityScreen(onOpenItem = { id -> navController.navigate("priority/$id") })
                 }
                 composable(Destination.INSIGHTS.route) { InsightsScreen() }
-                composable(Destination.CHAT.route) {
+                composable(Destination.CHAT.route) { entry ->
                     // Area switches discard destination entries. Keep the conversation at the activity.
                     val chatViewModel: ChatViewModel = hiltViewModel(activityOwner)
-                    ChatScreen(chatViewModel, modifier = Modifier.consumeWindowInsets(contentPadding))
+                    ChatScreen(
+                        viewModel = chatViewModel,
+                        modifier = Modifier.consumeWindowInsets(contentPadding),
+                        canRestoreKeyboard = currentBackStackEntry == entry && drawerClosed,
+                        restoreKeyboard = restoreAskKeyboard,
+                        onKeyboardRestored = { restoreAskKeyboard = false },
+                    )
                 }
                 composable(Destination.TRIPS.route) {
                     TripsScreen(onOpenTrip = { id -> navController.navigate("trip/$id") })

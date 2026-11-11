@@ -1,5 +1,6 @@
 package com.lifeos.app
 
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.lifeos.app.domain.model.ChatStreamEvent
@@ -72,10 +73,14 @@ class ChatViewModelTest {
         val restored = ChatViewModel(repository, savedState)
 
         assertEquals("  My unsent question  ", restored.state.value.input)
+        assertEquals(TextRange(restored.state.value.input.length), restored.state.value.inputSelection)
+        restored.onInputChange(restored.state.value.input, TextRange(3))
+        assertEquals(TextRange(3), restored.state.value.inputSelection)
         restored.send()
         advanceUntilIdle()
         assertEquals("My unsent question", restored.state.value.messages.single().content)
         assertEquals("", ChatViewModel(repository, savedState).state.value.input)
+        assertEquals(TextRange.Zero, restored.state.value.inputSelection)
     }
 
     @Test

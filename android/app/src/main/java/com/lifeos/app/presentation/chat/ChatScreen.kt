@@ -53,6 +53,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -61,20 +63,38 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeos.app.presentation.components.AreaHeader
 import com.lifeos.app.presentation.theme.LifeOsColors
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier) {
+fun ChatScreen(
+    viewModel: ChatViewModel,
+    modifier: Modifier = Modifier,
+    canRestoreKeyboard: Boolean = false,
+    restoreKeyboard: Boolean = false,
+    onKeyboardRestored: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val composerFocus = remember { FocusRequester() }
+
+    // Wait for the destination to be active and the drawer to finish closing.
+    LaunchedEffect(canRestoreKeyboard) {
+        if (canRestoreKeyboard && restoreKeyboard) {
+            withFrameNanos { }
+            composerFocus.requestFocus()
+            keyboard?.show()
+            onKeyboardRestored()
+        }
+    }
+
     fun dismissKeyboard() {
         focusManager.clearFocus()
         keyboard?.hide()
@@ -104,6 +124,7 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier) {
         )
         ChatComposer(
             state = state,
+            composerFocus = composerFocus,
             onInputChange = viewModel::onInputChange,
             onRetry = viewModel::retry,
             onSend = {
@@ -117,10 +138,17 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier) {
 @Composable
 private fun ChatComposer(
     state: ChatUiState,
-    onInputChange: (String) -> Unit,
+    composerFocus: FocusRequester,
+    onInputChange: (String, TextRange) -> Unit,
     onSend: () -> Unit,
     onRetry: () -> Unit,
 ) {
+    var editingValue by remember { mutableStateOf(TextFieldValue(state.input, state.inputSelection)) }
+    val fieldValue = if (editingValue.text == state.input && editingValue.selection == state.inputSelection) {
+        editingValue
+    } else {
+        TextFieldValue(state.input, state.inputSelection)
+    }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -153,9 +181,12 @@ private fun ChatComposer(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 TextField(
-                    value = state.input,
-                    onValueChange = onInputChange,
-                    modifier = Modifier.weight(1f),
+                    value = fieldValue,
+                    onValueChange = { value ->
+                        editingValue = value
+                        onInputChange(value.text, value.selection)
+                    },
+                    modifier = Modifier.weight(1f).focusRequester(composerFocus),
                     placeholder = { Text("Message Ask") },
                     minLines = 1,
                     maxLines = 5,

@@ -1,5 +1,6 @@
 package com.lifeos.app.presentation.chat
 
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,6 +27,7 @@ data class ChatMessage(
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val input: String = "",
+    val inputSelection: TextRange = TextRange.Zero,
     val sending: Boolean = false,
     val suggestions: List<String> = emptyList(),
     val status: String = "",
@@ -39,7 +41,10 @@ class ChatViewModel @Inject constructor(
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ChatUiState(input = savedState.get<String>(DRAFT_KEY).orEmpty()))
+    private val restoredDraft = savedState.get<String>(DRAFT_KEY).orEmpty()
+    private val _state = MutableStateFlow(
+        ChatUiState(input = restoredDraft, inputSelection = TextRange(restoredDraft.length)),
+    )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     init {
@@ -55,9 +60,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun onInputChange(text: String) {
-        savedState[DRAFT_KEY] = text
-        _state.value = _state.value.copy(input = text)
+    fun onInputChange(text: String, selection: TextRange = TextRange(text.length)) {
+        if (text != _state.value.input) savedState[DRAFT_KEY] = text
+        _state.value = _state.value.copy(input = text, inputSelection = selection)
     }
 
     fun send(text: String? = null) {
