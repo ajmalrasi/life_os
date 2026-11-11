@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -84,6 +85,7 @@ fun ChatScreen(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val composerFocus = remember { FocusRequester() }
+    var confirmNewChat by rememberSaveable { mutableStateOf(false) }
 
     // Wait for the destination to be active and the drawer to finish closing.
     LaunchedEffect(canRestoreKeyboard) {
@@ -100,6 +102,22 @@ fun ChatScreen(
         keyboard?.hide()
     }
 
+    if (confirmNewChat) {
+        AlertDialog(
+            onDismissRequest = { confirmNewChat = false },
+            title = { Text("Start a new chat?") },
+            text = { Text("This clears the current conversation and any unsent draft.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmNewChat = false
+                    dismissKeyboard()
+                    viewModel.startNewChat()
+                }) { Text("New chat") }
+            },
+            dismissButton = { TextButton(onClick = { confirmNewChat = false }) { Text("Cancel") } },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -107,7 +125,15 @@ fun ChatScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .imePadding(),
     ) {
-        AreaHeader("Ask")
+        AreaHeader(
+            title = "Ask",
+            action = {
+                TextButton(
+                    enabled = state.messages.isNotEmpty() || state.input.isNotEmpty(),
+                    onClick = { confirmNewChat = true },
+                ) { Text("New chat") }
+            },
+        )
         StreamingMessageList(
             messages = state.messages,
             sending = state.sending,

@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 
 data class ChatMessage(
@@ -46,6 +48,7 @@ class ChatViewModel @Inject constructor(
         ChatUiState(input = restoredDraft, inputSelection = TextRange(restoredDraft.length)),
     )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
+    private var responseJob: Job? = null
 
     init {
         // Show cached model questions immediately; check once for the background refresh.
@@ -79,9 +82,10 @@ class ChatViewModel @Inject constructor(
             status = "Thinking",
         )
 
-        viewModelScope.launch {
+        responseJob = viewModelScope.launch {
             runCatching {
                 chatRepository.stream(message, history, contextDays = 30).collect { event ->
+                    ensureActive()
                     when (event) {
                         is ChatStreamEvent.Delta -> appendAssistantText(event.text)
                         is ChatStreamEvent.Status -> _state.value = _state.value.copy(status = event.text)
@@ -105,8 +109,16 @@ class ChatViewModel @Inject constructor(
                 markIncomplete()
                 _state.value = _state.value.copy(error = "Connection interrupted. Check Settings and try again.", retryable = true)
             }
+            ensureActive()
             _state.value = _state.value.copy(sending = false, status = "")
         }
+    }
+
+    fun startNewChat() {
+        responseJob?.cancel()
+        responseJob = null
+        savedState.remove<String>(DRAFT_KEY)
+        _state.value = ChatUiState(suggestions = _state.value.suggestions)
     }
 
     fun retry() {

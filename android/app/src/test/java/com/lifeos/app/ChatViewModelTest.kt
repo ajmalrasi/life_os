@@ -13,10 +13,12 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -141,6 +143,39 @@ class ChatViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("Model question?"), vm.state.value.suggestions)
         coVerify(exactly = 2) { repository.suggestions(30) }
+    }
+
+    @Test
+    fun `new chat cancels the reply and starts with an empty history and draft`() = runTest {
+        var cancelled = false
+        every { repository.stream("First question", any(), any()) } returns flow {
+            try {
+                emit(ChatStreamEvent.Delta("In progress"))
+                awaitCancellation()
+            } finally {
+                cancelled = true
+            }
+        }
+        every { repository.stream("Second question", emptyList(), any()) } returns flowOf(
+            ChatStreamEvent.Delta("New reply"),
+            ChatStreamEvent.Done(emptyList(), false),
+        )
+        val savedState = SavedStateHandle()
+        val vm = ChatViewModel(repository, savedState)
+        vm.send("First question")
+        runCurrent()
+        assertTrue(vm.state.value.sending)
+        vm.onInputChange("Old draft")
+
+        vm.startNewChat()
+        assertTrue(vm.state.value.messages.isEmpty())
+        assertEquals("", vm.state.value.input)
+        assertEquals("", ChatViewModel(repository, savedState).state.value.input)
+        vm.send("Second question")
+        advanceUntilIdle()
+
+        assertTrue(cancelled)
+        assertEquals(listOf("Second question", "New reply"), vm.state.value.messages.map { it.content })
     }
 
     @Test
