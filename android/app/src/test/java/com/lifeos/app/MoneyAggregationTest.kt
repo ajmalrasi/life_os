@@ -4,6 +4,8 @@ import com.lifeos.app.domain.model.Transaction
 import com.lifeos.app.presentation.money.SpendPeriod
 import com.lifeos.app.presentation.money.bankUpiAccountKey
 import com.lifeos.app.presentation.money.bankUpiAccountOptions
+import com.lifeos.app.presentation.money.CardSpend
+import com.lifeos.app.presentation.money.cardSpending
 import com.lifeos.app.presentation.money.budgetPace
 import com.lifeos.app.presentation.money.categoryTotals
 import com.lifeos.app.presentation.money.filterEmiTransactions
@@ -236,6 +238,32 @@ class MoneyAggregationTest {
         assertEquals(BigDecimal("0.00"), pace.projectedMonthTotal)
         assertEquals(false, pace.onPaceToExceed)
         assertEquals(null, pace.projectedExceedDay)
+    }
+
+    @Test
+    fun `monthly card spending merges card labels and separates bank UPI`() {
+        val history = listOf(
+            transaction(1, "food", "HDFC RuPay CC ..5473", amount = "100.01"),
+            transaction(2, "food", "HDFC Bank Card ..5473", amount = "200.02"),
+            transaction(3, "food", "HDFC Bank Card ..7672"),
+            transaction(4, "food", "Axis Savings ..4402", date = LocalDate.of(2026, 7, 31)),
+            transaction(5, "food", "Axis Card ..XX4402"),
+            transaction(6, "food", "ICICI Amazon Pay ..0010"),
+            transaction(7, "food", "SBI Card ..70", source = "statement_emi"),
+            transaction(8, "food", "SBI Card ..1970", source = "card_live"),
+            transaction(9, "food", "HDFC Card ..5473", date = LocalDate.of(2026, 9, 1)),
+            transaction(10, "food", "HDFC Card ..5473").copy(currency = "USD"),
+        )
+        val august = sliceFor(SpendPeriod.MONTH, LocalDate.of(2026, 8, 31), null, null)
+
+        assertEquals(
+            listOf(
+                CardSpend("HDFC ····5473", BigDecimal("300.03"), 2),
+                CardSpend("SBI ····1970", BigDecimal("200.00"), 2),
+                CardSpend("ICICI ····0010", BigDecimal("100.00"), 1),
+            ),
+            cardSpending(history.inSlice(august), history),
+        )
     }
 
     private fun transaction(

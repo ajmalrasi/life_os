@@ -9,14 +9,14 @@ internal data class BankUpiAccountOption(
     val label: String,
 )
 
-private data class AccountIdentity(
+internal data class AccountIdentity(
     val key: String,
     val bank: String,
     val last4: String,
 )
 
 private val trailingAccountDigits = Regex("""\.\.\s*(\d+)\s*$""")
-private val savingsAccount = Regex("""\bsavings?\b""", RegexOption.IGNORE_CASE)
+internal val savingsAccount = Regex("""\bsavings?\b""", RegexOption.IGNORE_CASE)
 
 /**
  * Finds bank-account UPI identities only from rows that explicitly say
@@ -58,7 +58,7 @@ internal fun Transaction.bankUpiAccountKey(
     return identity.key.takeIf { it in knownSavingsKeys }
 }
 
-private fun parseAccountIdentity(account: String): AccountIdentity? {
+internal fun parseAccountIdentity(account: String): AccountIdentity? {
     val last4 = trailingAccountDigits.find(account)?.groupValues?.get(1) ?: return null
     val bankToken = account.trim().substringBefore(' ').lowercase()
     if (bankToken.isBlank()) return null

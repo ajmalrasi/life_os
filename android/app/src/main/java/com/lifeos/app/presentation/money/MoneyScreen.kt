@@ -106,17 +106,18 @@ import java.time.ZoneOffset
 import java.time.Duration
 import java.time.format.DateTimeFormatter
 
-/** Whole rupees with Indian (lakh/crore) digit grouping: ₹12,34,567. */
-private fun BigDecimal.rupees(): String {
-    val plain = this.setScale(0, RoundingMode.HALF_UP).toPlainString()
+/** Rupees with Indian (lakh/crore) digit grouping. */
+private fun BigDecimal.rupees(decimals: Int = 0): String {
+    val plain = this.setScale(decimals, RoundingMode.HALF_UP).toPlainString()
     val negative = plain.startsWith("-")
-    val digits = if (negative) plain.drop(1) else plain
+    val digits = plain.removePrefix("-").substringBefore('.')
+    val fraction = if (decimals > 0) "." + plain.substringAfter('.') else ""
     val grouped = if (digits.length <= 3) digits else {
         val tail = digits.takeLast(3)
         val head = digits.dropLast(3)
         head.reversed().chunked(2).joinToString(",").reversed() + "," + tail
     }
-    return (if (negative) "-₹" else "₹") + grouped
+    return (if (negative) "-₹" else "₹") + grouped + fraction
 }
 
 internal fun formatSpendAmount(amount: BigDecimal): String = amount.rupees()
@@ -728,6 +729,35 @@ fun MoneyScreen(
 
                         MoneySection.CARDS -> {
                             item {
+                                PeriodSelector(
+                                    label = periodLabel(state.period, state.anchor, slice),
+                                    expanded = showPeriodMenu,
+                                    canGoPrev = canGoPrev,
+                                    canGoNext = canGoNext,
+                                    onToggleMenu = { showPeriodMenu = !showPeriodMenu },
+                                    onDismissMenu = { showPeriodMenu = false },
+                                    onSelectPeriod = { period ->
+                                        showPeriodMenu = false
+                                        if (period == SpendPeriod.CUSTOM) showRangePicker = true
+                                        else viewModel.setPeriod(period)
+                                    },
+                                    onPrev = viewModel::prevPeriod,
+                                    onNext = viewModel::nextPeriod,
+                                )
+                                val cards = remember(spendTxns, state.transactions, state.bankUpiFilter) {
+                                    if (state.bankUpiFilter == null) cardSpending(spendTxns, state.transactions)
+                                    else emptyList()
+                                }
+                                CardSpendingSection(
+                                    cards = cards,
+                                    monthly = state.period == SpendPeriod.MONTH,
+                                    includeEmi = state.includeEmi,
+                                    bankFiltered = state.bankUpiFilter != null,
+                                    onOpenFilters = { showFilters = true },
+                                )
+                                Spacer(Modifier.height(24.dp))
+                            }
+                            item {
                                 CardsSummary(
                                     billedTotal = state.totalDue ?: BigDecimal.ZERO,
                                     billedCount = state.cardDues.size,
@@ -778,6 +808,47 @@ fun MoneyScreen(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
         )
+    }
+}
+
+@Composable
+private fun CardSpendingSection(
+    cards: List<CardSpend>,
+    monthly: Boolean,
+    includeEmi: Boolean,
+    bankFiltered: Boolean,
+    onOpenFilters: () -> Unit,
+) {
+    MoneySectionHeading(
+        title = if (monthly) "Monthly card spending" else "Card spending",
+        subtitle = if (includeEmi) "Recorded purchases · INR · EMI included" else "Recorded purchases · INR · EMI excluded",
+        action = "Filters",
+        onAction = onOpenFilters,
+    )
+    if (cards.isEmpty()) {
+        EmptyInlineMessage(
+            if (bankFiltered) "Choose All accounts in Filters to see card spending."
+            else "No recorded card spending for this period.",
+        )
+        return
+    }
+    Text(
+        cards.sumOf { it.amount }.rupees(decimals = 2),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.SemiBold,
+    )
+    cards.forEach { card ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(card.label, style = MaterialTheme.typography.bodyMedium)
+                val countLabel = if (card.count == 1) "purchase" else "purchases"
+                Text("${card.count} $countLabel", style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+            }
+            Text(card.amount.rupees(decimals = 2), style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 
