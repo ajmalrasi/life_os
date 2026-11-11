@@ -31,11 +31,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -128,10 +130,13 @@ fun ChatScreen(
         AreaHeader(
             title = "Ask",
             action = {
-                TextButton(
+                IconButton(
                     enabled = state.messages.isNotEmpty() || state.input.isNotEmpty(),
                     onClick = { confirmNewChat = true },
-                ) { Text("New chat") }
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = LifeOsColors.Primary),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "New chat")
+                }
             },
         )
         StreamingMessageList(
