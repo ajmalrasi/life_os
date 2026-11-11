@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -51,6 +52,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,6 +66,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lifeos.app.presentation.chat.ChatScreen
+import com.lifeos.app.presentation.chat.ChatViewModel
 import com.lifeos.app.presentation.components.LocalOpenNavigation
 import com.lifeos.app.presentation.dashboard.DashboardScreen
 import com.lifeos.app.presentation.insights.InsightsScreen
@@ -118,9 +123,12 @@ fun LifeOsApp(
     startDestination: String = DEFAULT_DESTINATION_ROUTE,
     onDestinationChanged: ((Destination) -> Unit)? = null,
 ) {
+    val activityOwner = checkNotNull(LocalViewModelStoreOwner.current)
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val appViewModel: LifeOsAppViewModel = hiltViewModel()
     val hasStaleSources by appViewModel.hasStaleSources.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -138,10 +146,18 @@ fun LifeOsApp(
         }
     }
 
+    fun dismissAskKeyboard() {
+        if (currentRoute == Destination.CHAT.route) {
+            focusManager.clearFocus()
+            keyboard?.hide()
+        }
+    }
+
     // Drawer areas are siblings, not a history: switching area clears the
     // stack so the area is the root and shows no Back bar. Only pages opened
     // from within an area (details, Settings sub-pages, in-page links) stack.
     val switchArea: (Destination) -> Unit = { destination ->
+        dismissAskKeyboard()
         navController.navigate(destination.route) {
             popUpTo(navController.graph.id) { inclusive = true }
             launchSingleTop = true
@@ -154,7 +170,10 @@ fun LifeOsApp(
         navController.navigate(destination.route) { launchSingleTop = true }
     }
     val showBackBar = previousRoute != null
-    val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
+    val openDrawer: () -> Unit = {
+        dismissAskKeyboard()
+        scope.launch { drawerState.open() }
+    }
 
     // Notification/widget opens land on the area as its root, like the drawer.
     LaunchedEffect(startTab, openRequestId) {
@@ -232,7 +251,11 @@ fun LifeOsApp(
                     PriorityScreen(onOpenItem = { id -> navController.navigate("priority/$id") })
                 }
                 composable(Destination.INSIGHTS.route) { InsightsScreen() }
-                composable(Destination.CHAT.route) { ChatScreen() }
+                composable(Destination.CHAT.route) {
+                    // Area switches discard destination entries. Keep the conversation at the activity.
+                    val chatViewModel: ChatViewModel = hiltViewModel(activityOwner)
+                    ChatScreen(chatViewModel, modifier = Modifier.consumeWindowInsets(contentPadding))
+                }
                 composable(Destination.TRIPS.route) {
                     TripsScreen(onOpenTrip = { id -> navController.navigate("trip/$id") })
                 }

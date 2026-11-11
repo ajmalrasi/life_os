@@ -1,5 +1,6 @@
 package com.lifeos.app.presentation.chat
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.domain.model.ChatTurn
@@ -35,9 +36,10 @@ data class ChatUiState(
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository,
+    private val savedState: SavedStateHandle,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ChatUiState())
+    private val _state = MutableStateFlow(ChatUiState(input = savedState.get<String>(DRAFT_KEY).orEmpty()))
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     init {
@@ -54,19 +56,21 @@ class ChatViewModel @Inject constructor(
     }
 
     fun onInputChange(text: String) {
+        savedState[DRAFT_KEY] = text
         _state.value = _state.value.copy(input = text)
     }
 
-    fun send(text: String = _state.value.input) {
-        val message = text.trim()
+    fun send(text: String? = null) {
+        val message = (text ?: _state.value.input).trim()
         if (message.isEmpty() || _state.value.sending) return
 
         val history = _state.value.messages.filterNot { it.incomplete }.map { ChatTurn(it.role, it.content) }
+        if (text == null) onInputChange("")
         _state.value = _state.value.copy(
             messages = _state.value.messages + ChatMessage("user", message),
-            input = "",
             sending = true,
             error = null,
+            retryable = true,
             status = "Thinking",
         )
 
@@ -126,6 +130,10 @@ class ChatViewModel @Inject constructor(
             messages += ChatMessage("assistant", text)
         }
         _state.value = _state.value.copy(messages = messages)
+    }
+
+    private companion object {
+        const val DRAFT_KEY = "askDraft"
     }
 
     private fun finishAssistant(citations: List<Citation>) {

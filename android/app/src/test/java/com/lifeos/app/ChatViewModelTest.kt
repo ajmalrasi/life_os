@@ -1,5 +1,6 @@
 package com.lifeos.app
 
+import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.lifeos.app.domain.model.ChatStreamEvent
 import com.lifeos.app.domain.model.ChatTurn
@@ -46,7 +47,7 @@ class ChatViewModelTest {
             ),
         )
 
-        val vm = ChatViewModel(repository)
+        val vm = ChatViewModel(repository, SavedStateHandle())
         vm.send("Why am I unproductive?")
 
         vm.state.test {
@@ -64,8 +65,22 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `draft survives saved state restoration and clears on send`() = runTest {
+        every { repository.stream(any(), any(), any()) } returns flowOf(ChatStreamEvent.Done(emptyList(), false))
+        val savedState = SavedStateHandle()
+        ChatViewModel(repository, savedState).onInputChange("  My unsent question  ")
+        val restored = ChatViewModel(repository, savedState)
+
+        assertEquals("  My unsent question  ", restored.state.value.input)
+        restored.send()
+        advanceUntilIdle()
+        assertEquals("My unsent question", restored.state.value.messages.single().content)
+        assertEquals("", ChatViewModel(repository, savedState).state.value.input)
+    }
+
+    @Test
     fun `blank message is ignored`() = runTest {
-        val vm = ChatViewModel(repository)
+        val vm = ChatViewModel(repository, SavedStateHandle())
         vm.send("   ")
         assertEquals(0, vm.state.value.messages.size)
     }
@@ -77,7 +92,7 @@ class ChatViewModelTest {
             ChatStreamEvent.Error("Timed out"),
             ChatStreamEvent.Done(emptyList(), false, incomplete = true),
         )
-        val vm = ChatViewModel(repository)
+        val vm = ChatViewModel(repository, SavedStateHandle())
         vm.send("My spending")
         advanceUntilIdle()
         assertEquals("Partial", vm.state.value.messages.last().content)
@@ -88,8 +103,10 @@ class ChatViewModelTest {
             ChatStreamEvent.Delta("Complete"),
             ChatStreamEvent.Done(emptyList(), false),
         )
+        vm.onInputChange("An unsent follow-up")
         vm.retry()
         advanceUntilIdle()
+        assertEquals("An unsent follow-up", vm.state.value.input)
         assertEquals(2, vm.state.value.messages.size)
         assertEquals("Complete", vm.state.value.messages.last().content)
         assertEquals(null, vm.state.value.error)
@@ -101,7 +118,7 @@ class ChatViewModelTest {
             emit(ChatStreamEvent.Delta("Partial"))
             throw java.io.IOException("disconnected")
         }
-        val vm = ChatViewModel(repository)
+        val vm = ChatViewModel(repository, SavedStateHandle())
         vm.send("Hello")
         advanceUntilIdle()
         assertTrue(vm.state.value.messages.last().incomplete)
@@ -114,7 +131,7 @@ class ChatViewModelTest {
         coEvery { repository.suggestions(any()) } returnsMany listOf(
             emptyList(), listOf("Model question?"),
         )
-        val vm = ChatViewModel(repository)
+        val vm = ChatViewModel(repository, SavedStateHandle())
         assertTrue(vm.state.value.suggestions.isEmpty())
         advanceUntilIdle()
         assertEquals(listOf("Model question?"), vm.state.value.suggestions)
@@ -129,7 +146,7 @@ class ChatViewModelTest {
             ChatStreamEvent.Done(emptyList(), true),
         )
 
-        val vm = ChatViewModel(repository)
+        val vm = ChatViewModel(repository, SavedStateHandle())
         vm.send("first")
         advanceUntilIdle()
         vm.send("second")
