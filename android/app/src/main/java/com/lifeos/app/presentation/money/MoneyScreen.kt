@@ -75,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -729,40 +730,40 @@ fun MoneyScreen(
 
                         MoneySection.CARDS -> {
                             item {
-                                PeriodSelector(
-                                    label = periodLabel(state.period, state.anchor, slice),
-                                    expanded = showPeriodMenu,
-                                    canGoPrev = canGoPrev,
-                                    canGoNext = canGoNext,
-                                    onToggleMenu = { showPeriodMenu = !showPeriodMenu },
-                                    onDismissMenu = { showPeriodMenu = false },
-                                    onSelectPeriod = { period ->
-                                        showPeriodMenu = false
-                                        if (period == SpendPeriod.CUSTOM) showRangePicker = true
-                                        else viewModel.setPeriod(period)
-                                    },
-                                    onPrev = viewModel::prevPeriod,
-                                    onNext = viewModel::nextPeriod,
+                                CardsSummary(
+                                    billedTotal = state.totalDue ?: BigDecimal.ZERO,
+                                    billedCount = state.cardDues.size,
+                                    currentTotal = state.currentCardCycles.sumOf { it.currentSpend },
                                 )
+                                Spacer(Modifier.height(16.dp))
+                            }
+                            item {
                                 val cards = remember(spendTxns, state.transactions, state.bankUpiFilter) {
                                     if (state.bankUpiFilter == null) cardSpending(spendTxns, state.transactions)
                                     else emptyList()
                                 }
                                 CardSpendingSection(
                                     cards = cards,
-                                    monthly = state.period == SpendPeriod.MONTH,
                                     includeEmi = state.includeEmi,
                                     bankFiltered = state.bankUpiFilter != null,
+                                    filterCount = activeFilterCount,
                                     onOpenFilters = { showFilters = true },
-                                )
-                                Spacer(Modifier.height(24.dp))
-                            }
-                            item {
-                                CardsSummary(
-                                    billedTotal = state.totalDue ?: BigDecimal.ZERO,
-                                    billedCount = state.cardDues.size,
-                                    currentTotal = state.currentCardCycles.fold(BigDecimal.ZERO) { sum, cycle ->
-                                        sum + cycle.currentSpend
+                                    periodSelector = {
+                                        PeriodSelector(
+                                            label = periodLabel(state.period, state.anchor, slice),
+                                            expanded = showPeriodMenu,
+                                            canGoPrev = canGoPrev,
+                                            canGoNext = canGoNext,
+                                            onToggleMenu = { showPeriodMenu = !showPeriodMenu },
+                                            onDismissMenu = { showPeriodMenu = false },
+                                            onSelectPeriod = { period ->
+                                                showPeriodMenu = false
+                                                if (period == SpendPeriod.CUSTOM) showRangePicker = true
+                                                else viewModel.setPeriod(period)
+                                            },
+                                            onPrev = viewModel::prevPeriod,
+                                            onNext = viewModel::nextPeriod,
+                                        )
                                     },
                                 )
                                 Spacer(Modifier.height(24.dp))
@@ -814,40 +815,67 @@ fun MoneyScreen(
 @Composable
 private fun CardSpendingSection(
     cards: List<CardSpend>,
-    monthly: Boolean,
     includeEmi: Boolean,
     bankFiltered: Boolean,
+    filterCount: Int,
     onOpenFilters: () -> Unit,
+    periodSelector: @Composable () -> Unit,
 ) {
-    MoneySectionHeading(
-        title = if (monthly) "Monthly card spending" else "Card spending",
-        subtitle = if (includeEmi) "Recorded purchases · INR · EMI included" else "Recorded purchases · INR · EMI excluded",
-        action = "Filters",
-        onAction = onOpenFilters,
-    )
-    if (cards.isEmpty()) {
-        EmptyInlineMessage(
-            if (bankFiltered) "Choose All accounts in Filters to see card spending."
-            else "No recorded card spending for this period.",
-        )
-        return
-    }
-    Text(
-        cards.sumOf { it.amount }.rupees(decimals = 2),
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.SemiBold,
-    )
-    cards.forEach { card ->
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(card.label, style = MaterialTheme.typography.bodyMedium)
-                val countLabel = if (card.count == 1) "purchase" else "purchases"
-                Text("${card.count} $countLabel", style = MaterialTheme.typography.labelSmall, color = LifeOsColors.OnSurfaceMuted)
+    var showAllCards by rememberSaveable { mutableStateOf(false) }
+    LifeOsCard(accent = LifeOsColors.Primary) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "Card spending",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LifeOsColors.OnBackground,
+                )
+                TextButton(onClick = onOpenFilters) {
+                    Text(if (filterCount > 0) "Filters · $filterCount" else "Filters")
+                }
             }
-            Text(card.amount.rupees(decimals = 2), style = MaterialTheme.typography.bodyMedium)
+            periodSelector()
+            if (cards.isEmpty()) {
+                EmptyInlineMessage(
+                    if (bankFiltered) "Choose All accounts in Filters to see card spending."
+                    else "No recorded card spending for this period.",
+                )
+            } else {
+                Text(
+                    cards.sumOf { it.amount }.rupees(decimals = 2),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = LifeOsColors.OnBackground,
+                )
+                Text(
+                    if (includeEmi) "Recorded spend · EMI included" else "Recorded spend · EMI excluded",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LifeOsColors.OnSurfaceMuted,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                )
+                Box(Modifier.fillMaxWidth().height(1.dp).background(LifeOsColors.SurfaceBorder))
+                val previewSize = 3
+                val visibleCards = if (showAllCards) cards else cards.take(previewSize)
+                visibleCards.forEach { card ->
+                    val countLabel = if (card.count == 1) "purchase" else "purchases"
+                    CreditCardRow(
+                        label = card.label,
+                        supporting = "${card.count} $countLabel",
+                        amount = card.amount.rupees(decimals = 2),
+                        urgent = false,
+                    )
+                }
+                if (cards.size > previewSize) {
+                    TextButton(onClick = { showAllCards = !showAllCards }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                        Text(if (showAllCards) "Show fewer cards" else "Show all ${cards.size} cards")
+                    }
+                }
+            }
         }
     }
 }
@@ -1688,9 +1716,16 @@ private fun CurrentCycleRow(cycle: CurrentCardCycle, onOpenCurrentCycle: (String
 }
 
 @Composable
-private fun CreditCardRow(label: String, supporting: String, amount: String, urgent: Boolean, onClick: () -> Unit) {
+private fun CreditCardRow(
+    label: String,
+    supporting: String,
+    amount: String,
+    urgent: Boolean,
+    onClick: (() -> Unit)? = null,
+) {
+    val interaction = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 11.dp),
+        modifier = Modifier.fillMaxWidth().then(interaction).padding(vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(shape = RoundedCornerShape(12.dp), color = LifeOsColors.PrimarySoft) {
@@ -1711,7 +1746,9 @@ private fun CreditCardRow(label: String, supporting: String, amount: String, urg
         }
         Spacer(Modifier.width(10.dp))
         Text(amount, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = LifeOsColors.OnSurfaceMuted, modifier = Modifier.size(18.dp))
+        if (onClick != null) {
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = LifeOsColors.OnSurfaceMuted, modifier = Modifier.size(18.dp))
+        }
     }
 }
 
