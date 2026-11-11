@@ -40,6 +40,8 @@ sealed interface StopAction<out S : StopSpan> {
 /** Rules for turning recorded locations into stops and naming them from the plan. */
 object StopDetection {
     const val MIN_STAY_MILLIS = 8 * 60 * 1000L
+    // Keep a nearby reading from just before the eight-minute cutoff.
+    const val STAY_LOOKBACK_MILLIS = MIN_STAY_MILLIS + 2 * 60 * 1000L
     const val STAY_RADIUS_METERS = 150.0
     const val LEAVE_METERS = 200.0
     /** A stop this close to a planned place is that place. */
@@ -48,9 +50,8 @@ object StopDetection {
     const val SUGGEST_METERS = 1_000.0
 
     /**
-     * True when [current] shows the user stayed near [previous]. Tracking asks for
-     * an update only after moving 50 m, so standing still produces silence rather
-     * than samples: a long gap between two nearby samples is a stay.
+     * Treat a gap between nearby readings as a stay when intermediate fixes
+     * were unavailable.
      */
     fun stayedBetween(previous: LocationFix, current: LocationFix): Boolean =
         current.recordedAt - previous.recordedAt >= MIN_STAY_MILLIS &&
@@ -62,7 +63,7 @@ object StopDetection {
     /**
      * The one stop rule shared by trips and Places. [open] is the stop still in
      * progress, [previous] the last kept location before [sample]. [recentStops]
-     * and [window] (locations since [MIN_STAY_MILLIS] before [sample], including
+     * and [window] (locations since [STAY_LOOKBACK_MILLIS] before [sample], including
      * it) are only read when needed. [suppressNew] is true right after the user
      * said "Not a stop" here, so a new stop is not made until they move away.
      */
@@ -94,8 +95,11 @@ object StopDetection {
                 else -> StopAction.None
             }
         }
-        val recent = window().filter { it.accuracyMeters <= MAX_ACCURACY_METERS }
-        if (recent.size < 3 || recent.last().recordedAt - recent.first().recordedAt < MIN_STAY_MILLIS) return StopAction.None
+        val cutoff = sample.recordedAt - MIN_STAY_MILLIS
+        val fixes = window().filter { it.accuracyMeters <= MAX_ACCURACY_METERS }
+        val anchor = fixes.indexOfLast { it.recordedAt <= cutoff }
+        if (anchor < 0 || fixes.size - anchor < 3) return StopAction.None
+        val recent = fixes.subList(anchor, fixes.size)
         val centerLat = recent.map { it.latitude }.average()
         val centerLng = recent.map { it.longitude }.average()
         if (recent.any { distanceMeters(centerLat, centerLng, it.latitude, it.longitude) > STAY_RADIUS_METERS }) {

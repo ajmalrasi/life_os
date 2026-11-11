@@ -43,7 +43,7 @@ class PlacesRepository @Inject constructor(
             sample = sample,
             suppressNew = dismissedAt != null,
             recentStops = { dao.stopsSince(sample.recordedAt - RECENT_STOPS_MILLIS) },
-            window = { dao.samplesSince(sample.recordedAt - StopDetection.MIN_STAY_MILLIS) },
+            window = { dao.samplesSince(sample.recordedAt - StopDetection.STAY_LOOKBACK_MILLIS) },
         )
         when (action) {
             StopAction.None -> Unit

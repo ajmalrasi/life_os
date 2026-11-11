@@ -153,6 +153,19 @@ class StopDetectionTest {
     }
 
     @Test
+    fun stationaryFixesConfirmAStopBeforeTheCarDrivesAway() {
+        val window = listOf(sample(0, 0.01), sample(1), sample(4), sample(7), sample(10))
+        val action = act(previous = window[3], current = window[4], window = window)
+        assertEquals(StopAction.Start(28.6139, 77.2090, 60_000L, null), action)
+    }
+
+    @Test
+    fun stationaryFixesUnderEightMinutesDoNotStartAStop() {
+        val window = listOf(sample(0), sample(3), sample(7))
+        assertEquals(StopAction.None, act(previous = window[1], current = window[2], window = window))
+    }
+
+    @Test
     fun spreadOutWindowIsTravel() {
         val window = listOf(sample(0), sample(4, 0.003), sample(9, 0.006))
         assertEquals(StopAction.None, act(previous = window[1], current = window[2], window = window))

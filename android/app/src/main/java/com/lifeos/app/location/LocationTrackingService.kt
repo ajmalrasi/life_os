@@ -134,7 +134,7 @@ class LocationTrackingService : Service() {
         if (!TrackingController.hasLocationPermission(this)) return false
         if (updatesRequested) return true
         val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 30_000L)
-            .setMinUpdateDistanceMeters(50f)
+            // Stationary fixes let Places confirm a stay before the phone drives away.
             .setMaxUpdateDelayMillis(120_000L)
             .build()
         client.requestLocationUpdates(request, callback, mainLooper)

@@ -211,7 +211,7 @@ class TripRepository @Inject constructor(
             sample = sample,
             suppressNew = dismissedStop?.tripId == sample.tripId,
             recentStops = { dao.visitsForTrip(sample.tripId) },
-            window = { dao.recentLocations(sample.tripId, sample.recordedAt - StopDetection.MIN_STAY_MILLIS) },
+            window = { dao.recentLocations(sample.tripId, sample.recordedAt - StopDetection.STAY_LOOKBACK_MILLIS) },
         )
         when (action) {
             StopAction.None -> Unit
