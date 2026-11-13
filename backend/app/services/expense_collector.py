@@ -143,7 +143,8 @@ class ExpenseCollector:
         the LLM finds one, else the email's arrival instant. One LLM call per
         transaction-bearing email; failures fall back silently (time is
         cosmetic and must never block or defer the transaction)."""
-        if not parsed:
+        unstamped = [txn for txn in parsed if txn.txn_at is None]
+        if not unstamped:
             return
         clock: time | None = None
         if self._txn_time_enabled:
@@ -151,7 +152,7 @@ class ExpenseCollector:
                 self._openclaw = OpenClawClient(workload=InferenceWorkload.FINANCE)
             clock = extract_clock_time(email.text, self._openclaw)
         arrival = _email_arrival(email)
-        for txn in parsed:
+        for txn in unstamped:
             txn.txn_at = _resolve_body_clock(txn.txn_date, clock, arrival) if clock else arrival
 
     def sync(self) -> ExpenseSyncReport:

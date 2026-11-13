@@ -40,6 +40,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from email.utils import parseaddr
 
 from app.config import get_settings
 from app.mail.models import MailMessage
@@ -365,6 +366,12 @@ class LlmBankParser:
 
     def parse(self, email: MailMessage) -> list[ParsedTxn]:
         if not settings.llm_bank_parser_enabled:
+            return []
+
+        if (
+            parseaddr(email.from_addr)[1].casefold() == "alerts@axis.bank.in"
+            and email.subject.strip().casefold().startswith("upcoming autopay transaction on your axis bank card")
+        ):
             return []
 
         client = self._get_client()

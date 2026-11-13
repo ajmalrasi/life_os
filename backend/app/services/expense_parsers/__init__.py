@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.services.expense_parsers.axis_bank_upi import AxisBankUpiParser
 from app.mail.models import MailMessage
 from app.services.expense_parsers.base import ParsedTxn, Parser, ParserUnavailable
+from app.services.expense_parsers.card_purchase_alerts import AxisAmexPurchaseParser, RblCardPurchaseParser
 from app.services.expense_parsers.hdfc_bank_upi import HdfcBankUpiParser
 from app.services.expense_parsers.hdfc_diners_live import HdfcDinersLiveParser
 from app.services.expense_parsers.hdfc_upi import HdfcUpiParser
@@ -19,6 +20,8 @@ _REGISTRY: list[Parser] = [
     HdfcDinersLiveParser(),
     HdfcBankUpiParser(),
     AxisBankUpiParser(),
+    AxisAmexPurchaseParser(),
+    RblCardPurchaseParser(),
     # Catch-all: broader query (bank domain only, no subject regex), so it
     # only ever sees emails none of the parsers above already claimed (the
     # collector dedupes by Gmail message_id before any parser runs).
