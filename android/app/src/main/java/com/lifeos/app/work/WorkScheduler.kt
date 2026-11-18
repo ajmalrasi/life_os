@@ -52,6 +52,24 @@ class WorkScheduler @Inject constructor(
         )
     }
 
+    /** Start Places sync as soon as the network is available, then run periodically. */
+    fun ensurePlacesSyncScheduled() {
+        val request = PeriodicWorkRequestBuilder<PlacesSyncWorker>(Duration.ofHours(6))
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+            )
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            PlacesSyncWorker.UNIQUE_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    fun cancelPlacesSync() {
+        workManager.cancelUniqueWork(PlacesSyncWorker.UNIQUE_NAME)
+    }
+
     /** Keep the spend widget current even when the app has not been opened. */
     fun ensureSpendWidgetScheduled() {
         val constraints = Constraints.Builder()

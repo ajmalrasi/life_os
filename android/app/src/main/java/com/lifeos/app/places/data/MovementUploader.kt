@@ -6,6 +6,8 @@ import com.lifeos.app.places.domain.DaySummary
 import com.lifeos.app.places.domain.PlacesTimeline
 import com.lifeos.app.trips.data.TripRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -25,8 +27,11 @@ class MovementUploader @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val api: LifeOsApi,
 ) {
+    // Keep manual and background uploads in order, including any server-side deletion.
+    private val uploadLock = Mutex()
+
     /** Returns the number of days sent; 0 when Places has nothing to send. */
-    suspend fun uploadRecent(days: Int = UPLOAD_DAYS): Int {
+    private suspend fun uploadRecent(days: Int = UPLOAD_DAYS): Int {
         val zone = ZoneId.systemDefault()
         val saved = dao.savedPlaces()
         val home = saved.firstOrNull { it.kind == SavedPlaceKind.HOME }
@@ -70,10 +75,12 @@ class MovementUploader @Inject constructor(
     }
 
     /** Only when Places is on, so turning it off stops uploads too. */
-    suspend fun uploadIfEnabled(): Int = if (settingsRepository.placesEnabled.first()) uploadRecent() else 0
+    suspend fun uploadIfEnabled(): Int = uploadLock.withLock {
+        if (settingsRepository.placesEnabled.first()) uploadRecent() else 0
+    }
 
     suspend fun deleteFromServer() {
-        api.deleteMovement()
+        uploadLock.withLock { api.deleteMovement() }
     }
 
     companion object {

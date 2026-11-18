@@ -104,7 +104,7 @@ class LifeOsSyncCoordinator @Inject constructor(
         }.track("trip backup")
         if (settingsRepository.placesEnabled.first()) {
             onStep("Sending places")
-            runCatching { movementUploader.uploadRecent() }.track("places")
+            runCatching { movementUploader.uploadIfEnabled() }.track("places")
         }
         // Scan GitHub here and wait for it, so the recompute below scores
         // today's coding instead of the backend scanning after we return.
