@@ -7,7 +7,21 @@ opts in by setting it on the cached Settings instance.
 
 from __future__ import annotations
 
+import pytest
+from fastapi.testclient import TestClient
+
 from app.config import get_settings
+from app.main import app
+
+
+@pytest.mark.parametrize("token", [None, "", "   "])
+def test_production_requires_a_nonblank_api_token_before_starting(monkeypatch, token):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "api_token", token)
+    with pytest.raises(RuntimeError, match="API_TOKEN is required in production"):
+        with TestClient(app):
+            pass
 
 
 def test_disabled_by_default_allows_protected_route_without_a_header(client):

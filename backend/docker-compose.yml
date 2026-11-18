@@ -4,12 +4,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lifeos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lifeos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}
       POSTGRES_DB: ${POSTGRES_DB:-lifeos}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lifeos}"]
       interval: 10s
@@ -23,13 +21,15 @@ services:
       db:
         condition: service_healthy
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      API_TOKEN: ${API_TOKEN:-}
       # Local-day binning (expense date windows, daily scores) uses the
       # container's wall-clock day, so it must run in India time — otherwise a
       # UTC container treats an IST-evening transaction (dated "tomorrow" in IST)
       # as a future date and the /expenses window hides it for ~5.5h each night.
       # Audit columns store UTC explicitly via utcnow(), so this is binning-only.
       TZ: ${TZ:-Asia/Kolkata}
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-lifeos}:${POSTGRES_PASSWORD:-lifeos}@db:5432/${POSTGRES_DB:-lifeos}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-lifeos}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}@db:5432/${POSTGRES_DB:-lifeos}
       OPENCLAW_BASE_URL: ${OPENCLAW_BASE_URL:-http://host.docker.internal:11434}
       OPENCLAW_MODEL: ${OPENCLAW_MODEL:-qwen3.5:4b}
       OPENCLAW_TIMEOUT_SECONDS: ${OPENCLAW_TIMEOUT_SECONDS:-90}

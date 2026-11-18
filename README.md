@@ -15,11 +15,12 @@ The API, database, and model run on a Jetson. A Raspberry Pi serves the iPhone w
 
 **Android** · Open `android/` in Android Studio, run the app, and enter your LifeOS server address in **Settings**.
 
-**Backend** · From the repository root, run the following with Docker Compose installed. Edit `backend/.env` for your setup before starting the services.
+**Backend** · From the repository root, run the following with Docker Compose installed.
 
 ```sh
 cd backend
 cp -n .env.example .env
+# Set POSTGRES_PASSWORD in .env before starting the services.
 docker compose up -d --build
 ```
 

@@ -61,6 +61,8 @@ Resolve dates using the IST calendar reference below. "Last month" means the
 previous complete calendar month, never a trailing 30-day window. "This month"
 means the current calendar month to date. Clarify ambiguous requests.
 query_money computes exact totals and filters; do not sum partial transaction lists.
+Use the result's currency for money totals. If the query matches multiple currencies,
+retry with the requested currency or explain that each currency requires its own query.
 For money comparisons use its compare_start_date and compare_end_date arguments
 in the SAME call. Report its computed difference/percent_change fields. Do not
 invent or mentally calculate additional percentages. Mention unequal period lengths.

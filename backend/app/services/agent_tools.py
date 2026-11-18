@@ -71,6 +71,7 @@ TOOL_SCHEMAS: list[dict] = [
                 "table. Use for exact spending/income questions that need arbitrary date "
                 "ranges, category/merchant/account/source filters, rankings, transaction "
                 "details, or day/week/month/category/merchant/account breakdowns. "
+                "Each result uses a single currency. Pass currency for mixed-currency data. "
                 "For comparisons use compare_start_date/compare_end_date in the SAME call; "
                 "the tool computes differences and percentages. Statement detail rows "
                 "are not transactions and never count as spend. "
@@ -130,6 +131,11 @@ TOOL_SCHEMAS: list[dict] = [
                     "source": {
                         "type": "string",
                         "description": "Exact stored source such as upi or card_live.",
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "description": "Currency code, such as INR or USD.",
                     },
                     "min_amount": {"type": "number"},
                     "max_amount": {"type": "number"},

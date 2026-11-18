@@ -17,13 +17,12 @@ class Settings(BaseSettings):
     app_name: str = "LifeOS"
     environment: str = "development"
 
-    # Bearer-token auth. Unset (the default) disables auth entirely — safe for
-    # the existing home-Wi-Fi-only rollout and for tests. Set it before exposing
-    # the API beyond the LAN (e.g. over Tailscale); see AGENTS.md §2.
+    # Bearer-token auth. Production startup requires a token. Development
+    # can leave this unset for local testing or the existing LAN setup.
     api_token: str | None = None
 
-    # Database — defaults match docker-compose; override via DATABASE_URL.
-    database_url: str = "postgresql+psycopg2://lifeos:lifeos@db:5432/lifeos"
+    # Compose sets DATABASE_URL. Local runs can override it directly.
+    database_url: str = "postgresql+psycopg2://lifeos@db:5432/lifeos"
 
     # OpenClaw local LLM. Base URL is configurable (Jetson local network first).
     openclaw_base_url: str = "http://localhost:8080"

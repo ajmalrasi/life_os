@@ -8,11 +8,22 @@ questions via a local OpenClaw LLM.
 
 ```bash
 cd backend
-cp .env.example .env          # adjust OPENCLAW_BASE_URL to your Jetson
+cp -n .env.example .env
+# Set POSTGRES_PASSWORD and adjust OPENCLAW_BASE_URL in .env.
 docker compose up --build
 ```
 
 API: <http://localhost:8000>  ·  Interactive docs: <http://localhost:8000/docs>
+
+PostgreSQL is reachable on the Compose network. For local database administration,
+use `docker compose exec db psql -U lifeos -d lifeos` with your configured user and
+database. On an existing PostgreSQL volume, set `POSTGRES_PASSWORD` to the existing
+role password before recreating containers. Rotate the role password in PostgreSQL
+when changing it and update `.env` to match.
+
+Set `API_TOKEN` in `.env` to require bearer authentication on protected routes.
+With `ENVIRONMENT=production`, startup requires a nonblank token. Configure the
+same token on API clients before enabling it.
 
 ## Run locally (without Docker)
 

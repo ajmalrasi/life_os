@@ -40,6 +40,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.is_production and not (settings.api_token or "").strip():
+        raise RuntimeError("API_TOKEN is required in production")
     # create_all makes missing tables but never ALTERs an existing one; run the
     # numbered SQL migrations for everything create_all can't handle.
     init_db()

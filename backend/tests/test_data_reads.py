@@ -90,6 +90,80 @@ def test_money_read_matches_ask_and_preserves_accounting_despite_row_limit(clien
     assert len(response.json()["rows"]) == 1
 
 
+@pytest.fixture
+def foreign_currency_ledger(client):
+    with SessionLocal() as db:
+        for index, (day, amount, currency) in enumerate(
+            [
+                (date(2025, 9, 2), "100", "INR"),
+                (date(2025, 9, 3), "20", "USD"),
+                (date(2025, 8, 2), "10", "USD"),
+            ]
+        ):
+            db.add(
+                Transaction(
+                    txn_date=day,
+                    amount=Decimal(amount),
+                    currency=currency,
+                    direction="debit",
+                    counterparty="Synthetic Cafe",
+                    source="card_live",
+                    gmail_message_id=f"synthetic-currency-{index}",
+                    dedup_key=f"synthetic-currency-{index}",
+                )
+            )
+        db.commit()
+    return client
+
+
+def test_money_grouping_requires_one_currency(foreign_currency_ledger):
+    client = foreign_currency_ledger
+    query = {"start_date": "2025-09-01", "end_date": "2025-09-30", "group_by": "counterparty"}
+    response = client.post("/expenses/query", json=query)
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "mixed_currencies"
+    assert response.json()["detail"]["currencies"] == ["INR", "USD"]
+
+    result = client.post("/expenses/query", json={**query, "currency": "INR"}).json()
+    assert result["currency"] == "INR"
+    assert result["summary"]["total"] == 100
+    assert result["rows"][0]["total"] == 100
+    with SessionLocal() as db:
+        assert "Specify one currency" in AgentTools(db)._run("query_money", query)["error"]
+
+
+def test_money_comparison_checks_the_currency_of_both_windows(foreign_currency_ledger):
+    client = foreign_currency_ledger
+    query = {
+        "start_date": "2025-09-02",
+        "end_date": "2025-09-02",
+        "compare_start_date": "2025-08-01",
+        "compare_end_date": "2025-08-31",
+    }
+    response = client.post("/expenses/query", json=query)
+    assert response.status_code == 422
+    assert response.json()["detail"]["currencies"] == ["INR", "USD"]
+
+    result = client.post("/expenses/query", json={**query, "currency": "INR"}).json()
+    assert result["currency"] == "INR"
+    assert result["summary"]["total"] == 100
+    assert result["comparison"]["baseline_summary"]["count"] == 0
+
+    result = client.post(
+        "/expenses/query",
+        json={**query, "start_date": "2025-09-01", "end_date": "2025-09-01"},
+    ).json()
+    assert result["currency"] == "USD"
+    assert result["comparison"]["baseline_summary"]["total"] == 10
+
+    result = client.post(
+        "/expenses/query",
+        json={**query, "start_date": "2025-09-03", "end_date": "2025-09-03"},
+    ).json()
+    assert result["currency"] == "USD"
+    assert result["comparison"]["change"] == {"difference": 10, "percent_change": 100}
+
+
 @pytest.mark.parametrize(
     "path,method,payload",
     [
@@ -102,6 +176,7 @@ def test_money_read_matches_ask_and_preserves_accounting_despite_row_limit(clien
         ("/health/records", "get", {"sql": "SELECT private"}),
         ("/expenses/query", "post", {"sql": "SELECT private"}),
         ("/expenses/query", "post", {"limit": 51}),
+        ("/expenses/query", "post", {"currency": "inr"}),
         ("/expenses/query", "post", {"compare_start_date": "2025-09-01"}),
     ],
 )

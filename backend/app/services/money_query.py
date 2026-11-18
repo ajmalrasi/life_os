@@ -8,11 +8,12 @@ arbitrary tables, columns, SQL functions, or write statements.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -37,22 +38,33 @@ _SORTS = {"total", "count", "average", "max", "date", "amount", "name"}
 _ORDERS = {"asc", "desc"}
 _MAX_RESULT_ROWS = 50
 _DEFAULT_DAYS = 30
+
+
 class MoneyQueryError(ValueError):
     """The requested semantic query is invalid or outside the safe contract."""
 
 
-def spending_coverage(db: Session) -> dict[str, Any] | None:
-    """Return compact coverage metadata for genuine stored debit spending."""
-    count, first, last = db.execute(
-        select(
-            func.count(Transaction.id),
-            func.min(Transaction.txn_date),
-            func.max(Transaction.txn_date),
-        ).where(
-            Transaction.direction == "debit",
-            func.coalesce(Transaction.category, "").notin_(tuple(EXCLUDED_FROM_SPEND)),
+class MixedMoneyCurrencies(MoneyQueryError):
+    def __init__(self, currencies: set[str]):
+        self.currencies = sorted(currencies)
+        super().__init__(
+            f"Matches multiple currencies ({', '.join(self.currencies)}). Specify one currency."
         )
-    ).one()
+
+
+def spending_coverage(db: Session, currency: str | None = None) -> dict[str, Any] | None:
+    """Return compact coverage metadata for genuine stored debit spending."""
+    stmt = select(
+        func.count(Transaction.id),
+        func.min(Transaction.txn_date),
+        func.max(Transaction.txn_date),
+    ).where(
+        Transaction.direction == "debit",
+        func.coalesce(Transaction.category, "").notin_(tuple(EXCLUDED_FROM_SPEND)),
+    )
+    if currency is not None:
+        stmt = stmt.where(Transaction.currency == currency)
+    count, first, last = db.execute(stmt).one()
     if not count:
         return None
     return {
@@ -73,6 +85,7 @@ def query_money(
     counterparty_contains: str | None = None,
     account_contains: str | None = None,
     source: str | None = None,
+    currency: str | None = None,
     min_amount: float | int | str | None = None,
     max_amount: float | int | str | None = None,
     sort_by: str | None = None,
@@ -91,6 +104,10 @@ def query_money(
         "sort_by",
     )
     limit = _bounded_int(limit, 1, _MAX_RESULT_ROWS, "limit")
+    if currency is not None and (
+        not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency)
+    ):
+        raise MoneyQueryError("currency must be a three-letter uppercase code such as INR")
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     end = _parse_date(end_date, "end_date") if end_date else today
@@ -133,6 +150,8 @@ def query_money(
         stmt = stmt.where(Transaction.account.ilike(f"%{_text(account_contains)}%"))
     if source:
         stmt = stmt.where(Transaction.source == _text(source))
+    if currency is not None:
+        stmt = stmt.where(Transaction.currency == currency)
 
     # The DB performs all safe scalar filtering. Effective categories depend on
     # user-authored payee rules plus deterministic regexes, so that final filter
@@ -154,10 +173,15 @@ def query_money(
             if (effective or "").casefold() == wanted
         ]
 
+    currencies = {txn.currency for txn, _ in prepared}
+    if len(currencies) > 1:
+        raise MixedMoneyCurrencies(currencies)
+    result_currency = next(iter(currencies), currency)
     amounts = [txn.amount for txn, _ in prepared]
     response: dict[str, Any] = {
         "dataset": "transactions",
         "mode": mode,
+        "currency": result_currency,
         "window": {"start": start.isoformat(), "end": end.isoformat()},
         "filters": {
             key: value
@@ -166,6 +190,7 @@ def query_money(
                 "counterparty_contains": counterparty_contains,
                 "account_contains": account_contains,
                 "source": source,
+                "currency": currency,
                 "min_amount": _number(minimum),
                 "max_amount": _number(maximum),
             }.items()
@@ -211,14 +236,20 @@ def query_money(
     response["returned_rows"] = len(response["rows"])
     response["matched_transactions"] = len(prepared)
     response["status"] = "ok" if prepared else "empty"
-    response["coverage"] = spending_coverage(db) if mode == "spending" else None
     if compare_start_date and compare_end_date:
         previous = query_money(
             db, mode=mode, start_date=compare_start_date, end_date=compare_end_date,
             group_by=group_by, category=category, counterparty_contains=counterparty_contains,
-            account_contains=account_contains, source=source, min_amount=min_amount,
-            max_amount=max_amount, sort_by=sort_by, sort_order=sort_order, limit=limit,
+            account_contains=account_contains, source=source, currency=currency,
+            min_amount=min_amount, max_amount=max_amount, sort_by=sort_by,
+            sort_order=sort_order, limit=limit,
         )
+        if previous["currency"] is not None:
+            currencies.add(previous["currency"])
+        if len(currencies) > 1:
+            raise MixedMoneyCurrencies(currencies)
+        response["currency"] = result_currency or previous["currency"]
+
         def change(current, prior):
             current, prior = Decimal(str(current)), Decimal(str(prior))
             return {"difference": _number(current-prior),
@@ -240,6 +271,9 @@ def query_money(
                 for row in response["rows"] if row["group"] in prior_groups
             ]
             response["comparison"]["group_coverage"] = "Only groups present in both returned lists; omitted groups are unknown here."
+    response["coverage"] = (
+        spending_coverage(db, response["currency"]) if mode == "spending" else None
+    )
     return response
 
 

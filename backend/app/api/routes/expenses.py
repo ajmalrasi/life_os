@@ -9,7 +9,7 @@ from app.api.routes.statements import build_categorizer
 from app.config import Settings, get_settings
 from app.database import get_db, get_read_db
 from app.schemas.data_queries import MoneyQuery
-from app.services.money_query import MoneyQueryError, query_money
+from app.services.money_query import MixedMoneyCurrencies, MoneyQueryError, query_money
 from app.repositories.expense_repo import ExpenseRepository
 from app.schemas.expense import (
     ExpenseRebuildResult,
@@ -51,6 +51,15 @@ def query_transactions(
     """
     try:
         return query_money(db, **payload.model_dump(mode="json", exclude_none=True))
+    except MixedMoneyCurrencies as exc:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "mixed_currencies",
+                "currencies": exc.currencies,
+                "message": "Specify one currency.",
+            },
+        ) from None
     except MoneyQueryError:
         raise HTTPException(422, "LifeOS rejected the money query") from None
 
